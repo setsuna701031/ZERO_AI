@@ -11,18 +11,18 @@ Run One Step Overlay Chain
 - helper definition: _zero_v352_scheduler_run_one_step (line 8045; active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding)
 - helper definition: _zero_scheduler_run_one_step_v8 (line 8133; active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding)
 - helper definition: _zero_scheduler_run_one_step_v16 (line 8219; active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding)
-- binding: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (line 8071; active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding)
-- binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (line 8147; active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding)
-- binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229; active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding)
+- binding: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (line 8071; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (line 8147; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
 - final Scheduler.run_one_step binding: _zero_scheduler_run_one_step_v16 (line 8229)
 
 Surface Call Graphs
 -------------------
 run_one_step:
   Scheduler.xxx assignment chain:
-    - line 8071: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding)
-    - line 8147: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding)
-    - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding)
+    - line 8071: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+    - line 8147: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+    - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
   top-level helper definitions involved:
     - line 7705: _zero_v11_scheduler_str (active_refs=unknown)
     - line 7712: _zero_v11_scheduler_copy_dict (active_refs=unknown)
@@ -56,9 +56,9 @@ run_one_step:
     - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
   final active binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229)
   known active_refs from inventory:
-    - Scheduler.run_one_step: active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding
-    - Scheduler.run_one_step: active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding
-    - Scheduler.run_one_step: active_refs=33; archived_refs=24; report_refs=970; binding_class=runtime_binding
+    - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+    - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+    - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
     - _zero_v11_scheduler_str: active_refs=unknown
     - _zero_v11_scheduler_copy_dict: active_refs=unknown
     - _zero_v11_extract_scheduler_error_type: active_refs=unknown
@@ -135,8 +135,8 @@ dispatch:
 queue:
   Scheduler.xxx assignment chain:
     - line 7321: Scheduler.cleanup_task_queue_hygiene = _zero_v724_cleanup_task_queue_hygiene (active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding)
-    - line 7323: Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot (active_refs=1; archived_refs=0; report_refs=56; binding_class=runtime_binding)
-    - line 7324: Scheduler.get_queue_rows = _zero_v724_get_queue_rows (active_refs=1; archived_refs=0; report_refs=54; binding_class=runtime_binding)
+    - line 7323: Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot (active_refs=1; archived_refs=0; report_refs=59; binding_class=runtime_binding)
+    - line 7324: Scheduler.get_queue_rows = _zero_v724_get_queue_rows (active_refs=1; archived_refs=0; report_refs=57; binding_class=runtime_binding)
     - line 7517: Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene (active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding)
   top-level helper definitions involved:
     - line 7068: _zero_v724_task_age_seconds (active_refs=unknown)
@@ -146,7 +146,7 @@ queue:
     - line 7309: _zero_v724_get_queue_rows (active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding)
     - line 7424: _zero_v726_cleanup_task_queue_hygiene (active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding)
     - line 6767: _scheduler_repo_state_compat_mark_repo_task_queued (active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding)
-    - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding)
+    - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding)
   overlay order by line number:
     - line 6767: def _scheduler_repo_state_compat_mark_repo_task_queued(...)
     - line 7068: def _zero_v724_task_age_seconds(...)
@@ -163,8 +163,8 @@ queue:
   final active binding: Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene (line 7517); Scheduler.get_queue_rows = _zero_v724_get_queue_rows (line 7324); Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot (line 7323)
   known active_refs from inventory:
     - Scheduler.cleanup_task_queue_hygiene: active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding
-    - Scheduler.get_queue_snapshot: active_refs=1; archived_refs=0; report_refs=56; binding_class=runtime_binding
-    - Scheduler.get_queue_rows: active_refs=1; archived_refs=0; report_refs=54; binding_class=runtime_binding
+    - Scheduler.get_queue_snapshot: active_refs=1; archived_refs=0; report_refs=59; binding_class=runtime_binding
+    - Scheduler.get_queue_rows: active_refs=1; archived_refs=0; report_refs=57; binding_class=runtime_binding
     - Scheduler.cleanup_task_queue_hygiene: active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding
     - _zero_v724_task_age_seconds: active_refs=unknown
     - _zero_v724_cleanup_fingerprint_index: active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding
@@ -173,7 +173,7 @@ queue:
     - _zero_v724_get_queue_rows: active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding
     - _zero_v726_cleanup_task_queue_hygiene: active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding
     - _scheduler_repo_state_compat_mark_repo_task_queued: active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding
-    - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding
+    - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding
   risk_level: high
   recommendation: consolidation candidate
 
@@ -308,15 +308,15 @@ repair:
 
 review:
   Scheduler.xxx assignment chain:
-    - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
-    - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item (active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
-    - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue (active_refs=0; archived_refs=0; report_refs=45; binding_class=runtime_binding)
+    - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding)
+    - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item (active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding)
+    - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue (active_refs=0; archived_refs=0; report_refs=110; binding_class=runtime_binding)
   top-level helper definitions involved:
     - line 7844: _zero_review_action_find_task (active_refs=1; archived_refs=0; report_refs=3; binding_class=runtime_binding)
     - line 7900: _zero_review_action_apply_result (active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding)
-    - line 7950: _zero_scheduler_approve_review_item (active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding)
-    - line 7975: _zero_scheduler_reject_review_item (active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding)
-    - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding)
+    - line 7950: _zero_scheduler_approve_review_item (active_refs=1; archived_refs=0; report_refs=58; binding_class=runtime_binding)
+    - line 7975: _zero_scheduler_reject_review_item (active_refs=1; archived_refs=0; report_refs=52; binding_class=runtime_binding)
+    - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding)
   overlay order by line number:
     - line 7844: def _zero_review_action_find_task(...)
     - line 7900: def _zero_review_action_apply_result(...)
@@ -328,14 +328,14 @@ review:
     - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue
   final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
   known active_refs from inventory:
-    - Scheduler.approve_review_item: active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding
-    - Scheduler.reject_review_item: active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding
-    - Scheduler.get_review_queue: active_refs=0; archived_refs=0; report_refs=45; binding_class=runtime_binding
+    - Scheduler.approve_review_item: active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding
+    - Scheduler.reject_review_item: active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding
+    - Scheduler.get_review_queue: active_refs=0; archived_refs=0; report_refs=110; binding_class=runtime_binding
     - _zero_review_action_find_task: active_refs=1; archived_refs=0; report_refs=3; binding_class=runtime_binding
     - _zero_review_action_apply_result: active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding
-    - _zero_scheduler_approve_review_item: active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding
-    - _zero_scheduler_reject_review_item: active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding
-    - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding
+    - _zero_scheduler_approve_review_item: active_refs=1; archived_refs=0; report_refs=58; binding_class=runtime_binding
+    - _zero_scheduler_reject_review_item: active_refs=1; archived_refs=0; report_refs=52; binding_class=runtime_binding
+    - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding
   risk_level: medium
   recommendation: audit further
 

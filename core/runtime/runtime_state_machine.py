@@ -4,6 +4,11 @@ import copy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
+from core.runtime.contracts.runtime_session_contract import (
+    RUNTIME_SESSION_SCHEMA,
+    is_runtime_session_active_status,
+    is_runtime_session_terminal_status,
+)
 
 
 @dataclass(frozen=True)
@@ -260,6 +265,9 @@ class RuntimeStateMachine:
         state = copy.deepcopy(runtime_state or {})
 
         state["status"] = self.normalize_status(state.get("status"))
+        state["runtime_session_validation"] = self.runtime_session_validation_summary(
+            state["status"]
+        )
 
         history = state.get("runtime_status_history")
         if not isinstance(history, list):
@@ -585,6 +593,22 @@ class RuntimeStateMachine:
             message=f"unknown failure policy action: {clean_action}",
         )
 
+    def runtime_session_validation_summary(self, status: Any) -> Dict[str, Any]:
+        """Return a passive runtime-session contract summary.
+
+        This does not enforce transitions and does not change state-machine
+        behavior. It records how the current status projects into the runtime
+        session contract layer.
+        """
+
+        normalized_status = self.normalize_status(status)
+        return {
+            "schema": RUNTIME_SESSION_SCHEMA,
+            "normalized_status": normalized_status,
+            "terminal": is_runtime_session_terminal_status(normalized_status),
+            "active": is_runtime_session_active_status(normalized_status),
+        }
+
     # ============================================================
     # summary / graph helpers
     # ============================================================
@@ -601,6 +625,10 @@ class RuntimeStateMachine:
             "is_runnable": self.is_runnable(status),
             "is_blocked_like": self.is_blocked_like(status),
             "history_count": len(state.get("runtime_status_history", [])),
+            "runtime_session_validation": copy.deepcopy(
+                state.get("runtime_session_validation")
+                or self.runtime_session_validation_summary(status)
+            ),
         }
 
     def allowed_next_statuses(self, status: Any) -> List[str]:

@@ -10,6 +10,10 @@ from typing import Any, Callable
 
 from core.goals.goal_lineage_contract import GOAL_LINEAGE_FIELDS, extract_goal_lineage, extract_runtime_identity
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.contracts.runtime_execution_contract import (
+    RUNTIME_EXECUTION_SCHEMA,
+    normalize_runtime_execution_mode,
+)
 
 
 EXECUTION_STATUS_CREATED = "created"
@@ -74,6 +78,55 @@ class RuntimeExecutionCheckpoint:
     metadata: dict[str, Any] = field(default_factory=dict)
     sequence: int = 0
     created_at: str = field(default_factory=utc_timestamp)
+
+    def runtime_execution_validation_summary(
+        self,
+        record: RuntimeExecutionRecord,
+    ) -> dict[str, Any]:
+        """Return a passive execution-contract summary.
+
+        This does not validate, reject, checkpoint, recover, or resume anything.
+        It only projects the current execution record into the runtime execution
+        contract layer for observability.
+        """
+
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        payload = record.payload if isinstance(record.payload, dict) else {}
+        execution_mode = normalize_runtime_execution_mode(
+            metadata.get("execution_mode")
+            or payload.get("execution_mode")
+            or "execute"
+        )
+        return {
+            "schema": RUNTIME_EXECUTION_SCHEMA,
+            "execution_id": bool(str(record.execution_id or "").strip()),
+            "session_id": bool(str(record.source_session_id or "").strip()),
+            "runtime_session_id": bool(
+                str(
+                    metadata.get("runtime_session_id")
+                    or payload.get("runtime_session_id")
+                    or ""
+                ).strip()
+            ),
+            "task_id": bool(str(record.task_id or "").strip()),
+            "execution_mode": execution_mode,
+            "has_payload": bool(payload),
+            "has_metadata": bool(metadata),
+            "has_authority": bool(
+                isinstance(metadata.get("execution_authority"), dict)
+                or isinstance(payload.get("execution_authority"), dict)
+            ),
+            "has_runtime_identity": bool(
+                isinstance(metadata.get("runtime_identity"), dict)
+                or isinstance(payload.get("runtime_identity"), dict)
+            ),
+            "has_authority_context": bool(
+                isinstance(metadata.get("authority_context"), dict)
+                or isinstance(payload.get("authority_context"), dict)
+            ),
+            "checkpoint_count": len(record.checkpoints),
+            "terminal": record.status in TERMINAL_EXECUTION_STATUSES,
+        }
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -739,7 +792,12 @@ class RuntimeExecutionFabric:
         return {
             "runtime_phase": "runtime_execution_fabric",
             "executions": [
-                self._executions[execution_id].to_dict()
+                {
+                    **self._executions[execution_id].to_dict(),
+                    "execution_validation": self.runtime_execution_validation_summary(
+                        self._executions[execution_id]
+                    ),
+                }
                 for execution_id in self._execution_order
                 if execution_id in self._executions
             ],

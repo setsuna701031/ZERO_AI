@@ -47,6 +47,8 @@ from core.tasks.scheduler_runtime_contract import (
     validate_scheduler_lifecycle_transition,
 )
 
+from core.runtime.contracts.authority_context_contract import validate_authority_context_shape
+
 
 RUNTIME_DISPATCH_SCHEMA = "zero.runtime.work_package_dispatch.v1"
 RUNTIME_REPLAN_REQUEST_SCHEMA = "zero.runtime.work_package_replan_request.v1"
@@ -530,6 +532,8 @@ class RuntimeDispatcher:
             propagate_runtime_capability(boundary_task, boundary_provenance, stage="dispatcher")
         )
         scheduler_authority = copy.deepcopy(boundary_task.get("authority_context", {}))
+        authority_context_validation = validate_authority_context_shape(scheduler_authority)
+        boundary_task["authority_context_validation"] = authority_context_validation
         execution_authority = copy.deepcopy(boundary_task.get("execution_authority", {}))
         authority_chain = (
             copy.deepcopy(scheduler_authority.get("authority_chain", []))

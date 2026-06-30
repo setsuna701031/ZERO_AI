@@ -1,0 +1,43 @@
+AER Runtime Freeze Evidence Pack
+
+Freeze Candidate
+----------------
+Scheduler: yes
+Runtime Boundary: yes
+
+Evidence Files
+--------------
+scheduler_mainline_inventory.txt
+scheduler_mainline_callgraph.txt
+scheduler_review_inventory.txt
+scheduler_freeze_readiness_report.txt
+taskrunner_boundary_inventory.txt
+runtime_boundary_matrix.txt
+runtime_boundary_consistency_audit.txt
+runtime_boundary_manual_review.txt
+
+Regression
+----------
+fast: 370 passed, 5360 deselected, 73 subtests passed
+
+Manual Review Closure
+---------------------
+Boundary rows: 41
+Manual review rows: 5
+Keep: 4
+Future refactor: 1
+Blocker: 0
+
+Known Non-Blocking Follow-up
+----------------------------
+scheduler_authority.get should later be wrapped behind an authority service/boundary adapter.
+
+Freeze Rule
+-----------
+Do not modify Scheduler.run_one_step.
+Do not collapse runtime boundary wrappers without dedicated behavior audit.
+Do not treat inventory unknown/text hits as blockers.
+
+Non-Mainline Issue Reporting
+----------------------------
+If future work finds issues outside the current scope, report them explicitly instead of silently skipping them.

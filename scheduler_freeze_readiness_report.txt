@@ -1,0 +1,101 @@
+Scheduler Freeze Readiness Report
+=================================
+
+Scope
+-----
+- Production scheduler code was not modified by this report.
+- This report summarizes the current scheduler inventory and callgraph evidence.
+- No row below is a safe-removal instruction.
+
+Inputs
+------
+- inventory_report: scheduler_mainline_inventory.txt
+- callgraph_report: scheduler_mainline_callgraph.txt
+
+Scheduler Snapshot
+------------------
+- total_lines: 8229
+- import_count: 75
+- class_count: 1
+- method_count_inside_Scheduler: 179
+- top_level_helper_function_count: 61
+- scheduler_method_assignment_count: 46
+
+Fast Regression
+---------------
+- latest observed fast lane: 370 passed, 5360 deselected, 73 subtests passed
+- command: python tools/regression_runner.py fast
+- long validation, full pytest, and nightly validation were not run by this package.
+
+Runtime Surface
+---------------
+- unsafe_bindings: 46
+- unsafe_runtime_entrypoints: 139
+- unknown_runtime_entrypoints: 40
+
+Final Binding
+-------------
+- Scheduler.run_one_step final binding not found
+
+Callgraph Surface Summary
+-------------------------
+- surface summary not found
+
+Runtime Family Summary
+----------------------
+family          | bindings | runtime_entrypoints | active_refs                          | status                        
+----------------+----------+---------------------+--------------------------------------+-------------------------------
+path            | 4        | 3                   | min=0, max=0, zero_ref_bindings=4/4  | candidate_for_family_audit    
+dispatch        | 3        | 11                  | min=0, max=0, zero_ref_bindings=3/3  | candidate_for_wrapper_collapse
+repo_state      | 4        | 16                  | min=0, max=0, zero_ref_bindings=4/4  | candidate_for_wrapper_collapse
+planning        | 3        | 10                  | min=0, max=1, zero_ref_bindings=2/3  | candidate_for_family_audit    
+repair          | 3        | 17                  | min=1, max=2, zero_ref_bindings=0/3  | candidate_for_wrapper_collapse
+queue           | 4        | 14                  | min=1, max=1, zero_ref_bindings=0/4  | candidate_for_wrapper_collapse
+tick            | 3        | 7                   | min=1, max=7, zero_ref_bindings=0/3  | candidate_for_wrapper_collapse
+create_task     | 1        | 5                   | min=1, max=1, zero_ref_bindings=0/1  | keep_runtime_surface          
+review          | 3        | 8                   | min=0, max=0, zero_ref_bindings=3/3  | candidate_for_family_audit    
+run_one_step    | 4        | 8                   | min=0, max=33, zero_ref_bindings=1/4 | candidate_for_wrapper_collapse
+build/constants | 11       | 0                   | min=0, max=7, zero_ref_bindings=4/11 | do_not_touch                  
+unknown         | 3        | 40                  | min=0, max=2, zero_ref_bindings=1/3  | candidate_for_family_audit    
+
+Freeze Decisions
+----------------
+family          | decision                                                                                                          
+----------------+-------------------------------------------------------------------------------------------------------------------
+path            | audit_complete_for_freeze; retain surface and do not remove zero-ref bindings without a dedicated ownership audit.
+dispatch        | keep_runtime_surface; protected runtime family, defer consolidation to a dedicated behavior audit.                
+repo_state      | keep_runtime_surface; protected runtime family, defer consolidation to a dedicated behavior audit.                
+planning        | audit_complete_for_freeze; retain surface and do not remove zero-ref bindings without a dedicated ownership audit.
+repair          | keep_runtime_surface; protected runtime family, defer consolidation to a dedicated behavior audit.                
+queue           | keep_runtime_surface; protected runtime family, defer consolidation to a dedicated behavior audit.                
+tick            | keep_runtime_surface; protected runtime family, defer consolidation to a dedicated behavior audit.                
+create_task     | keep_runtime_surface; task creation is a protected runtime surface.                                               
+review          | audit_complete_for_freeze; retain surface and do not remove zero-ref bindings without a dedicated ownership audit.
+run_one_step    | freeze; final binding is documented and wrapper collapse is deferred.                                             
+build/constants | do_not_touch; build and allowlist constants are not wrapper-collapse targets.                                     
+unknown         | documented_non_blocking; preserve current behavior and track as post-freeze classifier/audit work.                
+
+Freeze Readiness
+----------------
+status: AER Scheduler Freeze Candidate
+
+Rationale:
+- The scheduler runtime surface is inventoried and grouped into functional families.
+- The final run_one_step binding is explicit in the callgraph report.
+- Protected runtime families are preserved rather than removed.
+- Unknown runtime entrypoints are documented and treated as non-removal surfaces.
+- The fast regression lane is passing.
+
+Required Guardrails
+-------------------
+- Do not collapse run_one_step wrappers without a dedicated behavior audit.
+- Do not delete review, planning, path, or unknown-family rows from inventory alone.
+- Do not treat zero active textual references as proof of safe removal for monkey patches.
+- Long validation remains local-only and is not delegated to Codex.
+
+Non-Mainline Issues Found
+-------------------------
+- None fixed in this package.
+- Unknown runtime entrypoints remain as post-freeze classifier/audit work.
+- Callgraph high-risk consolidation candidates are documentation signals only, not change instructions.
+

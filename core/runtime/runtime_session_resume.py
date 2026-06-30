@@ -19,6 +19,9 @@ from core.goals.goal_lineage_contract import (
     extract_runtime_identity,
 )
 from core.runtime.runtime_execution_authority import validate_capability_provenance
+from core.runtime.contracts.runtime_identity_contract import (
+    RUNTIME_IDENTITY_SCHEMA,
+)
 
 
 
@@ -257,6 +260,45 @@ def _validate_identity_graph_boundary(task: Mapping[str, Any], *, session_id: st
         if provenance.capability_id != graph["capability_id"] or provenance.execution_id != graph["execution_id"]:
             raise RuntimeSessionResumeStoreError("resume_capability_identity_drift")
     return graph
+
+
+def _runtime_identity_validation_summary(
+    *,
+    runtime_identity: Mapping[str, Any] | None,
+    identity_graph: Mapping[str, Any] | None,
+    goal_lineage: Mapping[str, Any] | None,
+    capability_provenance_checked: bool = False,
+) -> dict[str, Any]:
+    """Return a passive summary of identity boundary validation.
+
+    This function does not validate anything new and does not alter resume
+    control flow. It records the outcome of existing RuntimeSessionResume
+    identity boundary checks in a stable contract-shaped payload.
+    """
+
+    goal_lineage_complete = bool(
+        isinstance(goal_lineage, Mapping)
+        and all(
+            _clean_text(goal_lineage.get(field))
+            for field in (
+                "root_goal_id",
+                "source_goal_id",
+                "goal_id",
+                "goal_lineage_id",
+                "branch_type",
+                "branch_id",
+                "session_id",
+                "runtime_session_id",
+            )
+        )
+    )
+    return {
+        "schema": RUNTIME_IDENTITY_SCHEMA,
+        "runtime_identity": "passed" if runtime_identity is not None else "skipped",
+        "identity_graph": "passed" if identity_graph is not None else "skipped",
+        "goal_lineage": "passed" if goal_lineage_complete else "skipped",
+        "capability_provenance": "passed" if capability_provenance_checked else "skipped",
+    }
 
 
 def normalize_task_status(value: Any) -> str:
@@ -507,6 +549,15 @@ class RuntimeSessionResume:
                     session_task["identity_validation_error"] = "goal_lineage_incomplete"
                 elif runtime_identity is None and identity_graph is None:
                     session_task.setdefault("resume_session_id", normalized_session_id)
+            session_task["identity_validation"] = _runtime_identity_validation_summary(
+                runtime_identity=runtime_identity,
+                identity_graph=identity_graph,
+                goal_lineage=extract_goal_lineage(session_task, reject_conflicts=False),
+                capability_provenance_checked=bool(
+                    isinstance(session_task.get("runtime_capability_provenance"), Mapping)
+                    and identity_graph is not None
+                ),
+            )
             snapshot = self.capture_task_snapshot(session_task)
             snapshot = self._resolve_snapshot_against_runtime_state(snapshot)
             if include_terminal or is_resumable_task_status(snapshot.status):
