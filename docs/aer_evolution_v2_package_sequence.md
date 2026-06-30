@@ -24,13 +24,20 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 14. Package 91 - Issue Reporter
 15. Package 92 - Stop Condition Contract
 16. Package 93 - Operator Decision Contract
-17. Package 94+ - Long-running Operator Loop / Scheduler / Runtime integration
+17. Package 94 - Operator Decision Flow
+18. Package 95 - Operator Plan Flow
+19. Package 96 - Decision + Plan Composition
+20. Package 97 - Operator State Composition
+21. Package 98 - Operator Handoff Contract
+22. Package 99 - Runtime Intake Contract
+23. Package 100 - Public Surface Export Seal
+24. Package 101+ - Long-running Operator Loop / Scheduler / Runtime integration
 
 ## Package Boundaries
 
-Packages 78 through 93 define v2 foundation surfaces without changing RC1 scheduler, task runner, or operator runtime behavior.
+Packages 78 through 98 define v2 foundation surfaces without changing RC1 scheduler, task runner, or operator runtime behavior.
 
-Scheduler and runtime integration begins only at Package 94 or later.
+Scheduler and runtime integration begins only after the passive Runtime Intake contract is complete.
 
 ## Package 90
 
@@ -231,6 +238,344 @@ Future packages own:
 ## Non-mainline Issues Found
 
 - None for Package 93.
+
+## Package 94
+
+Package 94 adds the Operator Decision Flow for AER v2 as a pure composition layer over completed contracts only. The flow validates an operator decision contract and returns exactly one outcome: continue, approval_required, issue_reported, or stopped.
+
+Package 94 owns:
+
+- decision flow composition over the decision contract
+- allowed outcome mapping for continue, request_approval, report_issue, and stop decisions
+- invalid decision handling as issue_reported
+- summary projection containing only outcome, decision_id, decision_type, and status
+
+Package 94 must not:
+
+- execute runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+
+Future packages own:
+
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+
+## Non-mainline Issues Found
+
+- None for Package 94.
+
+## Package 95
+
+Package 95 adds the Operator Plan Flow for AER v2 as a pure composition layer over the operator plan contract only. The flow validates an operator plan contract and returns exactly one outcome: continue, approval_required, issue_reported, or stopped.
+
+Package 95 owns:
+
+- plan flow composition over the plan contract
+- allowed outcome mapping for continue, request_approval, report_issue, and stop plans
+- invalid plan handling as issue_reported
+- valid-but-not-flow-owned plan handling as issue_reported
+- summary projection containing only outcome, plan_id, plan_type, and status
+
+Package 95 must not:
+
+- execute runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+
+Future packages own:
+
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+
+## Non-mainline Issues Found
+
+- Existing operator plan contract files were not present in the working tree before Package 95 implementation; Package 95 added the minimal contract-only surface needed for the requested composition flow.
+
+## Package 96
+
+Package 96 adds the Decision + Plan Composition flow for AER v2 as a pure composition layer over completed Decision Flow and Plan Flow surfaces. The composition flow evaluates both lower-level flows and returns a fresh combined summary without executing runtime, scheduler, or operator loop behavior.
+
+Package 96 owns:
+
+- composition over Decision Flow and Plan Flow outputs
+- combined outcome mapping for continue, approval_required, issue_reported, and stopped
+- invalid decision or invalid plan handling through lower-level flow issue outcomes
+- issue_reported precedence when either lower-level flow reports an issue
+- summary projection containing only outcome, decision summary, and plan summary
+
+Package 96 must not:
+
+- execute runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, persistent_operator, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+
+Future packages own:
+
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+
+## Non-mainline Issues Found
+
+- Existing Package 94 and Package 95 files were still untracked in the working tree when Package 96 was implemented; Package 96 composed those local surfaces without modifying them.
+
+## Package 97
+
+Package 97 adds the Operator State Composition layer for AER v2 as a pure state wrapper over the completed Decision + Plan Composition summary. The operator state is a fresh dict projection of the composition summary and does not execute, schedule, persist, resume, or interpret runtime behavior.
+
+Package 97 owns:
+
+- operator state contract shape
+- immutable state creation from a composition summary
+- validation of the state wrapper and nested composition summary projection
+- summary projection containing only outcome and composition summary
+
+Package 97 must not:
+
+- execute runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, persistent_operator, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+
+Future packages own:
+
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+
+## Non-mainline Issues Found
+
+- Package 94 through Package 96 implementation files were still untracked in the working tree when Package 97 was implemented; Package 97 composed those local surfaces without modifying them.
+
+## Package 98
+
+Package 98 adds the Operator Handoff Contract for AER v2 as a passive data wrapper over Operator State. The handoff is a fresh dict prepared for future runtime integration, but it does not execute, dispatch, schedule, allocate identities, persist, transition lifecycle, checkpoint, resume, retry, or call any runtime loop.
+
+Package 98 owns:
+
+- operator handoff contract shape
+- immutable handoff creation from an operator state dict
+- invalid operator state handling as an invalid handoff or issue_reported outcome
+- validation of the handoff wrapper and nested operator state summary projection
+- summary projection containing only outcome, operator state summary, and state validity
+
+Package 98 must not:
+
+- execute runtime work
+- dispatch runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- generate session ids
+- allocate runtime identity
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- introduce recovery metadata
+- introduce watchdog metadata
+- reference runtime sessions
+- implement state transitions
+- implement lifecycle behavior
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, persistent_operator, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+
+Future packages own:
+
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+- runtime identity allocation
+
+## Non-mainline Issues Found
+
+- Package 94 through Package 97 implementation files were still untracked in the working tree when Package 98 was implemented; Package 98 composed those local surfaces without modifying them.
+
+## Package 99
+
+Package 99 adds the Runtime Intake Contract for AER v2 as a passive data wrapper over Operator Handoff. The intake is a fresh dict prepared for future runtime consumption, but it does not execute, dispatch, schedule, allocate runtime sessions, persist, transition lifecycle, checkpoint, resume, retry, or call any runtime loop.
+
+Package 99 owns:
+
+- runtime intake contract shape
+- immutable intake creation from an operator handoff dict
+- valid operator handoff issue outcomes carried as valid issue_reported intake
+- invalid operator handoff payload handling as invalid runtime intake
+- validation of the intake wrapper and nested operator handoff summary projection
+- summary projection containing only outcome, operator handoff summary, and intake structural validity
+- separation of intake structural validity from business outcome
+
+Package 99 must not:
+
+- execute runtime work
+- dispatch runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- generate session ids
+- allocate runtime identity
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- introduce recovery metadata
+- introduce watchdog metadata
+- reference runtime sessions
+- implement state transitions
+- implement lifecycle behavior
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, persistent_operator, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+- automatically pass through unknown operator handoff fields
+
+Future packages own:
+
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+- runtime identity allocation
+
+## Non-mainline Issues Found
+
+- Package 94 through Package 98 implementation files were still untracked in the working tree when Package 99 was implemented; Package 99 composed those local surfaces without modifying them.
+
+## Package 100
+
+Package 100 adds the AER v2 Public Surface Export Seal before any Runtime Integration begins. The seal is a focused test layer over the current supported AER v2 contract surface and does not add runtime behavior or require implementation changes.
+
+Package 100 owns:
+
+- focused public surface seal tests for AER v2 modules
+- current supported __all__ verification where modules already declare __all__
+- inventory handling for modules that do not yet declare __all__
+- forbidden export checks for execute, dispatch, retry, checkpoint, resume, lifecycle, transition, session, and runtime identity API names
+- forbidden import checks for scheduler, task_runner, persistent_operator, runtime loop, and operator loop surfaces
+- fixed key set checks for summary, handoff, and runtime intake projections
+- unknown key non-passthrough checks for handoff and runtime intake
+- runtime intake valid/outcome semantic separation checks
+
+Package 100 must not:
+
+- modify AER v2 implementation files
+- add runtime behavior
+- dispatch runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- generate runtime sessions or identities
+- introduce lifecycle or transition behavior
+- create red tests for future public API work
+
+Future packages own:
+
+- adding explicit __all__ declarations to modules that do not currently expose them, if desired
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+- runtime identity allocation
+
+## Non-mainline Issues Found
+
+- Package 100 inventory found that core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; the seal treats this as inventory, not a failing future-work expectation.
+- Package 94 through Package 99 implementation files were still untracked in the working tree when Package 100 was implemented; Package 100 tested those local surfaces without modifying them.
 
 ## Future Foundation Work
 
