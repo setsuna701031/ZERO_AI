@@ -190,25 +190,6 @@ def _zero_runtime_authority_for_step(task, step, *, endpoint="step_executor"):
     }
 
 
-def _zero_attach_step_authority(task, step, *, endpoint="step_executor"):
-    if not isinstance(task, dict):
-        return task, step
-    if not isinstance(step, dict):
-        return task, step
-
-    authority = _zero_runtime_authority_for_step(task, step, endpoint=endpoint)
-
-    task.setdefault("execution_authority", authority)
-    task.setdefault("runtime_execution_authority", authority)
-    task.setdefault("runtime_identity", authority["runtime_identity"])
-
-    step.setdefault("execution_authority", authority)
-    step.setdefault("runtime_execution_authority", authority)
-    step.setdefault("runtime_identity", authority["runtime_identity"])
-
-    return task, step
-
-
 class TaskRunner:
     DEFAULT_POLICY: Dict[str, Dict[str, Any]] = {
         "transient_error": {"retry": True, "replan": False, "wait": False, "fail": False},
@@ -4417,78 +4398,6 @@ def _zero_boundary_extract_execution_authority(*sources):
     return {}
 
 
-def _zero_boundary_document_pipeline_allowed(task, step):
-    """Return True for bounded document-pipeline steps.
-
-    Authority closure must protect privileged execution, but the document
-    pipeline is a controlled workflow made of read_file -> llm -> write_file.
-    The previous guard only recognized write-like steps, which meant the first
-    read_file step never received the bounded document authority and was denied
-    before execution. Keep this allowance narrow: it only applies to document
-    tasks / document semantic planner results, and file steps must stay inside
-    workspace/shared. LLM/respond steps have no filesystem target and are only
-    allowed inside the same document pipeline.
-    """
-    if not isinstance(task, dict) or not isinstance(step, dict):
-        return False
-
-    step_type = _zero_boundary_step_type(step)
-    document_step_types = {
-        "read_file",
-        "workspace_read",
-        "llm",
-        "llm_generate",
-        "respond",
-        "final_answer",
-        "write_file",
-        "append_file",
-        "workspace_write",
-        "workspace_append",
-    }
-    if step_type not in document_step_types:
-        return False
-
-    task_type = _zero_boundary_norm_text(task.get("task_type") or task.get("type")).lower()
-    document_task = task_type == "document"
-
-    planner_result = task.get("planner_result")
-    if isinstance(planner_result, dict):
-        meta = planner_result.get("meta") if isinstance(planner_result.get("meta"), dict) else {}
-        semantic = _zero_boundary_norm_text(meta.get("semantic_type") or planner_result.get("intent")).lower()
-        if semantic in {"summary", "document", "report", "notes", "action_items"}:
-            document_task = True
-
-    document_payload = task.get("document_payload")
-    if isinstance(document_payload, dict):
-        payload_type = _zero_boundary_norm_text(document_payload.get("task_type") or document_payload.get("type")).lower()
-        payload_mode = _zero_boundary_norm_text(document_payload.get("mode")).lower()
-        if payload_type == "document" or payload_mode in {"summary", "document", "report", "notes", "action_items"}:
-            document_task = True
-
-    if not document_task:
-        return False
-
-    file_step_types = {
-        "read_file",
-        "workspace_read",
-        "write_file",
-        "append_file",
-        "workspace_write",
-        "workspace_append",
-    }
-    if step_type in file_step_types:
-        target = _zero_boundary_step_target(step)
-        normalized_target = target.replace("\\", "/").strip("/")
-        return (
-            normalized_target == "workspace"
-            or normalized_target.startswith("workspace/")
-            or normalized_target == "shared"
-            or normalized_target.startswith("shared/")
-        )
-
-    return True
-
-
 def _zero_boundary_document_action_type(step):
     step_type = _zero_boundary_step_type(step)
     if step_type in {"read_file", "workspace_read"}:
@@ -4498,30 +4407,6 @@ def _zero_boundary_document_action_type(step):
     if step_type in {"respond", "final_answer"}:
         return "respond"
     return "mutation"
-
-
-def _zero_boundary_build_document_execution_authority(task, state, step):
-    task_id = _zero_boundary_norm_text(
-        (task or {}).get("task_id")
-        or (task or {}).get("task_name")
-        or (state or {}).get("task_id")
-        or (state or {}).get("task_name")
-        or "document_task"
-    )
-    step_id = _zero_boundary_norm_text((step or {}).get("id") or (step or {}).get("step_id") or _zero_boundary_step_type(step) or "step")
-    action_type = _zero_boundary_document_action_type(step)
-    return {
-        "task_id": task_id,
-        "step_id": step_id,
-        "trace_id": f"trace:{task_id}:{step_id}",
-        "authority_source": "operator_cli",
-        "authority_status": "allowed",
-        "execution_authority_endpoint": "step_executor",
-        "action_type": action_type,
-        "approval_state": "approved",
-        "approval_mode": "controlled_document_pipeline",
-        "policy_result": {"allowed": True, "source": "controlled_document_pipeline", "action_type": action_type},
-    }
 
 
 def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=None, step=None, upstream_context=None):
