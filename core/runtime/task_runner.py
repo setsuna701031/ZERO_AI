@@ -4398,17 +4398,6 @@ def _zero_boundary_extract_execution_authority(*sources):
     return {}
 
 
-def _zero_boundary_document_action_type(step):
-    step_type = _zero_boundary_step_type(step)
-    if step_type in {"read_file", "workspace_read"}:
-        return "read"
-    if step_type in {"llm", "llm_generate"}:
-        return "generate"
-    if step_type in {"respond", "final_answer"}:
-        return "respond"
-    return "mutation"
-
-
 def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=None, step=None, upstream_context=None):
     task = task if isinstance(task, dict) else {}
     state = state if isinstance(state, dict) else {}
