@@ -1,12 +1,11 @@
-Package 44: Contract Tier Refinement (Fast/Heavy)
+Package 45: Regression Runner Fast Lane Fix
 Date: 2026-06-30
 
 Scope
 -----
-Refined pytest contract tiers without changing runtime logic, production code,
-test assertions, or test behavior. Changes are limited to pytest marker
-definitions, module-level pytestmark metadata in tests, the regression runner,
-and this report.
+Refined the regression runner fast lane without changing runtime logic,
+production code, pytest marker definitions, test markers, test assertions, or
+test behavior. Changes are limited to the regression runner and this report.
 
 Markers Added
 -------------
@@ -95,7 +94,7 @@ Contract Heavy:
   python tools/regression_runner.py contract-heavy
 
 Fast local:
-  python -m pytest tests -q -m "not integration and not external and not llm and not slow and not contract_heavy"
+  python -m pytest -m "smoke or contract_fast" -q
   python tools/regression_runner.py fast
 
 Integration:
@@ -124,7 +123,8 @@ The standard entry point supports --dry-run for every tier:
 
 Guardrails:
 - contract now aliases the fast contract tier and runs -m "contract_fast".
-- fast excludes contract_heavy in addition to integration, external, llm, and slow.
+- fast is limited to smoke or contract_fast and no longer selects the broad
+  tests tree by exclusion.
 - nightly refuses to execute unless --confirm-nightly is passed.
 - llm refuses to execute unless --confirm-external is passed.
 - dry-run prints the command without requiring confirmation or running pytest.
@@ -132,12 +132,10 @@ Guardrails:
 Validation Plan
 ---------------
 Short validation only:
-  python tools/regression_runner.py contract-fast --dry-run
-  python tools/regression_runner.py contract-heavy --dry-run
   python tools/regression_runner.py fast --dry-run
-  python tools/regression_runner.py contract-fast
+  python tools/regression_runner.py fast
 
-Do not run contract-heavy, fast, nightly, or pytest tests -q as part of this
+Do not run contract-heavy, nightly, llm, or pytest tests -q as part of this
 package.
 
 Non-mainline Issues

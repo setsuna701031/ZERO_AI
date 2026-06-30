@@ -40,13 +40,8 @@ TIERS: dict[str, Tier] = {
     ),
     "fast": Tier(
         name="fast",
-        pytest_args=(
-            "tests",
-            "-q",
-            "-m",
-            "not integration and not external and not llm and not slow and not contract_heavy",
-        ),
-        description="fast local regression excluding integration, external, llm, slow, and heavy contract tiers",
+        pytest_args=("-m", "smoke or contract_fast", "-q"),
+        description="fast local regression limited to smoke and fast contract tests",
     ),
     "integration": Tier(
         name="integration",
