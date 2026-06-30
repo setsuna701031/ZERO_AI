@@ -35,7 +35,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 25. Package 102 - Runtime Context Contract
 26. Package 103 - Runtime Projection Contract
 27. Package 104 - Runtime Session Contract
-28. Package 105+ - Long-running Operator Loop / Scheduler / Runtime integration
+28. Package 105 - Runtime Activation Contract
+29. Package 106+ - Long-running Operator Loop / Scheduler / Runtime integration
 
 ## Package Boundaries
 
@@ -891,6 +892,91 @@ Future packages own:
 ## Non-mainline Issues Found
 
 - Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 104 does not modify them.
+
+
+
+
+## Package 105
+
+Package 105 adds the Runtime Activation Contract for AER v2 as a passive data contract over Runtime Session. The activation payload describes a minimal activation intent for a future Runtime, but it does not activate, initialize, allocate, bind, dispatch, execute, schedule, checkpoint, resume, retry, or call any runtime loop.
+
+Package 105 owns:
+
+- runtime activation contract shape
+- immutable runtime activation creation from a runtime session dict
+- valid runtime session issue outcomes carried as valid issue_reported runtime activation
+- malformed runtime session payload handling as invalid runtime activation
+- validation of the runtime activation wrapper and runtime session projection derived from session
+- summary projection containing only outcome, runtime activation summary, and activation structural validity
+- separation of runtime activation structural validity from business outcome
+- documented runtime activation field purposes: contract identifies the schema, outcome exposes the session result to a future Runtime, runtime_activation carries minimal Runtime-facing activation intent, valid records activation contract structural validity, and errors records structural validation failures
+
+Package 105 must not:
+
+- activate runtime work
+- initialize runtime work
+- allocate session ids
+- allocate runtime identity
+- create runtime objects
+- construct runtime instances
+- perform dependency injection
+- resolve services
+- bind workspaces
+- bind repositories
+- bind filesystems
+- load configuration
+- load environment state
+- load plugins
+- run runtime initialization callbacks
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- execute runtime work
+- dispatch runtime work
+- perform retries
+- write checkpoints
+- resume execution
+- select execution strategy
+- select schedules
+- select queues
+- select workers
+- select executors
+- describe priority
+- negotiate capabilities
+- advertise supported features
+- import runtime projection helpers
+- import runtime context helpers
+- import runtime bootstrap helpers
+- import runtime intake helpers
+- expose runtime projection fields
+- expose runtime context fields
+- expose runtime bootstrap fields
+- expose runtime intake fields
+- preserve upstream wrapper shape
+- pass through unknown runtime session fields
+- call Scheduler
+- call TaskRunner
+- call persistent operator surfaces
+- call runtime loop, scheduler loop, or operator loop files
+
+Future packages own:
+
+- real runtime activation behavior, if any
+- runtime object creation, if any
+- real runtime session id allocation, if any
+- runtime identity allocation, if any
+- workspace, repository, filesystem, configuration, environment, and plugin binding, if any
+- authority, lease, lock, reservation, and permission models
+- execution strategy, queues, workers, executors, scheduling, priority, retry, checkpoint, and resume behavior
+- capability discovery, feature negotiation, and supported feature surfaces
+- scheduler, runtime loop, and operator loop integration
+
+## Non-mainline Issues Found
+
+- Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 105 does not modify them.
 
 
 
