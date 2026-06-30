@@ -1957,9 +1957,6 @@ class TaskRunner:
             trace_tick=trace_tick,
         )
 
-    def _extract_changed_files_from_step_result(self, step_result: Any) -> List[str]:
-        return extract_changed_files_from_step_result(step_result)
-
     # ============================================================
     # step execution
     # ============================================================
@@ -2887,9 +2884,6 @@ class TaskRunner:
             safe_int=self._safe_int,
         )
 
-    def _extract_trace_from_step_result(self, step_result: Any) -> List[Dict[str, Any]]:
-        return extract_trace_from_step_result(step_result)
-
     def _persist_step_result_to_runtime_state(
         self,
         *,
@@ -3075,18 +3069,6 @@ class TaskRunner:
             stringify_failure_message=self._stringify_failure_message,
             sync_runtime_state_back_to_task=self._sync_runtime_state_back_to_task,
         )
-
-    def _build_repair_chain_id(
-        self,
-        *,
-        task: Dict[str, Any],
-        source_path: str,
-        step_index: int,
-        current_tick: int,
-    ) -> str:
-        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "task").strip()
-        source = str(source_path or "unknown").replace("\\", "/").replace("/", "_").replace(":", "")
-        return f"repair_{task_id}_{source}_step_{int(step_index)}_tick_{int(current_tick)}"
 
     def _infer_repair_source_path(self, *, step: Any, step_result: Any) -> str:
         return infer_repair_source_path(step, step_result)
