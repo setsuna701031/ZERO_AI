@@ -3,6 +3,10 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List
 
+from core.runtime.aer_operator_checkpoint_store import (
+    latest_checkpoint_for_identity,
+    load_checkpoints_for_identity,
+)
 from core.runtime.aer_operator_event_log import load_operator_events
 
 AER_OPERATOR_AUDIT_VIEW_CONTRACT = "aer.operator_audit_view.v2"
@@ -18,6 +22,7 @@ AUDIT_VIEW_REQUIRED_FIELDS = (
 SUMMARY_ALLOWED_FIELDS = (
     "operator_session_id",
     "package_id",
+    "checkpoint_found",
     "checkpoint_count",
     "event_count",
     "first_sequence",
@@ -65,10 +70,12 @@ def build_audit_summary(timeline: List[dict]) -> Dict[str, Any]:
 
     first_event = events[0] if events else {}
     last_event = events[-1] if events else {}
+    first_checkpoint = checkpoints[0] if checkpoints else {}
 
     return {
-        "operator_session_id": str(first_event.get("operator_session_id") or ""),
-        "package_id": str(first_event.get("package_id") or ""),
+        "operator_session_id": str(first_event.get("operator_session_id") or first_checkpoint.get("operator_session_id") or ""),
+        "package_id": str(first_event.get("package_id") or first_checkpoint.get("package_id") or ""),
+        "checkpoint_found": bool(checkpoints),
         "checkpoint_count": len(checkpoints),
         "event_count": len(events),
         "first_sequence": first_event.get("sequence") if events else None,
@@ -83,23 +90,41 @@ def build_audit_view(
     operator_session_id: str | None = None,
     package_id: str | None = None,
 ) -> Dict[str, Any]:
-    timeline = load_operator_timeline(
+    event_timeline = load_operator_timeline(
         workspace_root,
         operator_session_id=operator_session_id,
         package_id=package_id,
     )
+    checkpoint_records = load_checkpoints_for_identity(
+        workspace_root,
+        operator_session_id=operator_session_id,
+        package_id=package_id,
+    )
+    latest_checkpoint = latest_checkpoint_for_identity(
+        workspace_root,
+        operator_session_id=operator_session_id,
+        package_id=package_id,
+    )
+
+    checkpoint = None
+    timeline: List[dict] = []
+    if latest_checkpoint.get("found") is True:
+        checkpoint = copy.deepcopy(dict(latest_checkpoint.get("checkpoint") or {}))
+        timeline.append(
+            {
+                "kind": "checkpoint",
+                "checkpoint": copy.deepcopy(checkpoint),
+            }
+        )
+    timeline.extend(copy.deepcopy(event_timeline))
+
     events = [
         copy.deepcopy(dict(entry.get("event") or {}))
         for entry in timeline
         if isinstance(entry, dict) and entry.get("kind") == "event"
     ]
-    checkpoints = [
-        copy.deepcopy(dict(entry.get("checkpoint") or {}))
-        for entry in timeline
-        if isinstance(entry, dict) and entry.get("kind") == "checkpoint"
-    ]
-    checkpoint = checkpoints[-1] if checkpoints else {}
     summary = build_audit_summary(timeline)
+    summary["checkpoint_count"] = len(checkpoint_records)
 
     return {
         "contract": AER_OPERATOR_AUDIT_VIEW_CONTRACT,
@@ -127,8 +152,9 @@ def validate_audit_view(audit_view: Any) -> Dict[str, Any]:
     if audit_view.get("contract") != AER_OPERATOR_AUDIT_VIEW_CONTRACT:
         errors.append("invalid contract")
 
-    if not isinstance(audit_view.get("checkpoint"), dict):
-        errors.append("checkpoint must be a dict")
+    checkpoint = audit_view.get("checkpoint")
+    if checkpoint is not None and not isinstance(checkpoint, dict):
+        errors.append("checkpoint must be a dict or None")
 
     if not isinstance(audit_view.get("events"), list):
         errors.append("events must be a list")

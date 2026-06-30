@@ -19,32 +19,33 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 9. Package 86 - Operator Event Log
 10. Package 87 - Audit Reader
 11. Package 88 - Checkpoint Store Read Index
-12. Package 89 - Stop Condition
-13. Package 90 - Human Approval Boundary
-14. Package 91 - Issue Reporter
-15. Package 92 - Long-running Operator Loop
-16. Package 93+ - Scheduler / Runtime integration
+12. Package 89 - Audit Snapshot Composition
+13. Package 90 - Stop Condition
+14. Package 91 - Human Approval Boundary
+15. Package 92 - Issue Reporter
+16. Package 93 - Long-running Operator Loop
+17. Package 94+ - Scheduler / Runtime integration
 
 ## Package Boundaries
 
-Packages 78 through 91 define v2 foundation surfaces without changing RC1 scheduler, task runner, or operator runtime behavior.
+Packages 78 through 93 define v2 foundation surfaces without changing RC1 scheduler, task runner, or operator runtime behavior.
 
-Scheduler and runtime integration begins only at Package 92 or later.
+Scheduler and runtime integration begins only at Package 94 or later.
 
-## Package 88
+## Package 89
 
-Package 88 closes the Checkpoint Store foundation read gap found in Package 87 by adding read-only identity-scoped checkpoint query APIs.
+Package 89 upgrades the Audit Reader to compose the latest checkpoint snapshot from Checkpoint Store read-index APIs with the append-order event timeline.
 
 All future v2 modules that need persistence must access persistence through repository/store modules. Resume, Loop, Scheduler, Issue Reporter, Approval, and runtime business modules must not directly open, read, write, or delete checkpoint files.
 
-Package 88 owns:
+Package 89 owns:
 
-- listing checkpoint payloads from the repository-local Checkpoint Store
-- loading valid checkpoint payloads filtered by operator session id and/or package id
-- selecting the latest matching checkpoint by repository deterministic order
-- preserving checkpoint serialization, hashing, and schema behavior
+- composing the latest matching checkpoint snapshot, when present, before the event timeline
+- exposing `checkpoint = None` when no matching checkpoint exists
+- summarizing checkpoint presence, checkpoint count, and append-order event boundaries
+- consuming only published read APIs for checkpoint and event timeline data
 
-Package 88 must not:
+Package 89 must not:
 
 - implement operator loop behavior
 - call scheduler
@@ -53,6 +54,10 @@ Package 88 must not:
 - call replay
 - write checkpoints
 - mutate checkpoints
+- change checkpoint persistence
+- change checkpoint schema
+- parse checkpoint files
+- scan checkpoint directories
 - discover checkpoints from event payloads
 - treat Event Log as a Checkpoint Store index
 - scan Event Ledger
@@ -90,7 +95,7 @@ Package 88 must not:
 
 ## Non-mainline Issues Found
 
-- None for Package 88.
+- None for Package 89.
 
 ## Future Foundation Work
 
@@ -101,4 +106,4 @@ Package 88 must not:
 - Approval decides when to emit approval events.
 - Resume may emit resume events in a future package, but Package 86 does not integrate Resume and Event Log.
 - Operator Loop decides when events are emitted during execution.
-- Future checkpoint snapshot inclusion in Audit Reader must compose Checkpoint Store read APIs, not event-ledger-derived checkpoint discovery.
+- Future Audit Reader extensions must continue composing published repository read APIs instead of deriving persistence state from Event Ledger payloads.
