@@ -7,7 +7,7 @@ from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_runner import TaskRunner
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

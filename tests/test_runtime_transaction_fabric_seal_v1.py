@@ -5,7 +5,7 @@ from core.runtime.runtime_recovery_orchestrator import RuntimeRecoveryOrchestrat
 from core.runtime.runtime_transaction_fabric import RuntimeTransactionFabric
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

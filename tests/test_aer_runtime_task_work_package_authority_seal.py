@@ -13,7 +13,7 @@ from core.tasks.engineering_goal_lifecycle import EngineeringGoalLifecycle
 from core.tasks.scheduler_core.dispatch_finalize import build_finalize_decision
 from core.tasks.scheduler_core.task_scheduler_queue import ScheduledTask, TaskSchedulerQueue
 from core.tasks.task_repository import TaskRepository
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

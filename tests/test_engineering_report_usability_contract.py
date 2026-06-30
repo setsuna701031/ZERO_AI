@@ -15,7 +15,7 @@ from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.tasks.engineering_task_runner import run_engineering_task
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

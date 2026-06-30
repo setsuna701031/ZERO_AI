@@ -7,7 +7,7 @@ from core.engineering.governed_apply_wrapper import (
     build_governed_apply_request,
     validate_governed_apply_request_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

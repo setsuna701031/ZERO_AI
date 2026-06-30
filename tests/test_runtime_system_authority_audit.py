@@ -14,7 +14,7 @@ from core.runtime.runtime_ownership import (
     can_access,
     system_authority_rules,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 ROOT = Path(__file__).resolve().parents[1]

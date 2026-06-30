@@ -17,7 +17,7 @@ from core.memory.work_package_memory import WorkPackageMemoryStore
 from core.planning.work_package_planner_bridge import WorkPackagePlannerBridge
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

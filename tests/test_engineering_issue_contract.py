@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.tasks.engineering_issue_contract import EngineeringIssueReport, validate_issue_reports_allow_success
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -10,7 +10,7 @@ from core.runtime.runtime_system_capability import (
     issue_runtime_system_capability,
     validate_runtime_system_capability,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

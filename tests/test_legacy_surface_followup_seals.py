@@ -12,7 +12,7 @@ import core.tasks.scheduler as scheduler_module
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

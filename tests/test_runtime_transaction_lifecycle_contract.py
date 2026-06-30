@@ -18,7 +18,7 @@ from core.runtime.runtime_transaction_registry import (
     record_verification,
     transaction_to_dict,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

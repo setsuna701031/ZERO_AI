@@ -22,7 +22,7 @@ from core.goals.goal_repository import GoalRepository
 from core.runtime.runtime_session_resume import RuntimeSessionResume, RuntimeSessionResumeStoreError
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

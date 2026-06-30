@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.planning.planner_contract import normalize_planner_payload
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

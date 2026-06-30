@@ -11,7 +11,7 @@ from core.tasks.engineering_program_cycle import EngineeringProgramCycle
 from core.tasks.engineering_program_repository import EngineeringProgramRepository
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -4,7 +4,7 @@ from core.runtime.runtime_native_code_mutation_loop import RuntimeNativeCodeMuta
 from core.runtime.runtime_native_repo_engineering_surface import RuntimeNativeRepoEngineeringSurface
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -19,7 +19,7 @@ from core.runtime.runtime_mutation_gateway import RuntimeMutationGateway
 from core.runtime.runtime_mutation_transaction import RuntimeMutationRequest
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

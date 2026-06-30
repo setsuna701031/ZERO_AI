@@ -19,7 +19,7 @@ from core.runtime.task_state_machine import TaskStateMachine
 from core.session.engineering_session_state_machine import EngineeringSessionStateMachine
 from core.session.engineering_session_transition import EngineeringSessionTransition
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -5,7 +5,7 @@ from core.tasks.runtime_audit_registry import RuntimeAuditRegistry
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

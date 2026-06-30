@@ -6,7 +6,7 @@ from core.runtime.persistent_operator import PersistentOperatorRuntime
 from tests.authority_test_support import sealed_dispatch_task
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

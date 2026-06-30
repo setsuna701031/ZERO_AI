@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 

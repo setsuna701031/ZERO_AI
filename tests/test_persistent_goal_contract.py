@@ -1,7 +1,7 @@
 import pytest
 
 from core.goals import GoalStatus, PersistentGoal, PersistentSubgoal
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

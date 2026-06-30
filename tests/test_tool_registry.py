@@ -5,7 +5,7 @@ from pathlib import Path
 from pprint import pprint
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 

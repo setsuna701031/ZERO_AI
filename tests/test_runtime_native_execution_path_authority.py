@@ -10,7 +10,7 @@ from core.runtime.runtime_native_mainline import RuntimeNativeMainlineRunResult
 from core.runtime.runtime_native_scheduler import RuntimeNativeScheduleItem
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

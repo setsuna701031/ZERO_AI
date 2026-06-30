@@ -10,7 +10,7 @@ import core.runtime.task_runner as task_runner_module
 import core.tasks.scheduler as scheduler_module
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 from core.runtime.runtime_route_registry import RuntimeRouteRegistry
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

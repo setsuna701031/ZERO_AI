@@ -10,7 +10,7 @@ from core.runtime.runtime_authority_context import (
     RUNTIME_AUTHORITY_CONTEXT_SCHEMA,
     execution_authority_token_to_context,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

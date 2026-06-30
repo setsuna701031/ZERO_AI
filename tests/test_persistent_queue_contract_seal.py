@@ -13,7 +13,7 @@ from core.runtime.work_package_queue import RuntimePackageQueue, RuntimePackageQ
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.scheduler_core.task_scheduler_queue import ScheduledTask, TaskSchedulerQueue
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

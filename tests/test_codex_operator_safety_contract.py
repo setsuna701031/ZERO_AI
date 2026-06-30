@@ -21,7 +21,7 @@ from core.runtime.runtime_constitution_freeze import assert_prediction_invariant
 from core.runtime.runtime_transaction_registry import list_transactions
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

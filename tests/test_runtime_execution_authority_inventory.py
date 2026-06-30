@@ -4,7 +4,7 @@ from core.runtime.execution_authority import execution_authority_inventory
 from core.runtime.runtime_execution_authority_policy import CANONICAL_EXECUTION_AUTHORITY_MATRIX
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

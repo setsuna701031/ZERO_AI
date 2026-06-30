@@ -7,7 +7,7 @@ from core.engineering.sandbox_apply_executor import (
     build_sandbox_apply_dry_run,
     validate_sandbox_apply_dry_run_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

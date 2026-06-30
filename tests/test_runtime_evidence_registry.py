@@ -11,7 +11,7 @@ from core.runtime.runtime_evidence_registry import (
 )
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 

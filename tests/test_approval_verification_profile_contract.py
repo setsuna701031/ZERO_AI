@@ -14,7 +14,7 @@ from core.engineering.diff_proposal import build_diff_proposal
 from core.engineering.repo_scan import build_impacted_file_plan
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

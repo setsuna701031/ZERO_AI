@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.tasks.adaptive_replan_contract import build_adaptive_replan_contract
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

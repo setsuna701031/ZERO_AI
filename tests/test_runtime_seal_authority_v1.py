@@ -8,7 +8,7 @@ from core.runtime.runtime_seal import (
     build_runtime_seal_authority_state,
     enforce_runtime_seal_authority,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -7,7 +7,7 @@ from core.tasks.execution_contract_adapter import (
 )
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

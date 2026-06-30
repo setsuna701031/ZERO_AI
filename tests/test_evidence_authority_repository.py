@@ -6,7 +6,7 @@ from core.evidence.evidence_record import EvidenceRecord
 from core.evidence.evidence_repository import EvidenceRepository
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

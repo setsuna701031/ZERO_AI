@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

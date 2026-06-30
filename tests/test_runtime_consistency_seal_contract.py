@@ -11,7 +11,7 @@ from core.runtime.runtime_execution_session import RuntimeExecutionSessionManage
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

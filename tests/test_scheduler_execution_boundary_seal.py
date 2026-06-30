@@ -7,7 +7,7 @@ from typing import Any
 from core.tasks.scheduler import Scheduler
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

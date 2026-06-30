@@ -10,7 +10,7 @@ from core.runtime.runtime_freeze import (
     enforce_runtime_not_frozen,
     evaluate_runtime_freeze,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

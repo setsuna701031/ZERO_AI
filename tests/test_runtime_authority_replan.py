@@ -2,7 +2,7 @@ from core.adaptive.replan_coordinator import ReplanCoordinator
 from core.adaptive.replan_runtime import ReplanRuntime
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

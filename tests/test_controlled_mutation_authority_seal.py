@@ -6,7 +6,7 @@ from pathlib import Path
 from core.runtime.controlled_mutation_bridge import execute_controlled_mutation_probe
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

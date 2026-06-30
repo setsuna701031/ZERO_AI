@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.llm]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.llm]
 
 
 

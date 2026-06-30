@@ -6,7 +6,7 @@ from core.goals.goal_transition import GoalTransitionResult
 from core.evidence import EvidenceRecord, EvidenceValidator
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

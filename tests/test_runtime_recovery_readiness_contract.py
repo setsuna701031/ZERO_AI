@@ -9,7 +9,7 @@ from core.runtime.runtime_recovery_readiness import (
 from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

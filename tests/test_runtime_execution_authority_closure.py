@@ -15,7 +15,7 @@ from core.runtime.runtime_execution_authority_gate import (
     RuntimeExecutionAuthorityDenied,
     RuntimeExecutionAuthorityGate,
 )
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

@@ -24,7 +24,7 @@ from tests.test_aer_multifile_engineering_workflow_contract import MultiFileEngi
 from core.agent.agent_loop import AgentLoop
 from core.tools.tool_registry import ToolRegistry
 from tests.authority_test_support import sealed_dispatch_task
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

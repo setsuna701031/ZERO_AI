@@ -38,7 +38,7 @@ from core.tasks.runtime_repair_transaction import (
     create_runtime_repair_transaction,
     stage_runtime_repair_mutation,
 )
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

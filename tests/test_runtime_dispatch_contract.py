@@ -11,7 +11,7 @@ from core.runtime.runtime_dispatch_contract import (
     RUNTIME_DISPATCH_CONTRACT_SCHEMA,
     runtime_dispatch_request_to_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

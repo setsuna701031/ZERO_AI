@@ -5,7 +5,7 @@ import pytest
 from core.runtime.runtime_state_machine import RuntimeStateMachine
 from core.runtime.runtime_transition_policy import RuntimeTransitionPolicyError
 from core.runtime.task_runtime import TaskRuntime
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

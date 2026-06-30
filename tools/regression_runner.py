@@ -24,12 +24,19 @@ TIERS: dict[str, Tier] = {
     ),
     "contract": Tier(
         name="contract",
-        pytest_args=(
-            "-m",
-            "contract and not slow and not integration and not external and not llm",
-            "-q",
-        ),
-        description="mainline contract tests excluding slow, integration, external, and llm tiers",
+        pytest_args=("-m", "contract_fast", "-q"),
+        description="fast mainline contract tests",
+    ),
+    "contract-fast": Tier(
+        name="contract-fast",
+        pytest_args=("-m", "contract_fast", "-q"),
+        description="fast helper/runtime/authority/parser/payload/state/registry contract tests",
+    ),
+    "contract-heavy": Tier(
+        name="contract-heavy",
+        pytest_args=("-m", "contract_heavy", "-q"),
+        description="heavy contract tests involving inventory, scans, traversal, subprocess, CLI, or repository inspection",
+        warning="contract-heavy can include repository traversal, subprocess, and inventory tests",
     ),
     "fast": Tier(
         name="fast",
@@ -37,9 +44,9 @@ TIERS: dict[str, Tier] = {
             "tests",
             "-q",
             "-m",
-            "not integration and not external and not llm and not slow",
+            "not integration and not external and not llm and not slow and not contract_heavy",
         ),
-        description="fast local regression excluding integration, external, llm, and slow tiers",
+        description="fast local regression excluding integration, external, llm, slow, and heavy contract tiers",
     ),
     "integration": Tier(
         name="integration",

@@ -7,7 +7,7 @@ from core.engineering.verification_evidence import (
     build_verification_evidence_bundle,
     validate_verification_evidence_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 

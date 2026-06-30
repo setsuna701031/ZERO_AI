@@ -12,7 +12,7 @@ from core.tasks.execution_contract_trace import (
 )
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

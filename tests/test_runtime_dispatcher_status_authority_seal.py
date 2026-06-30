@@ -9,7 +9,7 @@ from core.runtime.runtime_dispatcher import RuntimeDispatcher
 
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 ROOT = Path(__file__).resolve().parents[1]
 

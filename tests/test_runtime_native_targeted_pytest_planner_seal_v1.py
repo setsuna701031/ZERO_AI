@@ -5,7 +5,7 @@ from core.runtime.runtime_native_git_patch_pipeline import RuntimeNativeGitPatch
 from core.runtime.runtime_native_targeted_pytest_planner import RuntimeNativeTargetedPytestPlanner
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -12,7 +12,7 @@ from core.runtime.runtime_prediction_engine import predict_mutation_impact
 from core.runtime.runtime_simulation_engine import simulate_runtime_step
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

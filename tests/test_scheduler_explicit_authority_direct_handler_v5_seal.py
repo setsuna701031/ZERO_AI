@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

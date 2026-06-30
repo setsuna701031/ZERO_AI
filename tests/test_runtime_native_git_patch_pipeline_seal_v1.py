@@ -6,7 +6,7 @@ from core.runtime.runtime_native_git_patch_pipeline import RuntimeNativeGitPatch
 from core.runtime.runtime_native_repo_engineering_surface import RuntimeNativeRepoEngineeringSurface
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

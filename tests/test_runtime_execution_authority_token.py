@@ -11,7 +11,7 @@ from core.runtime.runtime_execution_authority_token import (
     RUNTIME_EXECUTION_AUTHORITY_TOKEN_SCHEMA,
     capability_reservation_to_execution_authority_token,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

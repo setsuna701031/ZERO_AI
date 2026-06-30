@@ -8,7 +8,7 @@ from core.runtime.snapshot_loader.runtime_seal import (
     build_runtime_seal_summary,
     verify_runtime_seal,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

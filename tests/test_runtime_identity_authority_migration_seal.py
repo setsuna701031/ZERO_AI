@@ -7,7 +7,7 @@ from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.goals.goal_lineage_contract import extract_goal_lineage
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

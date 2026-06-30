@@ -6,7 +6,7 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_result_contract import validate_engineering_result_contract
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

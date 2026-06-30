@@ -15,7 +15,7 @@ from core.tasks.scheduler_runtime_contract import (
     validate_scheduler_lifecycle_transition,
     validate_scheduler_runtime_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

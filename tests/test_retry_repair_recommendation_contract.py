@@ -7,7 +7,7 @@ from core.engineering.retry_repair_recommendation import (
     build_retry_repair_recommendation,
     validate_retry_repair_recommendation_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

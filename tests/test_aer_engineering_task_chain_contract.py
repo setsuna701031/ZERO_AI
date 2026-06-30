@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from core.agent.agent_loop import AgentLoop
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

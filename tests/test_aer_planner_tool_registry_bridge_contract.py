@@ -10,7 +10,7 @@ from core.runtime.step_executor import StepExecutor
 from core.tools.tool_registry import ToolRegistry
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 

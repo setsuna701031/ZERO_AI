@@ -12,7 +12,7 @@ from core.engineering.repo_scan import (
 
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 def test_repo_scan_is_read_only_and_skips_ignored_directories(tmp_path: Path) -> None:
     _write(tmp_path / "core" / "runtime" / "alpha_engine.py", "print('alpha')\n")

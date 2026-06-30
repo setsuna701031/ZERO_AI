@@ -9,7 +9,7 @@ from core.runtime.runtime_lifecycle_coordinator import (
 )
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

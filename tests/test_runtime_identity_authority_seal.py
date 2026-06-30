@@ -11,7 +11,7 @@ from core.goals.goal_lineage_contract import (
     runtime_identity_matches,
 )
 from core.runtime.runtime_session_resume import RuntimeSessionResume
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

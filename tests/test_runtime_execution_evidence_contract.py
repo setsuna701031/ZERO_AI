@@ -8,7 +8,7 @@ from core.runtime.runtime_execution_result import build_runtime_execution_result
 from core.runtime.runtime_execution_session import RuntimeExecutionSessionManager
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

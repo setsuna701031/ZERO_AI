@@ -20,7 +20,7 @@ from core.runtime.runtime_recovery_freeze import (
 from core.runtime.runtime_transaction_registry import create_transaction, get_transaction, record_apply, record_commit, record_verification
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

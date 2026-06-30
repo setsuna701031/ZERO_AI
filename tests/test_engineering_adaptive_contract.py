@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.tasks.engineering_adaptive_planner import ALLOWED_ADAPTIVE_DECISIONS, normalize_adaptive_decision
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

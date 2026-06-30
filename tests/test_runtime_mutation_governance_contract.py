@@ -26,7 +26,7 @@ from core.runtime.runtime_mutation_transaction import (
 from core.runtime.runtime_state_snapshot import RuntimeStateSnapshotter, hash_text
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

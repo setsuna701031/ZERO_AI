@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.system import llm_client
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.external, pytest.mark.llm]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.external, pytest.mark.llm]
 
 
 

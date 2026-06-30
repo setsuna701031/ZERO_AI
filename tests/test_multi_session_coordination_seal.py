@@ -19,7 +19,7 @@ from core.runtime.runtime_session_resume import RuntimeSessionResume
 from core.runtime.work_package_queue import RuntimePackageQueue
 from core.runtime.work_package_queue import RuntimePackageQueueError
 from core.tasks.scheduler_core.task_scheduler_queue import ScheduledTask, TaskSchedulerQueue
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

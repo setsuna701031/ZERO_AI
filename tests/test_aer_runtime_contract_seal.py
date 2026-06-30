@@ -29,7 +29,7 @@ from core.runtime.runtime_transition_evidence import (
 from core.runtime.runtime_transition_record import RuntimeTransitionRecord
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

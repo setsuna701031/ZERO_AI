@@ -18,7 +18,7 @@ from core.runtime.runtime_evidence_freeze import assert_evidence_does_not_grant_
 from core.runtime.runtime_transaction_registry import get_transaction
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

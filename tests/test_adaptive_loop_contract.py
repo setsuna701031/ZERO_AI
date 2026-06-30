@@ -2,7 +2,7 @@ from core.adaptive.adaptive_loop_contract import build_adaptive_loop_contract
 from core.adaptive.adaptive_loop_state import classify_adaptive_loop_state
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -15,7 +15,7 @@ from core.runtime.runtime_recovery_state import RECOVERY_CONTINUATION_READY, REC
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_session_resume import RuntimeSessionResumeRecord
 from core.runtime.runtime_transaction_fabric import RuntimeTransactionFabric
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

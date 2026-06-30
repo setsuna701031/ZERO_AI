@@ -17,7 +17,7 @@ from core.runtime.runtime_memory_engine import (
 from core.runtime.runtime_recovery_freeze import create_recovery_attempt, record_recovery_terminal_failure
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

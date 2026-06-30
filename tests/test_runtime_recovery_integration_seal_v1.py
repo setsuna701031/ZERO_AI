@@ -7,7 +7,7 @@ from core.runtime.runtime_recovery_integration import (
 )
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.integration]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
 
 
 

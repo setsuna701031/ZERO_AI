@@ -1,7 +1,7 @@
 import pytest
 
 from core.adaptive import AdaptiveExecutionContract
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

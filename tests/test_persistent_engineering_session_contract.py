@@ -10,7 +10,7 @@ from core.runtime.persistent_engineering_session import (
 )
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

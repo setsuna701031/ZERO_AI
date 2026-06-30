@@ -1,46 +1,83 @@
-Package 42: Pytest Test Tiering
-Date: 2026-06-29
+Package 44: Contract Tier Refinement (Fast/Heavy)
+Date: 2026-06-30
 
 Scope
 -----
-Established pytest marker tiers for ZERO tests without changing runtime logic,
+Refined pytest contract tiers without changing runtime logic, production code,
 test assertions, or test behavior. Changes are limited to pytest marker
-definitions, module-level pytestmark metadata in tests, and this report.
+definitions, module-level pytestmark metadata in tests, the regression runner,
+and this report.
 
 Markers Added
 -------------
-- smoke: daily fastest release smoke tests
-- contract: mainline contract, seal, authority, registry, and API-boundary tests
-- integration: multi-module, CLI/subprocess, workspace scan, git repo, or runtime session tests
-- external: localhost, network, service, HTTP/API, or Ollama-facing tests
-- llm: LLM/Ollama/model/generate/chat semantic tests
-- slow: long-running, full workflow, portfolio cycle, or engineering end-to-end tests
+- contract_fast: fast helper/runtime/authority/parser/payload/state/registry contract tests
+- contract_heavy: heavyweight contract tests involving inventory, scans,
+  traversal, subprocess, CLI, or broad repository inspection
+
+Markers Preserved
+-----------------
+- smoke
+- contract
+- integration
+- external
+- llm
+- slow
 
 Marker Classification Summary
 -----------------------------
-Module-level pytestmark metadata was added to 445 pytest-collected files.
+Module-level pytestmark metadata was refined across the existing contract test
+set.
 
 Counts by marker:
 - smoke: 1
 - contract: 346
+- contract_fast: 38
+- contract_heavy: 308
 - integration: 116
 - external: 5
 - llm: 16
 - slow: 11
 
+Contract Fast Scope
+-------------------
+contract_fast covers helper contracts, runtime_contracts, authority helpers,
+scheduler helpers, parser helpers, planner helpers, canonicalization, payload
+contracts, serialization, state transitions, registry helpers, and pure
+monkeypatch contracts.
+
+Contract Heavy Scope
+--------------------
+contract_heavy covers contract tests with workspace or repository scanning,
+inventory assertions, subprocess or CLI startup, broad filesystem traversal,
+large temporary workspaces, repository inspection, engineering inventory,
+runtime inventory, bridge inventory, compatibility inventory, freeze inventory,
+migration inventory, or audit inventory.
+
+Top Heavy Categories
+--------------------
+- Execution/Runtime Surface: 242
+- Workspace Scan: 119
+- Inventory: 65
+- Audit: 62
+- Engineering: 53
+- Migration/Compatibility/Freeze: 39
+- Repository Scan: 25
+- CLI: 18
+- Subprocess: 11
+
 Key Classifications
 -------------------
-- tests/test_aer_mainline_closure_seal.py: smoke + contract
-- tests/runtime_contracts/*.py: contract
-- tests/test_taskrunner_registry_*.py: contract
-- tests/test_agent_loop_engineering_goal_route.py: contract
-- tests/test_agent_loop_engineering_task_runner.py: integration
-- tests/test_engineering_portfolio_goal_flow.py: integration + slow
-- tests/test_llm_general_generation_contract.py: contract + external + llm
-- tests/test_chat.py: external + llm
-- tests/test_runtime_replay_execution_bridge.py: integration + external + slow
-- tests/validation/test_long_running_engineering_goal_v1.py: integration + slow
-- tests/validation/test_long_running_engineering_goal_v2.py: integration + slow
+- tests/runtime_contracts/*.py: contract + contract_fast
+- tests/test_scheduler_*_helpers.py-style contracts: contract + contract_fast
+- tests/test_scheduler_runtime_payload_contract.py: contract + contract_fast
+- tests/test_taskrunner_registry_* helper tests: contract + contract_fast
+- tests/test_taskrunner_registry_legacy_cleanup_phase*.py: contract + contract_heavy
+- tests/test_*_seal.py and broad execution/runtime surface contracts: contract + contract_heavy
+- tests/test_*_inventory.py: contract + contract_heavy
+- tests/test_repo_scan_impacted_plan_contract.py: contract + contract_heavy
+- tests/test_runtime_engineering_cli_seal_v1.py: contract + contract_heavy
+- tests/test_*_integration*_contract.py: contract + contract_heavy
+- tests/test_llm_general_generation_contract.py: contract + contract_heavy + external + llm
 
 Selection Guidance
 ------------------
@@ -48,12 +85,17 @@ Smoke:
   python -m pytest -m smoke -q
   python tools/regression_runner.py smoke
 
-Contract:
-  python -m pytest -m "contract and not slow and not integration and not external and not llm" -q
+Contract Fast:
+  python -m pytest -m contract_fast -q
+  python tools/regression_runner.py contract-fast
   python tools/regression_runner.py contract
 
+Contract Heavy:
+  python -m pytest -m contract_heavy -q
+  python tools/regression_runner.py contract-heavy
+
 Fast local:
-  python -m pytest tests -q -m "not integration and not external and not llm and not slow"
+  python -m pytest tests -q -m "not integration and not external and not llm and not slow and not contract_heavy"
   python tools/regression_runner.py fast
 
 Integration:
@@ -73,33 +115,37 @@ Runner Dry Runs
 The standard entry point supports --dry-run for every tier:
   python tools/regression_runner.py smoke --dry-run
   python tools/regression_runner.py contract --dry-run
+  python tools/regression_runner.py contract-fast --dry-run
+  python tools/regression_runner.py contract-heavy --dry-run
   python tools/regression_runner.py fast --dry-run
   python tools/regression_runner.py integration --dry-run
   python tools/regression_runner.py llm --dry-run
   python tools/regression_runner.py nightly --dry-run
 
 Guardrails:
+- contract now aliases the fast contract tier and runs -m "contract_fast".
+- fast excludes contract_heavy in addition to integration, external, llm, and slow.
 - nightly refuses to execute unless --confirm-nightly is passed.
 - llm refuses to execute unless --confirm-external is passed.
 - dry-run prints the command without requiring confirmation or running pytest.
 
-Validation Notes
-----------------
-Do not use the Nightly command for daily smoke/contract work. It intentionally
-includes subprocess-heavy, workspace-scan-heavy, slow, external, and LLM-tagged
-tests.
+Validation Plan
+---------------
+Short validation only:
+  python tools/regression_runner.py contract-fast --dry-run
+  python tools/regression_runner.py contract-heavy --dry-run
+  python tools/regression_runner.py fast --dry-run
+  python tools/regression_runner.py contract-fast
 
-The targeted verification command that includes
-tests/test_engineering_portfolio_goal_flow.py took nearly two minutes on this
-machine, supporting its slow + integration classification.
+Do not run contract-heavy, fast, nightly, or pytest tests -q as part of this
+package.
 
 Non-mainline Issues
 -------------------
-- Several tests still contain heavyweight collection or import-time surfaces.
-  Markers separate them from daily lanes but do not optimize their internals.
-- tests/test_chat.py remains ignored in pytest.ini and contains mojibake payload
-  text plus import/module-time HTTP behavior. It is now tagged external + llm,
-  but a future cleanup should convert it to an isolated skipped/marked test.
-- Some tests have names or payload literals containing generic words such as
-  model/generate/chat. The llm classification intentionally errs conservative
-  per Package 42 rules.
+- Several heavy contract files still contain repository traversal, inventory,
+  subprocess, CLI, or broad scan behavior. Package 44 isolates these tests from
+  fast lanes but intentionally does not optimize or rewrite them.
+- Some contract files also carry integration, external, or llm markers. They
+  remain excluded from fast contract by contract_heavy classification.
+- Git reports LF-to-CRLF working-copy warnings for many touched test files on
+  this Windows checkout; content diffs are limited to pytestmark changes.

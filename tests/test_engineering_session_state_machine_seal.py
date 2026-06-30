@@ -15,7 +15,7 @@ from core.session.engineering_session_transition import ENGINEERING_SESSION_TRAN
 from core.session.engineering_session_validator import EngineeringSessionValidator
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

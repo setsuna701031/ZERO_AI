@@ -9,7 +9,7 @@ from core.engineering.verification_routing import (
     classify_verification_command,
     validate_verification_route_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 

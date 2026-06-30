@@ -6,7 +6,7 @@ from core.evidence import EvidenceRecord, EvidenceValidator
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

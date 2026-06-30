@@ -4,7 +4,7 @@ from core.runtime.runtime_burnin_runner import run_repair_loop_burnin
 from core.runtime.autonomous_repair_loop import normalize_repair_loop_result, run_autonomous_repair_loop
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

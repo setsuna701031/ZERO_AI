@@ -15,7 +15,7 @@ from core.agent.agent_loop import AgentLoop
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

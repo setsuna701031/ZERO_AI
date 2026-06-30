@@ -10,7 +10,7 @@ from core.evidence.evidence_repository import EvidenceRepository
 from core.evidence.evidence_validator import EvidenceValidator
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

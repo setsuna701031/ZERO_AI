@@ -16,7 +16,7 @@ from core.program.engineering_program_state_machine import EngineeringProgramSta
 from core.session.engineering_session_state_machine import EngineeringSessionStateMachine
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_lifecycle_state_machine import EngineeringLifecycleStateMachine
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

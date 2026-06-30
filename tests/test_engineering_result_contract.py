@@ -8,7 +8,7 @@ from core.tasks.engineering_result_contract import (
     normalize_engineering_result_contract,
     validate_engineering_result_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

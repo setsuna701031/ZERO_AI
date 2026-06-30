@@ -1,7 +1,7 @@
 from core.tasks.work_package_execution_guard import validate_execute_target
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

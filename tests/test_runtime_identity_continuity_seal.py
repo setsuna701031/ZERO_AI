@@ -8,7 +8,7 @@ from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_runtime import ReplanRuntime
 
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 LINEAGE = {
     "root_goal_id": "root-goal",

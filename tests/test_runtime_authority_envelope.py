@@ -11,7 +11,7 @@ from core.runtime.runtime_authority_envelope import (
     RUNTIME_AUTHORITY_ENVELOPE_SCHEMA,
     execution_envelope_to_authority_envelope,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

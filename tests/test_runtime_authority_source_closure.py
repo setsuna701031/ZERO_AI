@@ -14,7 +14,7 @@ from core.runtime.runtime_capability_tokens import RuntimeCapabilityTokenManager
 from core.runtime.runtime_execution_authority_policy import RuntimeExecutionAuthorityPolicy
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

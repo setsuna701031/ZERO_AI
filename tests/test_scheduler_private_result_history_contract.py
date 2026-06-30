@@ -7,7 +7,7 @@ from core.tasks.scheduler import Scheduler
 from core.tasks.task_repository import TaskRepository
 import pytest
 
-pytestmark = [pytest.mark.contract, pytest.mark.llm]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.llm]
 
 
 

@@ -8,7 +8,7 @@ from core.runtime.runtime_self_protection import (
     RuntimeUnlockAuthority,
     RuntimeUnlockRejected,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

@@ -7,7 +7,7 @@ from core.engineering.governed_repair_transaction_proposal import (
     build_governed_repair_transaction_proposal,
     validate_governed_repair_transaction_proposal_contract,
 )
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 
 

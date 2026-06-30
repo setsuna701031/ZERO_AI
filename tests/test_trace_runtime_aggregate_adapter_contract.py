@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict
 import pytest
 
-pytestmark = [pytest.mark.contract]
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
 
 
 
