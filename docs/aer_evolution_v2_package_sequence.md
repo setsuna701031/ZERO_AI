@@ -675,6 +675,71 @@ Future packages own:
 
 - Package 94 through Package 100 implementation and test files were still untracked in the working tree when Package 101 was implemented; Package 101 composed those local surfaces without modifying unrelated implementation files.
 
+## Package 102
+
+Package 102 adds the Runtime Context Contract for AER v2 as a passive data contract produced from Runtime Bootstrap. The context payload is a future Runtime-readable dict, but it does not create a Runtime, allocate a session, bind a workspace, resolve configuration, negotiate capabilities, choose an execution strategy, dispatch work, or interact with scheduler/runtime/operator loops.
+
+Package 102 owns:
+
+- runtime context contract shape
+- immutable context creation from a runtime bootstrap dict
+- valid runtime bootstrap issue outcomes carried as valid issue_reported context
+- malformed runtime bootstrap payload handling as invalid runtime context
+- validation of the context wrapper and operator handoff projection derived from bootstrap
+- summary projection containing only outcome, operator handoff projection, and context structural validity
+- separation of context structural validity from business outcome
+- documented context field purposes: contract identifies the schema, outcome exposes the upstream result to a future Runtime, operator_handoff carries minimal upstream operator intent, valid records context structural validity, and errors records structural validation failures
+
+Package 102 must not:
+
+- create runtime objects
+- allocate runtime sessions
+- allocate runtime identity
+- bind workspaces
+- bind repositories
+- bind filesystems
+- load configuration
+- load environment state
+- load plugins
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- execute runtime work
+- dispatch runtime work
+- perform retries
+- write checkpoints
+- resume execution
+- select execution strategy
+- select schedules
+- select queues
+- select workers
+- select executors
+- describe priority
+- negotiate capabilities
+- advertise supported features
+- pass through unknown runtime bootstrap fields
+- call Scheduler
+- call TaskRunner
+- call persistent operator surfaces
+- call runtime loop, scheduler loop, or operator loop files
+
+Future packages own:
+
+- runtime object creation, if any
+- runtime session and identity allocation, if any
+- workspace, repository, filesystem, configuration, environment, and plugin binding, if any
+- authority, lease, lock, reservation, and permission models
+- execution strategy, queues, workers, executors, scheduling, priority, retry, checkpoint, and resume behavior
+- capability discovery, feature negotiation, and supported feature surfaces
+- scheduler, runtime loop, and operator loop integration
+
+## Non-mainline Issues Found
+
+- Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 102 did not modify them.
+
 ## Future Foundation Work
 
 - Shared cross-module identity validation is deferred until Lifecycle, State Machine, Context, and Checkpoint have stabilized.
