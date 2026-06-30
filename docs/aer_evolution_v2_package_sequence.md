@@ -29,16 +29,32 @@ Scheduler and runtime integration begins only at Package 89 or later.
 
 ## Current Package
 
-Package 83 adds the checkpoint repository/store boundary for v2 checkpoint persistence.
+Package 84 adds the Resume Engine as the first v2 composition layer.
 
 All future v2 modules that need persistence must access persistence through repository/store modules. Resume, Loop, Scheduler, Issue Reporter, Approval, and runtime business modules must not directly open, read, write, or delete checkpoint files.
 
-Package 83 must not:
+Package 84 composes:
 
-- implement resume
+- Checkpoint Repository
+- Checkpoint Model
+- Execution Context
+- State Machine
+
+Package 84 must not:
+
 - implement operator loop behavior
 - call scheduler
 - call task_runner
+- cache checkpoint data
+- cache execution context
+- cache lifecycle state
+- cache transition history
+- own persistence
+- own transition logic
+- duplicate lifecycle definitions
+- duplicate transition rules
+- implement approval
+- implement issue reporter
 - introduce SQLite, Redis, memory caches, or multi-backend abstractions
 - change broad runtime behavior
 - change RC1 behavior
@@ -51,3 +67,4 @@ None in this package sequence cleanup.
 
 - Shared cross-module identity validation is deferred until Lifecycle, State Machine, Context, and Checkpoint have stabilized.
 - Future modules must compose the foundation modules instead of reimplementing lifecycle phases, transition rules, context data, or checkpoint serialization.
+- Future long-running state retention belongs to the Operator Loop, not Resume.
