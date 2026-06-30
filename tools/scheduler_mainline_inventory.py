@@ -355,6 +355,137 @@ def _runtime_binding_families(
     return families
 
 
+def _runtime_entrypoint_families(
+    unsafe_runtime_entrypoints: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    families: dict[str, list[dict[str, object]]] = {
+        family: [] for family in RUNTIME_BINDING_FAMILY_ORDER
+    }
+    for item in unsafe_runtime_entrypoints:
+        family = _binding_functional_family(item)
+        families.setdefault(family, []).append(item)
+    return families
+
+
+def _active_refs_summary(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return "none"
+    active_ref_counts = [int(row["active_refs"]) for row in rows]
+    zero_count = sum(count == 0 for count in active_ref_counts)
+    return (
+        f"min={min(active_ref_counts)}, max={max(active_ref_counts)}, "
+        f"zero_ref_bindings={zero_count}/{len(rows)}"
+    )
+
+
+def _consolidation_status_and_reason(
+    family: str,
+    binding_rows: list[dict[str, object]],
+    runtime_entrypoint_rows: list[dict[str, object]],
+) -> tuple[str, str]:
+    binding_count = len(binding_rows)
+    runtime_entrypoint_count = len(runtime_entrypoint_rows)
+    zero_ref_bindings = sum(int(row["active_refs"]) == 0 for row in binding_rows)
+
+    if family == "build/constants":
+        return (
+            "do_not_touch",
+            "build and allowlist constants are monkey-patched compatibility markers, not wrapper-collapse targets.",
+        )
+    if family in {"planning", "review", "path", "unknown"}:
+        if zero_ref_bindings or runtime_entrypoint_count:
+            return (
+                "candidate_for_family_audit",
+                "family has zero-active-ref binding rows or dynamic runtime entrypoints; audit ownership before any consolidation.",
+            )
+        return (
+            "keep_runtime_surface",
+            "no zero-active-ref binding signal is present; keep the existing runtime surface.",
+        )
+    if family in {
+        "run_one_step",
+        "tick",
+        "dispatch",
+        "queue",
+        "repair",
+        "repo_state",
+    }:
+        if binding_count > 1:
+            return (
+                "candidate_for_wrapper_collapse",
+                "multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.",
+            )
+        return (
+            "keep_runtime_surface",
+            "protected runtime family with a single binding row; do not classify as safe removal.",
+        )
+    if family == "create_task":
+        return (
+            "keep_runtime_surface",
+            "protected task creation surface; do not classify as safe removal.",
+        )
+    return (
+        "do_not_touch",
+        "unrecognized consolidation rule; preserve current binding behavior.",
+    )
+
+
+def _runtime_binding_consolidation_matrix(
+    binding_families: dict[str, list[dict[str, object]]],
+    entrypoint_families: dict[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    matrix: list[dict[str, object]] = []
+    for family in RUNTIME_BINDING_FAMILY_ORDER:
+        binding_rows = sorted(
+            binding_families.get(family, []),
+            key=lambda row: int(row["line"]),
+        )
+        runtime_entrypoint_rows = sorted(
+            entrypoint_families.get(family, []),
+            key=lambda row: (str(row["kind"]), int(row["line"])),
+        )
+        status, reason = _consolidation_status_and_reason(
+            family,
+            binding_rows,
+            runtime_entrypoint_rows,
+        )
+        matrix.append(
+            {
+                "family": family,
+                "binding_count": len(binding_rows),
+                "runtime_entrypoint_count": len(runtime_entrypoint_rows),
+                "active_refs_summary": _active_refs_summary(binding_rows),
+                "consolidation_status": status,
+                "reason": reason,
+            }
+        )
+    return matrix
+
+
+def _append_runtime_binding_consolidation_matrix(
+    report_lines: list[str],
+    matrix: list[dict[str, object]],
+) -> None:
+    report_lines.append("Scheduler Runtime Binding Consolidation Matrix")
+    report_lines.append("------------------------------------------------")
+    report_lines.append(
+        "Consolidation statuses are planning labels only; no row is a safe-removal classification."
+    )
+    report_lines.append("")
+    for row in matrix:
+        report_lines.append(f"{row['family']}:")
+        report_lines.append(f"  binding_count: {row['binding_count']}")
+        report_lines.append(
+            f"  runtime_entrypoint_count: {row['runtime_entrypoint_count']}"
+        )
+        report_lines.append(f"  active_refs_summary: {row['active_refs_summary']}")
+        report_lines.append(
+            f"  consolidation_status: {row['consolidation_status']}"
+        )
+        report_lines.append(f"  reason: {row['reason']}")
+        report_lines.append("")
+
+
 def _append_runtime_binding_families(
     report_lines: list[str],
     families: dict[str, list[dict[str, object]]],
@@ -789,6 +920,11 @@ def _write_report() -> dict[str, object]:
     unsafe_runtime_bindings = _unsafe_runtime_bindings(unsafe_bindings)
     unsafe_monkey_patches = _unsafe_monkey_patches(unsafe_bindings)
     runtime_binding_families = _runtime_binding_families(unsafe_bindings)
+    runtime_entrypoint_families = _runtime_entrypoint_families(unsafe_runtime_entrypoints)
+    runtime_binding_consolidation_matrix = _runtime_binding_consolidation_matrix(
+        runtime_binding_families,
+        runtime_entrypoint_families,
+    )
 
     grouped_candidates: dict[str, list[dict[str, object]]] = {
         "private_method": [],
@@ -852,6 +988,10 @@ def _write_report() -> dict[str, object]:
     report_lines.append("")
 
     _append_runtime_binding_families(report_lines, runtime_binding_families)
+    _append_runtime_binding_consolidation_matrix(
+        report_lines,
+        runtime_binding_consolidation_matrix,
+    )
 
     report_lines.append("Unsafe runtime entrypoints")
     report_lines.append("--------------------------")
@@ -1017,6 +1157,8 @@ def _write_report() -> dict[str, object]:
         "unsafe_runtime_bindings": unsafe_runtime_bindings,
         "unsafe_monkey_patches": unsafe_monkey_patches,
         "runtime_binding_families": runtime_binding_families,
+        "runtime_entrypoint_families": runtime_entrypoint_families,
+        "runtime_binding_consolidation_matrix": runtime_binding_consolidation_matrix,
         "report": REPORT,
         "counts": {
             "total_lines": len(lines_in_file),
@@ -1071,6 +1213,14 @@ def main() -> int:
         print(
             f"- {family}: count={len(rows)}, "
             f"any_active_refs_0={any_active_refs_zero}, safe_to_remove=False"
+        )
+    print("runtime_binding_consolidation_matrix:")
+    for row in result["runtime_binding_consolidation_matrix"]:
+        print(
+            f"- {row['family']}: bindings={row['binding_count']}, "
+            f"runtime_entrypoints={row['runtime_entrypoint_count']}, "
+            f"active_refs={row['active_refs_summary']}, "
+            f"status={row['consolidation_status']}"
         )
     return 0
 

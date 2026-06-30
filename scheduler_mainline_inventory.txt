@@ -304,6 +304,94 @@ unknown:
     - Scheduler._execute_simple_step (line 6908; active_refs=2; binding_class=monkey_patch)
     - Scheduler._execute_simple_step (line 6942; active_refs=2; binding_class=monkey_patch)
 
+Scheduler Runtime Binding Consolidation Matrix
+------------------------------------------------
+Consolidation statuses are planning labels only; no row is a safe-removal classification.
+
+path:
+  binding_count: 4
+  runtime_entrypoint_count: 3
+  active_refs_summary: min=0, max=0, zero_ref_bindings=4/4
+  consolidation_status: candidate_for_family_audit
+  reason: family has zero-active-ref binding rows or dynamic runtime entrypoints; audit ownership before any consolidation.
+
+dispatch:
+  binding_count: 3
+  runtime_entrypoint_count: 8
+  active_refs_summary: min=0, max=0, zero_ref_bindings=3/3
+  consolidation_status: candidate_for_wrapper_collapse
+  reason: multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.
+
+repo_state:
+  binding_count: 4
+  runtime_entrypoint_count: 10
+  active_refs_summary: min=0, max=0, zero_ref_bindings=4/4
+  consolidation_status: candidate_for_wrapper_collapse
+  reason: multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.
+
+planning:
+  binding_count: 3
+  runtime_entrypoint_count: 5
+  active_refs_summary: min=0, max=1, zero_ref_bindings=2/3
+  consolidation_status: candidate_for_family_audit
+  reason: family has zero-active-ref binding rows or dynamic runtime entrypoints; audit ownership before any consolidation.
+
+repair:
+  binding_count: 3
+  runtime_entrypoint_count: 17
+  active_refs_summary: min=1, max=2, zero_ref_bindings=0/3
+  consolidation_status: candidate_for_wrapper_collapse
+  reason: multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.
+
+queue:
+  binding_count: 4
+  runtime_entrypoint_count: 14
+  active_refs_summary: min=1, max=1, zero_ref_bindings=0/4
+  consolidation_status: candidate_for_wrapper_collapse
+  reason: multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.
+
+tick:
+  binding_count: 3
+  runtime_entrypoint_count: 7
+  active_refs_summary: min=1, max=7, zero_ref_bindings=0/3
+  consolidation_status: candidate_for_wrapper_collapse
+  reason: multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.
+
+create_task:
+  binding_count: 1
+  runtime_entrypoint_count: 5
+  active_refs_summary: min=1, max=1, zero_ref_bindings=0/1
+  consolidation_status: keep_runtime_surface
+  reason: protected task creation surface; do not classify as safe removal.
+
+review:
+  binding_count: 3
+  runtime_entrypoint_count: 8
+  active_refs_summary: min=0, max=0, zero_ref_bindings=3/3
+  consolidation_status: candidate_for_family_audit
+  reason: family has zero-active-ref binding rows or dynamic runtime entrypoints; audit ownership before any consolidation.
+
+run_one_step:
+  binding_count: 4
+  runtime_entrypoint_count: 8
+  active_refs_summary: min=0, max=31, zero_ref_bindings=1/4
+  consolidation_status: candidate_for_wrapper_collapse
+  reason: multiple runtime/compatibility bindings exist in a protected family; collapse only after a dedicated behavior audit.
+
+build/constants:
+  binding_count: 11
+  runtime_entrypoint_count: 0
+  active_refs_summary: min=0, max=7, zero_ref_bindings=4/11
+  consolidation_status: do_not_touch
+  reason: build and allowlist constants are monkey-patched compatibility markers, not wrapper-collapse targets.
+
+unknown:
+  binding_count: 3
+  runtime_entrypoint_count: 54
+  active_refs_summary: min=0, max=2, zero_ref_bindings=1/3
+  consolidation_status: candidate_for_family_audit
+  reason: family has zero-active-ref binding rows or dynamic runtime entrypoints; audit ownership before any consolidation.
+
 Unsafe runtime entrypoints
 --------------------------
 unsafe_runtime_entrypoints: 139
@@ -1214,11 +1302,11 @@ Referenced / Not Removal Candidates
   report_refs: 86
   non_definition_refs: 101
   sample_active_references:
+    - core/runtime/runtime_route_registry.py:247 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.tick", "admission_surface": "scheduler_tick"},
+    - core/tasks/scheduler.py:618 [target] entrypoint="core.tasks.scheduler.Scheduler.tick",
+    - core/tasks/scheduler.py:7063 [target] _ZERO_V724_ORIGINAL_TICK = Scheduler.tick
     - tests/test_aer_mainline_closure_seal.py:69 [test] tick_result = scheduler_module.Scheduler.tick(scheduler, current_tick=3)
     - tests/test_execution_authority_seal_matrix_contract.py:35 [test] "Scheduler.tick",
-    - tests/test_runtime_surface_registry_closure.py:41 [test] result = scheduler_module.Scheduler.tick(scheduler, current_tick=7)
-    - tests/test_runtime_surface_registry_closure_seal.py:128 [test] result = scheduler_module.Scheduler.tick(scheduler, current_tick=3)
-    - core/runtime/runtime_route_registry.py:247 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.tick", "admission_surface": "scheduler_tick"},
     - ... truncated 2
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_global_seal_inventory.txt:31 [archive] - Scheduler.tick
@@ -1367,11 +1455,11 @@ Referenced / Not Removal Candidates
   report_refs: 86
   non_definition_refs: 101
   sample_active_references:
+    - core/runtime/runtime_route_registry.py:247 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.tick", "admission_surface": "scheduler_tick"},
+    - core/tasks/scheduler.py:618 [target] entrypoint="core.tasks.scheduler.Scheduler.tick",
+    - core/tasks/scheduler.py:7063 [target] _ZERO_V724_ORIGINAL_TICK = Scheduler.tick
     - tests/test_aer_mainline_closure_seal.py:69 [test] tick_result = scheduler_module.Scheduler.tick(scheduler, current_tick=3)
     - tests/test_execution_authority_seal_matrix_contract.py:35 [test] "Scheduler.tick",
-    - tests/test_runtime_surface_registry_closure.py:41 [test] result = scheduler_module.Scheduler.tick(scheduler, current_tick=7)
-    - tests/test_runtime_surface_registry_closure_seal.py:128 [test] result = scheduler_module.Scheduler.tick(scheduler, current_tick=3)
-    - core/runtime/runtime_route_registry.py:247 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.tick", "admission_surface": "scheduler_tick"},
     - ... truncated 2
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_global_seal_inventory.txt:31 [archive] - Scheduler.tick
@@ -1539,8 +1627,8 @@ Referenced / Not Removal Candidates
     - self_edit_loop.py:18 [production] - Adds explicit --executor scheduler mode that routes self-edit tasks through Scheduler.run_one_step().
     - self_edit_loop.py:2950 [production] Scheduler.run_one_step() already returns compact results in v5.7.3, but this
     - self_edit_loop.py:3454 [production] parser.add_argument("--executor", choices=["legacy", "scheduler"], default="legacy", help="Execution backend; scheduler routes through Scheduler.run_one_step")
-    - tests/test_aer_mainline_closure_seal.py:70 [test] step_result = scheduler_module.Scheduler.run_one_step(
-    - tests/test_execution_authority_seal_matrix_contract.py:36 [test] "Scheduler.run_one_step",
+    - core/runtime/runtime_route_registry.py:252 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.run_one_step", "admission_surface": "scheduler_run_step"},
+    - core/tasks/scheduler.py:785 [target] entrypoint="core.tasks.scheduler.Scheduler.run_one_step",
     - ... truncated 26
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_global_seal_inventory.txt:32 [archive] - Scheduler.run_one_step
@@ -1568,8 +1656,8 @@ Referenced / Not Removal Candidates
     - self_edit_loop.py:18 [production] - Adds explicit --executor scheduler mode that routes self-edit tasks through Scheduler.run_one_step().
     - self_edit_loop.py:2950 [production] Scheduler.run_one_step() already returns compact results in v5.7.3, but this
     - self_edit_loop.py:3454 [production] parser.add_argument("--executor", choices=["legacy", "scheduler"], default="legacy", help="Execution backend; scheduler routes through Scheduler.run_one_step")
-    - tests/test_aer_mainline_closure_seal.py:70 [test] step_result = scheduler_module.Scheduler.run_one_step(
-    - tests/test_execution_authority_seal_matrix_contract.py:36 [test] "Scheduler.run_one_step",
+    - core/runtime/runtime_route_registry.py:252 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.run_one_step", "admission_surface": "scheduler_run_step"},
+    - core/tasks/scheduler.py:785 [target] entrypoint="core.tasks.scheduler.Scheduler.run_one_step",
     - ... truncated 26
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_global_seal_inventory.txt:32 [archive] - Scheduler.run_one_step
@@ -1597,8 +1685,8 @@ Referenced / Not Removal Candidates
     - self_edit_loop.py:18 [production] - Adds explicit --executor scheduler mode that routes self-edit tasks through Scheduler.run_one_step().
     - self_edit_loop.py:2950 [production] Scheduler.run_one_step() already returns compact results in v5.7.3, but this
     - self_edit_loop.py:3454 [production] parser.add_argument("--executor", choices=["legacy", "scheduler"], default="legacy", help="Execution backend; scheduler routes through Scheduler.run_one_step")
-    - tests/test_aer_mainline_closure_seal.py:70 [test] step_result = scheduler_module.Scheduler.run_one_step(
-    - tests/test_execution_authority_seal_matrix_contract.py:36 [test] "Scheduler.run_one_step",
+    - core/runtime/runtime_route_registry.py:252 [production] {"entrypoint": "core.tasks.scheduler.Scheduler.run_one_step", "admission_surface": "scheduler_run_step"},
+    - core/tasks/scheduler.py:785 [target] entrypoint="core.tasks.scheduler.Scheduler.run_one_step",
     - ... truncated 26
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_global_seal_inventory.txt:32 [archive] - Scheduler.run_one_step
@@ -1622,11 +1710,11 @@ Referenced / Not Removal Candidates
   report_refs: 205
   non_definition_refs: 292
   sample_active_references:
-    - tests/run_agent_loop_reflection.py:51 [test] raise RuntimeError("無法建立 scheduler，請檢查 scheduler.__init__ 參數。")
-    - tests/test_engineering_goal_loop_session_split.py:7 [test] signature = inspect.signature(EngineeringGoalLoop.__init__)
-    - tests/test_scheduler_execution_boundary_seal.py:67 [test] assert constructors[0].startswith("__init__:")
-    - tests/test_scheduler_runtime_ownership_closure.py:54 [test] assert len([item for item in constructors if item.startswith("StepExecutor:__init__:")]) == 1
-    - tests/test_scheduler_runtime_ownership_closure.py:55 [test] assert len([item for item in constructors if item.startswith("TaskRunner:__init__:")]) == 1
+    - core/engineering/repo_scan.py:504 [production] if module.endswith(".__init__"):
+    - core/engineering/repo_scan.py:505 [production] module = module[: -len(".__init__")]
+    - core/engineering/repo_scan.py:815 [production] if path.endswith("/__init__.py"):
+    - core/runtime/runtime_boundary.py:25 [production] super().__init__(request.rejected_reason)
+    - core/runtime/runtime_capability_dispatcher.py:34 [production] super().__init__(message)
     - ... truncated 55
   sample_archived_references:
     - archive/packages/runtime_closure_20260629/package16_runtime_native_adapter_extraction_v3.py:20 [archive] ADAPTER_SOURCE = 'from __future__ import annotations\n\nfrom dataclasses import dataclass, field\nfrom typing import Any, Dict, Mapping, Optional\n\n\n_RUNTIME_TERMINAL_OK = {"finished", "success", "completed", "done", "ok"}\n_RUNTIME_TERMI
@@ -1650,11 +1738,11 @@ Referenced / Not Removal Candidates
   report_refs: 12
   non_definition_refs: 98
   sample_active_references:
-    - tests/test_runtime_entry_migration_wave1.py:175 [test] runner=lambda: active.append(loop._runtime_native_mainline_active()) or {"ok": True},
-    - tests/test_runtime_entry_migration_wave1.py:184 [test] assert loop._runtime_native_mainline_active() is False
-    - tests/test_runtime_native_compatibility_entry_semantics.py:94 [test] runner=lambda: active_during_runner.append(loop._runtime_native_mainline_active()) or {"ok": True},
-    - tests/test_runtime_native_compatibility_entry_semantics.py:102 [test] assert loop._runtime_native_mainline_active() is False
-    - tests/test_runtime_route_registry_admission.py:126 [test] runner=lambda: active_during_runner.append(loop._runtime_native_mainline_active()) or {"ok": True},
+    - core/agent/agent_loop.py:3193 [production] previous = self._runtime_native_mainline_active()
+    - core/agent/agent_loop.py:3229 [production] previous = self._runtime_native_mainline_active()
+    - core/agent/agent_loop.py:3270 [production] if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+    - core/runtime/task_runner.py:253 [production] previous = self._runtime_native_mainline_active()
+    - core/runtime/task_runner.py:441 [production] if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
     - ... truncated 13
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:392 [archive] - line 259: _runtime_native_mainline_active
@@ -1678,11 +1766,11 @@ Referenced / Not Removal Candidates
   report_refs: 12
   non_definition_refs: 106
   sample_active_references:
-    - tests/test_aer_mainline_closure_seal.py:99 [test] tick_admission_result = task_runner_module.TaskRunner._run_via_runtime_native_mainline(
-    - tests/test_runtime_native_compatibility_entry_semantics.py:92 [test] result = loop._run_via_runtime_native_mainline(
-    - tools/taskrunner_runtime_caller_analysis.py:32 [tool] "_run_via_runtime_native_mainline",
-    - tools/taskrunner_runtime_call_graph.py:21 [tool] "_run_via_runtime_native_mainline",
     - core/agent/agent_loop.py:3271 [production] return self._run_via_runtime_native_mainline(
+    - core/runtime/task_runner.py:442 [production] return self._run_via_runtime_native_mainline(
+    - core/runtime/task_runner.py:508 [production] return self._run_via_runtime_native_mainline(
+    - core/runtime/task_runner.py:1071 [production] return self._run_via_runtime_native_mainline(
+    - core/tasks/scheduler.py:617 [target] return self._run_via_runtime_native_mainline(
     - ... truncated 7
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_mainline_closure_inventory.txt:37 [archive] Scheduler public method -> Scheduler._run_via_runtime_native_mainline -> RuntimeRouteRegistry -> RuntimeNativeMainline.run_compatibility_entry -> delegated legacy body.
@@ -1758,11 +1846,11 @@ Referenced / Not Removal Candidates
   report_refs: 11
   non_definition_refs: 23
   sample_active_references:
-    - tests/test_agentloop_createtask_mutation_bridge_contract.py:192 [test] scheduler_context = _make_scheduler(tmp_path)._build_scheduler_authority_context(
-    - tests/test_scheduler_no_direct_mutation_contract.py:208 [test] scheduler_context = _make_scheduler(tmp_path)._build_scheduler_authority_context(
-    - tests/test_scheduler_taskrunner_authority_propagation_contract.py:16 [test] context = scheduler._build_scheduler_authority_context(
-    - tests/test_scheduler_taskrunner_authority_propagation_contract.py:81 [test] scheduler_context = _make_scheduler(tmp_path)._build_scheduler_authority_context(
     - core/tasks/scheduler.py:1113 [target] scheduler_authority = self._build_scheduler_authority_context(task)
+    - core/tasks/scheduler.py:2291 [target] scheduler_authority = self._build_scheduler_authority_context(task)
+    - core/tasks/scheduler.py:6338 [target] scheduler_authority = self._build_scheduler_authority_context(task)
+    - core/tasks/scheduler.py:6867 [target] scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
+    - core/tasks/scheduler.py:6929 [target] scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
     - ... truncated 5
   sample_archived_references:
     - tools/archive/runtime_governance_closure/authority_context_migration_stage17a.py:168 [archive] "Scheduler._build_scheduler_authority_context",
@@ -1782,11 +1870,11 @@ Referenced / Not Removal Candidates
   report_refs: 0
   non_definition_refs: 10
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:63 [test] scheduler._cancel_ready_queue_task = lambda task_id: cancelled.append(task_id)
-    - tests/test_scheduler_runtime_tail_regression.py:96 [test] scheduler._cancel_ready_queue_task = lambda task_id: cancelled.append(task_id)
     - core/tasks/scheduler.py:2756 [target] self._cancel_ready_queue_task(task_id)
     - core/tasks/scheduler.py:2761 [target] self._cancel_ready_queue_task(task_id)
     - core/tasks/scheduler.py:2797 [target] self._cancel_ready_queue_task(task_id)
+    - core/tasks/scheduler.py:3008 [target] self._cancel_ready_queue_task(task_id)
+    - core/tasks/scheduler.py:7256 [target] self._cancel_ready_queue_task(task_id)
     - ... truncated 5
   sample_archived_references:
     - <none>
@@ -1814,11 +1902,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 18
   sample_active_references:
-    - tests/test_scheduler_extraction_boundary.py:20 [test] self.assertEqual(self.scheduler._safe_int_for_runtime_gate("9"), 9)
-    - tests/test_scheduler_extraction_boundary.py:21 [test] self.assertEqual(self.scheduler._safe_int_for_runtime_gate("bad", default=4), 4)
-    - tests/test_scheduler_extraction_boundary.py:92 [test] self.assertTrue(hasattr(pure_helpers, "_safe_int_for_runtime_gate"))
-    - tests/test_scheduler_parser_helpers.py:103 [test] from core.tasks.scheduler_core.pure_helpers import _safe_int_for_runtime_gate
-    - tests/test_scheduler_parser_helpers.py:105 [test] self.assertEqual(_safe_int_for_runtime_gate("7"), 7)
+    - core/tasks/scheduler.py:180 [target] _safe_int_for_runtime_gate as _scheduler_helper_safe_int_for_runtime_gate,
+    - core/tasks/scheduler.py:2714 [target] created_at = self._safe_int_for_runtime_gate(task.get("created_at"), 0)
+    - core/tasks/scheduler.py:3066 [target] created_at = self._safe_int_for_runtime_gate(record.get("created_at"), 0)
+    - core/tasks/scheduler_core/runtime_dispatch_gate.py:42 [production] active_blocker_count = scheduler._safe_int_for_runtime_gate(task.get("active_blocker_count"), 0)
+    - core/tasks/scheduler_core/status_write_pipeline.py:98 [production] priority=scheduler._safe_int_for_runtime_gate(task.get("priority"), 0),
     - ... truncated 9
   sample_archived_references:
     - <none>
@@ -1887,11 +1975,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 6
   sample_active_references:
+    - core/tasks/scheduler_core/dispatch_finalize.py:177 [production] if scheduler._can_requeue_task(task_id):
+    - core/tasks/scheduler_core/dispatch_requeue.py:12 [production] return bool(scheduler._can_requeue_task(normalized_task_id))
     - tests/test_scheduler_dispatch_result_helpers.py:70 [test] self.calls.append({"method": "_can_requeue_task", "task_id": task_id})
     - tests/test_scheduler_dispatch_result_helpers.py:446 [test] {"method": "_can_requeue_task", "task_id": "task-1"},
     - tests/test_scheduler_dispatch_result_helpers.py:464 [test] {"method": "_can_requeue_task", "task_id": "task-1"},
-    - core/tasks/scheduler_core/dispatch_finalize.py:177 [production] if scheduler._can_requeue_task(task_id):
-    - core/tasks/scheduler_core/dispatch_requeue.py:12 [production] return bool(scheduler._can_requeue_task(normalized_task_id))
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -1960,11 +2048,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 11
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:175 [tool] enriched = self._attach_orchestration_summary_to_runner_result(
-    - tools/apply_scheduler_aggregate_adapter_v1.py:200 [tool] enriched = self._attach_orchestration_summary_to_runner_result(
     - core/tasks/scheduler.py:848 [target] result = self._attach_orchestration_summary_to_runner_result(task=live_task, runner_result=result)
     - core/tasks/scheduler.py:914 [target] aggregate = self._attach_orchestration_summary_to_runner_result(task=final_task if isinstance(final_task, dict) else live_task, runner_result=aggregate)
     - core/tasks/scheduler.py:8060 [target] enriched = self._attach_orchestration_summary_to_runner_result(
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:24 [production] result = scheduler._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:54 [production] result = scheduler._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
     - ... truncated 5
   sample_archived_references:
     - <none>
@@ -1978,11 +2066,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 15
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:365 [test] scheduler._compact_runner_result = lambda result: result
-    - tests/test_scheduler_runtime_tail_regression.py:400 [test] scheduler._compact_runner_result = lambda result: result
-    - tests/test_scheduler_runtime_tail_regression.py:451 [test] scheduler._compact_runner_result = lambda result: result
-    - tests/test_scheduler_runtime_tail_regression.py:497 [test] scheduler._compact_runner_result = lambda result: result
-    - tests/test_scheduler_runtime_tail_regression.py:541 [test] scheduler._compact_runner_result = lambda result: result
+    - core/tasks/scheduler.py:915 [target] return self._compact_runner_result(aggregate)
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:26 [production] return scheduler._compact_runner_result(result)
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:74 [production] return scheduler._compact_runner_result(result)
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:82 [production] return scheduler._compact_runner_result(loop_result)
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:87 [production] return scheduler._compact_runner_result(result)
     - ... truncated 8
   sample_archived_references:
     - <none>
@@ -2032,11 +2120,11 @@ Referenced / Not Removal Candidates
   report_refs: 22
   non_definition_refs: 40
   sample_active_references:
-    - tests/test_runtime_scheduler_contract_seal.py:107 [test] scheduler._run_step_via_task_runner(task=task, step=task["steps"][1])
-    - tests/test_scheduler_execution_boundary_seal.py:118 [test] assert "_run_step_via_task_runner" in calls
-    - tests/test_scheduler_resume_lifecycle_preservation_seal.py:187 [test] first = scheduler._run_step_via_task_runner(task=task, step=task["steps"][0])
-    - tests/test_scheduler_resume_lifecycle_preservation_seal.py:190 [test] second = scheduler._run_step_via_task_runner(task=task, step=changed_step)
-    - tests/test_scheduler_runtime_ownership_closure.py:59 [test] method_source = ast.get_source_segment(_source(), _method_node("_run_step_via_task_runner")) or ""
+    - core/tasks/scheduler.py:2293 [target] executor_result = self._run_step_via_task_runner(
+    - core/tasks/scheduler.py:6339 [target] return self._run_step_via_task_runner(
+    - core/tasks/scheduler.py:6868 [target] return self._run_step_via_task_runner(
+    - core/tasks/scheduler.py:6930 [target] return self._run_step_via_task_runner(
+    - core/tasks/scheduler_core/scheduler_runtime_fallback_overlays.py:65 [production] fallback = scheduler._run_step_via_task_runner(
     - ... truncated 6
   sample_archived_references:
     - archive/reports/runtime_closure_20260629/aer_mainline_closure_inventory.txt:126 [archive] - Scheduler._run_step_via_task_runner.
@@ -2176,11 +2264,11 @@ Referenced / Not Removal Candidates
   report_refs: 43
   non_definition_refs: 53
   sample_active_references:
-    - tests/test_scheduler_hook_attachment_contract.py:170 [test] scheduler._sync_runner_result_and_requeue_if_ready(
-    - tests/test_scheduler_runtime_tail_regression.py:260 [test] scheduler._sync_runner_result_and_requeue_if_ready = lambda **kwargs: sync_calls.append(kwargs)
-    - tests/test_scheduler_runtime_tail_regression.py:290 [test] scheduler._sync_runner_result_and_requeue_if_ready(
-    - tests/test_scheduler_runtime_tail_regression.py:330 [test] scheduler._sync_runner_result_and_requeue_if_ready(
     - core/tasks/scheduler_core/code_chain_tick_replay_bridge.py:88 [production] scheduler._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+    - core/tasks/scheduler_core/dispatch_requeue.py:40 [production] scheduler._sync_runner_result_and_requeue_if_ready(
+    - core/tasks/scheduler_core/scheduler_retry_pipeline.py:106 [production] original_sync_runner_result_and_requeue = scheduler_cls._sync_runner_result_and_requeue_if_ready
+    - core/tasks/scheduler_core/scheduler_retry_pipeline.py:159 [production] scheduler_cls._sync_runner_result_and_requeue_if_ready = _zero_v734_sync_runner_result_and_requeue_if_ready
+    - tests/test_scheduler_hook_attachment_contract.py:170 [test] scheduler._sync_runner_result_and_requeue_if_ready(
     - ... truncated 3
   sample_archived_references:
     - tools/archive/runtime_governance_closure/scheduler_native_ownership_closure_stage13a.py:190 [archive] "_sync_runner_result_and_requeue_if_ready",
@@ -2247,11 +2335,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 13
   sample_active_references:
-    - tests/test_scheduler_execution_function_inventory.py:86 [test] "_run_simple_task_tick",
-    - tests/test_scheduler_runtime_tail_regression.py:262 [test] result = scheduler._run_simple_task_tick(task=task, current_tick=42)
     - core/tasks/scheduler.py:805 [target] _run_simple_task_tick().
     - core/tasks/scheduler.py:847 [target] result = self._run_simple_task_tick(task=live_task, current_tick=tick_value)
     - core/tasks/scheduler.py:1366 [target] The scheduler accepts that result and never calls _run_simple_task_tick,
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:35 [production] result = scheduler._run_simple_task_tick(task=task, current_tick=current_tick)
+    - core/tasks/scheduler_core/scheduler_execution_pipeline.py:84 [production] result = scheduler._run_simple_task_tick(task=task, current_tick=current_tick)
     - ... truncated 4
   sample_archived_references:
     - tools/archive/runtime_governance_closure/scheduler_native_ownership_closure_stage13a.py:196 [archive] "_run_simple_task_tick",
@@ -2308,11 +2396,11 @@ Referenced / Not Removal Candidates
   report_refs: 8
   non_definition_refs: 31
   sample_active_references:
-    - tests/test_governed_continuation_recovery.py:88 [test] repairable, reason = scheduler._is_repairable_failure(task)
-    - tests/test_repair_kernel_contract.py:43 [test] repairable, reason = scheduler._is_repairable_failure(task)
-    - tests/test_repair_kernel_contract.py:56 [test] repairable, reason = scheduler._is_repairable_failure(task)
-    - tests/test_repair_kernel_contract.py:67 [test] repairable, reason = scheduler._is_repairable_failure(task)
-    - tests/test_repair_kernel_contract.py:79 [test] repairable, reason = scheduler._is_repairable_failure(task)
+    - core/tasks/scheduler.py:1977 [target] repairable, repairable_reason = self._is_repairable_failure(task)
+    - core/tasks/scheduler_core/scheduler_final_tail_overlays.py:86 [production] original_repair_v7332 = scheduler_cls._is_repairable_failure
+    - core/tasks/scheduler_core/scheduler_final_tail_overlays.py:95 [production] scheduler_cls._is_repairable_failure = _zero_v7332_is_repairable_failure
+    - core/tasks/scheduler_core/scheduler_final_tail_overlays.py:111 [production] original_repair_v7333 = scheduler_cls._is_repairable_failure
+    - core/tasks/scheduler_core/scheduler_final_tail_overlays.py:120 [production] scheduler_cls._is_repairable_failure = _zero_v7333_is_repairable_failure
     - ... truncated 18
   sample_archived_references:
     - <none>
@@ -2331,11 +2419,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 13
   sample_active_references:
+    - core/tasks/scheduler.py:183 [target] _canonicalize_steps_for_compare as _scheduler_helper_canonicalize_steps_for_compare,
+    - core/tasks/scheduler.py:1907 [target] return self._canonicalize_steps_for_compare(old_steps) != self._canonicalize_steps_for_compare(new_steps)
+    - core/tasks/scheduler.py:1907 [target] return self._canonicalize_steps_for_compare(old_steps) != self._canonicalize_steps_for_compare(new_steps)
+    - core/tasks/scheduler.py:1910 [target] canonical = self._canonicalize_steps_for_compare(steps)
     - tests/test_scheduler_extraction_boundary.py:46 [test] self.scheduler._canonicalize_steps_for_compare(steps),
-    - tests/test_scheduler_extraction_boundary.py:53 [test] self.assertEqual(self.scheduler._canonicalize_steps_for_compare(None), [])
-    - tests/test_scheduler_extraction_boundary.py:93 [test] self.assertTrue(hasattr(pure_helpers, "_canonicalize_steps_for_compare"))
-    - tests/test_scheduler_parser_helpers.py:158 [test] from core.tasks.scheduler_core.pure_helpers import _canonicalize_steps_for_compare
-    - tests/test_scheduler_parser_helpers.py:167 [test] _canonicalize_steps_for_compare(steps),
     - ... truncated 5
   sample_archived_references:
     - <none>
@@ -2440,11 +2528,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 7
   sample_active_references:
-    - tests/run_replan_safety_smoke.py:93 [test] suggested = scheduler._try_replan_task(suggested_task)
-    - tests/run_replan_safety_smoke.py:144 [test] exhausted = scheduler._try_replan_task(exhausted_task)
     - core/tasks/scheduler_core/scheduler_replan_pipeline.py:8 [production] result = scheduler._try_replan_task(task, apply=True)
     - core/tasks/scheduler_core/scheduler_replan_pipeline.py:45 [production] result = scheduler._try_replan_task(preview_task)
     - core/tasks/scheduler_core/simple_runner_step_exception.py:72 [production] replan_result = scheduler._try_replan_task(task=task)
+    - tests/run_replan_safety_smoke.py:93 [test] suggested = scheduler._try_replan_task(suggested_task)
+    - tests/run_replan_safety_smoke.py:144 [test] exhausted = scheduler._try_replan_task(exhausted_task)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2458,11 +2546,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 18
   sample_active_references:
+    - core/tasks/scheduler_core/simple_runner_tick.py:124 [production] step_result = scheduler._execute_simple_step(task=task, step=step)
     - tests/test_aer_governed_code_chain_landing_contract.py:112 [test] result = scheduler._execute_simple_step(
     - tests/test_aer_governed_code_chain_landing_contract.py:144 [test] result = scheduler._execute_simple_step(
     - tests/test_agentloop_createtask_mutation_bridge_contract.py:94 [test] result = scheduler._execute_simple_step(
     - tests/test_scheduler_execution_boundary_seal.py:81 [test] result = scheduler._execute_simple_step(
-    - tests/test_scheduler_execution_function_inventory.py:87 [test] "_execute_simple_step",
     - ... truncated 11
   sample_archived_references:
     - tools/archive/runtime_governance_closure/scheduler_native_ownership_closure_stage13a.py:195 [archive] "_execute_simple_step",
@@ -2491,11 +2579,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 6
   sample_active_references:
+    - core/tasks/scheduler.py:2244 [target] self._record_execution_gateway_side_check(
+    - core/tasks/scheduler.py:2314 [target] self._record_execution_gateway_side_check(
     - tests/test_scheduler_execution_gateway_integration.py:14 [test] result = scheduler._record_execution_gateway_side_check(
     - tests/test_scheduler_execution_gateway_integration.py:41 [test] result = scheduler._record_execution_gateway_side_check(
     - tests/test_scheduler_execution_gateway_integration.py:66 [test] result = scheduler._record_execution_gateway_side_check(
-    - core/tasks/scheduler.py:2244 [target] self._record_execution_gateway_side_check(
-    - core/tasks/scheduler.py:2314 [target] self._record_execution_gateway_side_check(
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2524,11 +2612,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 20
   sample_active_references:
+    - core/tasks/scheduler.py:2563 [target] text = self._extract_text_from_result_payload(value)
+    - core/tasks/scheduler.py:2571 [target] text = self._extract_text_from_result_payload(item)
+    - core/tasks/scheduler.py:2609 [target] text = self._extract_text_from_result_payload(item)
+    - core/tasks/scheduler.py:2615 [target] text = self._extract_text_from_result_payload(nested)
     - tests/test_scheduler_payload_convergence_guard.py:29 [test] self.scheduler._extract_text_from_result_payload(payload),
-    - tests/test_scheduler_payload_convergence_guard.py:44 [test] self.scheduler._extract_text_from_result_payload(payload),
-    - tests/test_scheduler_private_result_history_contract.py:45 [test] private_text = scheduler._extract_text_from_result_payload(runtime_state["last_step_result"])
-    - tests/test_scheduler_runtime_payload_contract.py:34 [test] self.scheduler._extract_text_from_result_payload(payload),
-    - tests/test_scheduler_runtime_payload_contract.py:46 [test] self.scheduler._extract_text_from_result_payload(payload),
     - ... truncated 13
   sample_archived_references:
     - <none>
@@ -2588,11 +2676,11 @@ Referenced / Not Removal Candidates
   report_refs: 0
   non_definition_refs: 5
   sample_active_references:
-    - tests/test_scheduler_runtime_payload_contract.py:196 [test] self.scheduler._build_simple_final_answer(results),
-    - tests/test_scheduler_runtime_payload_text.py:85 [test] self.assertEqual(self.scheduler._build_simple_final_answer(results), "last final")
     - core/tasks/scheduler_core/public_task_record_helpers.py:202 [production] task["final_answer"] = scheduler._build_simple_final_answer(task.get("results", []))
     - core/tasks/scheduler_core/simple_runner_finished.py:24 [production] final_answer = str(task.get("final_answer") or scheduler._build_simple_final_answer(results))
     - core/tasks/scheduler_core/simple_runner_step_success.py:94 [production] final_answer = scheduler._build_simple_final_answer(
+    - tests/test_scheduler_runtime_payload_contract.py:196 [test] self.scheduler._build_simple_final_answer(results),
+    - tests/test_scheduler_runtime_payload_text.py:85 [test] self.assertEqual(self.scheduler._build_simple_final_answer(results), "last final")
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2605,11 +2693,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 9
   sample_active_references:
-    - tests/test_scheduler_trace_runtime_load_redirect.py:14 [test] trace = scheduler._load_trace_for_task(task)
-    - tests/test_trace_runtime_extraction_guardrail.py:32 [test] "def _load_trace_for_task",
     - core/tasks/scheduler.py:3763 [target] trace = self._load_trace_for_task(task)
     - core/tasks/scheduler.py:4115 [target] trace = self._load_trace_for_task(task)
     - core/tasks/scheduler_core/queue_sync_helpers.py:214 [production] trace = scheduler._load_trace_for_task(task)
+    - core/tasks/scheduler_core/repo_blocked_state.py:161 [production] trace = scheduler._load_trace_for_task(task)
+    - core/tasks/scheduler_core/repo_blocked_state.py:208 [production] trace = scheduler._load_trace_for_task(task)
     - ... truncated 3
   sample_archived_references:
     - <none>
@@ -2625,9 +2713,9 @@ Referenced / Not Removal Candidates
   sample_active_references:
     - phase5_trace_redirect.py:7 [production] '''    def _save_trace_for_task(self, task: Dict[str, Any], trace: ExecutionTrace) -> Optional[str]:
     - phase5_trace_redirect.py:10 [production] '''    def _save_trace_for_task(self, task: Dict[str, Any], trace: ExecutionTrace) -> Optional[str]:
-    - tests/test_scheduler_trace_runtime_save_redirect.py:16 [test] saved = scheduler._save_trace_for_task(task, trace)
-    - tests/test_trace_runtime_extraction_guardrail.py:33 [test] "def _save_trace_for_task",
-    - tools/scheduler_core_facade_report.py:39 [tool] "_save_trace_for_task",
+    - core/tasks/scheduler.py:3790 [target] self._save_trace_for_task(task=task, trace=trace)
+    - core/tasks/scheduler.py:4130 [target] self._save_trace_for_task(task=task, trace=trace)
+    - core/tasks/scheduler.py:4161 [target] self._save_trace_for_task(task=task, trace=trace)
     - ... truncated 16
   sample_archived_references:
     - <none>
@@ -2641,11 +2729,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 20
   sample_active_references:
-    - tests/test_trace_runtime_extraction_guardrail.py:34 [test] "def _trace_status",
-    - tools/scheduler_core_facade_report.py:37 [tool] "_trace_status",
     - core/tasks/scheduler.py:3778 [target] self._trace_status(
     - core/tasks/scheduler.py:4119 [target] self._trace_status(
     - core/tasks/scheduler.py:4153 [target] self._trace_status(
+    - core/tasks/scheduler.py:4180 [target] self._trace_status(
+    - core/tasks/scheduler_core/queue_sync_helpers.py:215 [production] scheduler._trace_status(
     - ... truncated 13
   sample_archived_references:
     - <none>
@@ -2660,11 +2748,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 11
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:60 [test] scheduler._fail_task_for_queue_hygiene = lambda task, reason: failed.append(
-    - tests/test_scheduler_runtime_tail_regression.py:93 [test] scheduler._fail_task_for_queue_hygiene = lambda task, reason: failed.append(
     - core/tasks/scheduler.py:2720 [target] self._fail_task_for_queue_hygiene(task, reason=reason)
     - core/tasks/scheduler.py:2727 [target] self._fail_task_for_queue_hygiene(task, reason=reason)
     - core/tasks/scheduler.py:2736 [target] self._fail_task_for_queue_hygiene(task, reason=reason)
+    - core/tasks/scheduler.py:3003 [target] self._fail_task_for_queue_hygiene(task, reason=reason)
+    - core/tasks/scheduler.py:7211 [target] self._fail_task_for_queue_hygiene(task, reason=reason)
     - ... truncated 5
   sample_archived_references:
     - <none>
@@ -2678,9 +2766,9 @@ Referenced / Not Removal Candidates
   report_refs: 26
   non_definition_refs: 29
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:59 [test] scheduler._is_legacy_self_edit_scheduler_task = lambda task: False
     - core/tasks/scheduler.py:2724 [target] if expire_legacy_self_edit and self._is_legacy_self_edit_scheduler_task(task):
     - core/tasks/scheduler.py:7233 [target] if expire_legacy_self_edit and self._is_legacy_self_edit_scheduler_task(task):
+    - tests/test_scheduler_runtime_tail_regression.py:59 [test] scheduler._is_legacy_self_edit_scheduler_task = lambda task: False
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2698,10 +2786,10 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 5
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:57 [test] scheduler._is_autonomous_repair_task = lambda task: True
     - core/tasks/scheduler.py:2864 [target] if not self._is_autonomous_repair_task(task):
     - core/tasks/scheduler.py:2919 [target] if not self._is_autonomous_repair_task(task):
     - core/tasks/scheduler.py:7215 [target] if expire_repair_tasks and self._is_autonomous_repair_task(task):
+    - tests/test_scheduler_runtime_tail_regression.py:57 [test] scheduler._is_autonomous_repair_task = lambda task: True
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2743,9 +2831,9 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 4
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:56 [test] scheduler._validate_repair_task_scope = lambda task: {"ok": True}
     - core/tasks/scheduler.py:2717 [target] repair_guard = self._validate_repair_task_scope(task)
     - core/tasks/scheduler.py:7208 [target] repair_guard = self._validate_repair_task_scope(task)
+    - tests/test_scheduler_runtime_tail_regression.py:56 [test] scheduler._validate_repair_task_scope = lambda task: {"ok": True}
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2758,11 +2846,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 7
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:135 [test] scheduler._repair_task_fingerprint_from_goal = lambda goal: fingerprint
-    - tests/test_scheduler_runtime_tail_regression.py:211 [test] scheduler._repair_task_fingerprint_from_goal = lambda goal: fingerprint
     - core/tasks/scheduler.py:2925 [target] return self._repair_task_fingerprint_from_goal(goal)
     - core/tasks/scheduler.py:3592 [target] repair_fingerprint = self._repair_task_fingerprint_from_goal(clean_goal)
     - core/tasks/scheduler.py:3931 [target] fingerprint = self._repair_task_fingerprint_from_goal(clean_goal)
+    - core/tasks/scheduler.py:7453 [target] fingerprint = self._repair_task_fingerprint_from_goal(clean_goal)
+    - tests/test_scheduler_runtime_tail_regression.py:135 [test] scheduler._repair_task_fingerprint_from_goal = lambda goal: fingerprint
     - ... truncated 1
   sample_archived_references:
     - <none>
@@ -2776,11 +2864,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 6
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:58 [test] scheduler._repair_task_fingerprint_from_task = lambda task: "fingerprint-1"
-    - tests/test_scheduler_runtime_tail_regression.py:91 [test] scheduler._repair_task_fingerprint_from_task = lambda task: task.get("repair_fingerprint", "")
     - core/tasks/scheduler.py:2731 [target] fingerprint = self._repair_task_fingerprint_from_task(task)
     - core/tasks/scheduler.py:3039 [target] task_fp = self._repair_task_fingerprint_from_task(task)
     - core/tasks/scheduler.py:7216 [target] fingerprint = self._repair_task_fingerprint_from_task(task)
+    - tests/test_scheduler_runtime_tail_regression.py:58 [test] scheduler._repair_task_fingerprint_from_task = lambda task: "fingerprint-1"
+    - tests/test_scheduler_runtime_tail_regression.py:91 [test] scheduler._repair_task_fingerprint_from_task = lambda task: task.get("repair_fingerprint", "")
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2793,8 +2881,8 @@ Referenced / Not Removal Candidates
   report_refs: 0
   non_definition_refs: 2
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:92 [test] scheduler._repair_task_age_seconds = lambda task: 999
     - core/tasks/scheduler.py:2993 [target] age = self._repair_task_age_seconds(task)
+    - tests/test_scheduler_runtime_tail_regression.py:92 [test] scheduler._repair_task_age_seconds = lambda task: 999
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2821,10 +2909,10 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 6
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:100 [test] duplicate = scheduler._find_active_duplicate_repair_task(fingerprint)
-    - tests/test_scheduler_runtime_tail_regression.py:182 [test] duplicate = scheduler._find_active_duplicate_repair_task(fingerprint)
     - core/tasks/scheduler.py:3598 [target] duplicate = self._find_active_duplicate_repair_task(repair_fingerprint)
     - core/tasks/scheduler.py:3940 [target] duplicate = self._find_active_duplicate_repair_task(fingerprint)
+    - tests/test_scheduler_runtime_tail_regression.py:100 [test] duplicate = scheduler._find_active_duplicate_repair_task(fingerprint)
+    - tests/test_scheduler_runtime_tail_regression.py:182 [test] duplicate = scheduler._find_active_duplicate_repair_task(fingerprint)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2853,11 +2941,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 16
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:52 [test] scheduler._load_repair_fingerprint_index = lambda: {}
-    - tests/test_scheduler_runtime_tail_regression.py:98 [test] scheduler._load_repair_fingerprint_index = lambda: {}
-    - tests/test_scheduler_runtime_tail_regression.py:136 [test] scheduler._load_repair_fingerprint_index = lambda: index
-    - tests/test_scheduler_runtime_tail_regression.py:173 [test] scheduler._load_repair_fingerprint_index = lambda: index
-    - tests/test_scheduler_runtime_tail_regression.py:212 [test] scheduler._load_repair_fingerprint_index = lambda: index
+    - core/tasks/scheduler.py:3046 [target] indexed = self._load_repair_fingerprint_index()
+    - core/tasks/scheduler.py:3108 [target] data = self._load_repair_fingerprint_index()
+    - core/tasks/scheduler.py:3122 [target] data = self._load_repair_fingerprint_index()
+    - core/tasks/scheduler.py:3959 [target] data = self._load_repair_fingerprint_index()
+    - core/tasks/scheduler.py:7091 [target] data = self._load_repair_fingerprint_index()
     - ... truncated 7
   sample_archived_references:
     - <none>
@@ -2874,11 +2962,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 12
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:53 [test] scheduler._save_repair_fingerprint_index = lambda data: None
-    - tests/test_scheduler_runtime_tail_regression.py:64 [test] scheduler._save_repair_fingerprint_index = lambda data: saved_indexes.append(copy.deepcopy(data))
-    - tests/test_scheduler_runtime_tail_regression.py:143 [test] scheduler._save_repair_fingerprint_index = save_index
-    - tests/test_scheduler_runtime_tail_regression.py:180 [test] scheduler._save_repair_fingerprint_index = save_index
-    - tests/test_scheduler_runtime_tail_regression.py:220 [test] scheduler._save_repair_fingerprint_index = save_index
+    - core/tasks/scheduler.py:3111 [target] self._save_repair_fingerprint_index(data)
+    - core/tasks/scheduler.py:3132 [target] self._save_repair_fingerprint_index(data)
+    - core/tasks/scheduler.py:3970 [target] self._save_repair_fingerprint_index(data)
+    - core/tasks/scheduler.py:7149 [target] self._save_repair_fingerprint_index(data)
+    - core/tasks/scheduler.py:7376 [target] self._save_repair_fingerprint_index(data)
     - ... truncated 5
   sample_archived_references:
     - <none>
@@ -2893,10 +2981,10 @@ Referenced / Not Removal Candidates
   report_refs: 0
   non_definition_refs: 4
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:97 [test] scheduler._remove_repair_fingerprint_from_index = lambda value: removed.append(value)
     - core/tasks/scheduler.py:3011 [target] self._remove_repair_fingerprint_from_index(fingerprint)
     - core/tasks/scheduler.py:3063 [target] self._remove_repair_fingerprint_from_index(fingerprint)
     - core/tasks/scheduler.py:3078 [target] self._remove_repair_fingerprint_from_index(fingerprint)
+    - tests/test_scheduler_runtime_tail_regression.py:97 [test] scheduler._remove_repair_fingerprint_from_index = lambda value: removed.append(value)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -2998,11 +3086,11 @@ Referenced / Not Removal Candidates
   report_refs: 35
   non_definition_refs: 42
   sample_active_references:
-    - tests/test_agentloop_createtask_mutation_bridge_contract.py:57 [test] result = scheduler._try_force_repo_edit_at_create_task(
-    - tests/test_evidence_audit_output_boundary_contract.py:48 [test] result = scheduler._try_force_repo_edit_at_create_task(
     - core/tasks/scheduler.py:3613 [target] forced_repo_edit = self._try_force_repo_edit_at_create_task(clean_goal)
     - core/tasks/scheduler_core/scheduler_create_task_compat.py:18 [production] original_try_force_repo_edit = scheduler_cls._try_force_repo_edit_at_create_task
     - core/tasks/scheduler_core/scheduler_create_task_compat.py:61 [production] scheduler_cls._try_force_repo_edit_at_create_task = _zero_v7337_scheduler_try_force_repo_edit_at_create_task
+    - tests/test_agentloop_createtask_mutation_bridge_contract.py:57 [test] result = scheduler._try_force_repo_edit_at_create_task(
+    - tests/test_evidence_audit_output_boundary_contract.py:48 [test] result = scheduler._try_force_repo_edit_at_create_task(
   sample_archived_references:
     - tools/archive/runtime_governance_closure/scheduler_native_ownership_closure_stage13a.py:183 [archive] "_try_force_repo_edit_at_create_task",
     - tools/archive/runtime_governance_closure/scheduler_native_ownership_closure_stage13a.py:219 [archive] if member in {"create_task", "_create_task_record", "_try_force_repo_edit_at_create_task"}:
@@ -3035,11 +3123,11 @@ Referenced / Not Removal Candidates
   report_refs: 51
   non_definition_refs: 70
   sample_active_references:
-    - tests/run_scheduler_smoke.py:65 [test] create_result = scheduler._create_task_record(
-    - tests/run_scheduler_smoke.py:105 [test] create_result = scheduler._create_task_record(
-    - tests/run_scheduler_smoke.py:193 [test] blocked_create = scheduler._create_task_record(
-    - tests/test_agentloop_createtask_mutation_bridge_contract.py:74 [test] task = scheduler._create_task_record(
-    - tests/test_evidence_audit_output_boundary_contract.py:165 [test] task = scheduler._create_task_record(
+    - core/tasks/scheduler.py:3924 [target] Compare semantic repair identity before calling _create_task_record().
+    - core/tasks/scheduler.py:3991 [target] created = self._create_task_record(
+    - core/tasks/scheduler.py:4045 [target] created = self._create_task_record(
+    - core/tasks/scheduler_core/scheduler_create_task_compat.py:19 [production] original_create_task_record = scheduler_cls._create_task_record
+    - core/tasks/scheduler_core/scheduler_create_task_compat.py:62 [production] scheduler_cls._create_task_record = _zero_v7337_scheduler_create_task_record
     - ... truncated 10
   sample_archived_references:
     - tools/archive/runtime_governance_closure/authority_planner_residual_closure_stage13e.py:53 [archive] {"from": "Scheduler._plan_goal", "to": "Scheduler._create_task_record", "relationship": "plan_consumer"},
@@ -3078,11 +3166,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 9
   sample_active_references:
+    - core/tasks/scheduler.py:3987 [target] gate = self._pre_enqueue_repair_fingerprint_gate(goal=goal, kwargs=kwargs)
+    - core/tasks/scheduler.py:4041 [target] gate = self._pre_enqueue_repair_fingerprint_gate(goal=goal, kwargs=kwargs)
     - tests/test_legacy_surface_followup_seals.py:164 [test] scheduler._pre_enqueue_repair_fingerprint_gate = lambda goal, kwargs: None
     - tests/test_repair_chain_runtime.py:318 [test] first_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
     - tests/test_repair_chain_runtime.py:319 [test] second_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
-    - tests/test_repair_chain_runtime.py:1903 [test] first_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
-    - tests/test_repair_chain_runtime.py:1904 [test] second_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
     - ... truncated 3
   sample_archived_references:
     - <none>
@@ -3115,11 +3203,11 @@ Referenced / Not Removal Candidates
   report_refs: 12
   non_definition_refs: 27
   sample_active_references:
-    - tests/test_scheduler_queue_transition_contract.py:118 [test] return Scheduler._enqueue_repo_task_if_ready(scheduler, task, overwrite=overwrite)
-    - tests/test_scheduler_runtime_tail_regression.py:286 [test] scheduler._enqueue_repo_task_if_ready = lambda task, overwrite=False: enqueued.append(
-    - tests/test_scheduler_runtime_tail_regression.py:326 [test] scheduler._enqueue_repo_task_if_ready = lambda task, overwrite=False: enqueued.append(
-    - tests/test_scheduler_runtime_tail_regression.py:362 [test] scheduler._enqueue_repo_task_if_ready = lambda task, overwrite=False: enqueued.append(
-    - tests/test_scheduler_runtime_tail_regression.py:397 [test] scheduler._enqueue_repo_task_if_ready = lambda task, overwrite=False: enqueued.append(
+    - core/tasks/scheduler_core/dispatch_requeue.py:26 [production] return bool(scheduler._enqueue_repo_task_if_ready(task, overwrite=overwrite))
+    - core/tasks/scheduler_core/queue_sync_helpers.py:71 [production] if scheduler._enqueue_repo_task_if_ready(task):
+    - core/tasks/scheduler_core/queue_sync_helpers.py:212 [production] scheduler._enqueue_repo_task_if_ready(task, overwrite=True)
+    - core/tasks/scheduler_core/scheduler_retry_pipeline.py:85 [production] scheduler._enqueue_repo_task_if_ready(enqueue_task, overwrite=enqueue_decision["overwrite"])
+    - core/tasks/scheduler_core/scheduler_retry_pipeline.py:154 [production] self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
     - ... truncated 10
   sample_archived_references:
     - <none>
@@ -3340,11 +3428,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 8
   sample_active_references:
+    - core/tasks/scheduler_core/public_task_record_helpers.py:96 [production] normalized = scheduler._normalize_task_schema(task)
+    - core/tasks/scheduler_core/public_task_record_helpers.py:312 [production] task = scheduler._normalize_task_schema(task)
     - tests/run_audit_chain_core_smoke.py:133 [test] legacy = scheduler._normalize_task_schema(
     - tests/test_scheduler_public_snapshot_results_cap.py:46 [test] normalized = scheduler._normalize_task_schema(task)
     - tests/test_scheduler_public_snapshot_results_cap.py:79 [test] normalized = scheduler._normalize_task_schema(task)
-    - core/tasks/scheduler_core/public_task_record_helpers.py:96 [production] normalized = scheduler._normalize_task_schema(task)
-    - core/tasks/scheduler_core/public_task_record_helpers.py:312 [production] task = scheduler._normalize_task_schema(task)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -3374,9 +3462,9 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 4
   sample_active_references:
+    - core/tasks/scheduler_core/simple_step_guard_helpers.py:27 [production] prepared_step = scheduler._normalize_verify_step(prepared_step)
     - tests/test_scheduler_parser_helpers.py:181 [test] result = scheduler._normalize_verify_step(
     - tools/wire_simple_step_guard_helpers.py:34 [tool] prepared_step = scheduler._normalize_verify_step(prepared_step)
-    - core/tasks/scheduler_core/simple_step_guard_helpers.py:27 [production] prepared_step = scheduler._normalize_verify_step(prepared_step)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -3434,11 +3522,11 @@ Referenced / Not Removal Candidates
   report_refs: 7
   non_definition_refs: 44
   sample_active_references:
-    - tests/test_hydration_runtime_contract.py:30 [test] hydrated = scheduler._hydrate_task_from_workspace(task)
-    - tests/test_hydration_runtime_contract.py:60 [test] hydrated = scheduler._hydrate_task_from_workspace(task)
-    - tests/test_hydration_runtime_contract.py:86 [test] hydrated = scheduler._hydrate_task_from_workspace(task)
-    - tests/test_hydration_runtime_contract.py:130 [test] hydrated = scheduler._hydrate_task_from_workspace(task)
-    - tests/test_hydration_runtime_contract.py:171 [test] hydrated = scheduler._hydrate_task_from_workspace(task)
+    - core/tasks/scheduler.py:807 [target] live_task = self._hydrate_task_from_workspace(copy.deepcopy(task))
+    - core/tasks/scheduler.py:831 [target] live_task = self._hydrate_task_from_workspace(live_task)
+    - core/tasks/scheduler.py:856 [target] live_task = self._hydrate_task_from_workspace(refreshed)
+    - core/tasks/scheduler.py:858 [target] live_task = self._hydrate_task_from_workspace(last_result["task"])
+    - core/tasks/scheduler.py:889 [target] final_task = self._hydrate_task_from_workspace(final_task)
     - ... truncated 32
   sample_archived_references:
     - <none>
@@ -3490,11 +3578,11 @@ Referenced / Not Removal Candidates
   report_refs: 0
   non_definition_refs: 8
   sample_active_references:
+    - core/tasks/scheduler.py:5343 [target] error_text = self._extract_failure_text_for_retry_collapse(
     - tests/test_scheduler_payload_convergence_guard.py:83 [test] self.scheduler._extract_failure_text_for_retry_collapse(
     - tests/test_scheduler_payload_convergence_guard.py:99 [test] self.scheduler._extract_failure_text_for_retry_collapse(
     - tests/test_scheduler_payload_convergence_guard.py:115 [test] self.scheduler._extract_failure_text_for_retry_collapse(
     - tests/test_scheduler_runtime_payload_contract.py:164 [test] self.scheduler._extract_failure_text_for_retry_collapse(
-    - tests/test_scheduler_runtime_payload_contract.py:181 [test] self.scheduler._extract_failure_text_for_retry_collapse(
     - ... truncated 3
   sample_archived_references:
     - <none>
@@ -3508,11 +3596,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 10
   sample_active_references:
+    - core/tasks/scheduler.py:5428 [target] text = self._extract_error_text_deep(candidate)
+    - core/tasks/scheduler.py:5471 [target] text = self._extract_error_text_deep(value.get(key), depth + 1)
+    - core/tasks/scheduler.py:5477 [target] text = self._extract_error_text_deep(item, depth + 1)
     - tests/test_scheduler_payload_convergence_guard.py:58 [test] self.scheduler._extract_error_text_deep(payload),
     - tests/test_scheduler_payload_convergence_guard.py:64 [test] self.scheduler._extract_error_text_deep("plain runtime error"),
-    - tests/test_scheduler_runtime_payload_contract.py:131 [test] self.scheduler._extract_error_text_deep(payload),
-    - tests/test_scheduler_runtime_payload_contract.py:145 [test] self.scheduler._extract_error_text_deep(payload),
-    - tests/test_scheduler_runtime_payload_text.py:98 [test] self.scheduler._extract_error_text_deep(payload),
     - ... truncated 4
   sample_archived_references:
     - <none>
@@ -3557,11 +3645,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 9
   sample_active_references:
-    - tests/test_scheduler_dispatch_result_helpers.py:67 [test] self.calls.append({"method": "_sync_blocked_state", **kwargs})
-    - tests/test_scheduler_dispatch_result_helpers.py:427 [test] "method": "_sync_blocked_state",
-    - tests/test_scheduler_sync_blocked_state_no_recursion.py:9 [test] marker = "def _sync_blocked_state(self, task_id: str, blocked_reason: str) -> None:"
     - core/tasks/scheduler_core/dispatch_finalize.py:169 [production] scheduler._sync_blocked_state(
     - core/tasks/scheduler_core/queue_sync_helpers.py:110 [production] scheduler._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+    - core/tasks/scheduler_core/queue_sync_helpers.py:204 [production] scheduler._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+    - core/tasks/scheduler_core/repo_blocked_state.py:201 [production] sync_fn = getattr(scheduler, "_sync_blocked_state", None)
+    - tests/test_scheduler_dispatch_result_helpers.py:67 [test] self.calls.append({"method": "_sync_blocked_state", **kwargs})
     - ... truncated 2
   sample_archived_references:
     - <none>
@@ -3579,8 +3667,8 @@ Referenced / Not Removal Candidates
     - app_legacy.py:2040 [production] persist_fn = getattr(scheduler, "_persist_task_payload", None)
     - app_legacy.py:2486 [production] persist_fn = getattr(scheduler, "_persist_task_payload", None)
     - app_legacy.py:3816 [production] persist_fn = getattr(scheduler, "_persist_task_payload", None)
-    - tests/test_persistence_runtime_contract.py:104 [test] scheduler._persist_task_payload(task_id, task)
-    - tests/test_persistence_runtime_contract.py:137 [test] scheduler._persist_task_payload(task_id, task)
+    - core/agent/agent_loop.py:6047 [production] persist_fn = getattr(task_entry, "_persist_task_payload", None)
+    - core/tasks/scheduler.py:2793 [target] self._persist_task_payload(task_id=task_id, task=task)
     - ... truncated 41
   sample_archived_references:
     - <none>
@@ -3599,11 +3687,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 9
   sample_active_references:
-    - tests/test_scheduler_snapshot_persist_cap.py:61 [test] scheduler._save_task_snapshot_safe(task)
-    - tests/test_scheduler_snapshot_persist_cap.py:98 [test] scheduler._save_task_snapshot_safe(task)
     - core/tasks/scheduler.py:4281 [target] self._save_task_snapshot_safe(task)
     - core/tasks/scheduler.py:4332 [target] self._save_task_snapshot_safe(task)
     - core/tasks/scheduler.py:5576 [target] self._save_task_snapshot_safe(task)
+    - core/tasks/scheduler.py:5637 [target] self._save_task_snapshot_safe(task)
+    - tests/test_scheduler_snapshot_persist_cap.py:61 [test] scheduler._save_task_snapshot_safe(task)
     - ... truncated 1
   sample_archived_references:
     - <none>
@@ -3620,10 +3708,10 @@ Referenced / Not Removal Candidates
   non_definition_refs: 63
   sample_active_references:
     - app_legacy.py:363 [production] helper = getattr(scheduler, "_get_task_from_repo", None)
-    - services/system_boot.py:923 [production] helper = getattr(self.scheduler, "_get_task_from_repo", None)
-    - tests/run_agent_loop_smoke.py:191 [test] task = scheduler._get_task_from_repo(task_id)
-    - tests/run_audit_chain_core_smoke.py:34 [test] task = scheduler._get_task_from_repo(task_id)
-    - tests/run_audit_chain_core_smoke.py:38 [test] return scheduler._get_task_from_repo(task_id) or last
+    - core/agent/agent_loop.py:6082 [production] get_fn = getattr(task_entry, "_get_task_from_repo", None)
+    - core/tasks/scheduler.py:854 [target] refreshed = self._get_task_from_repo(task_id) if task_id else None
+    - core/tasks/scheduler.py:887 [target] final_task = self._get_task_from_repo(task_id) if task_id else None
+    - core/tasks/scheduler.py:2754 [target] task = self._get_task_from_repo(task_id)
     - ... truncated 55
   sample_archived_references:
     - <none>
@@ -3639,11 +3727,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 13
   sample_active_references:
-    - services/system_boot.py:948 [production] helper = getattr(self.scheduler, "_list_repo_tasks", None)
-    - tests/test_scheduler_runtime_tail_regression.py:54 [test] scheduler._list_repo_tasks = lambda: [finished_task]
-    - tests/test_scheduler_runtime_tail_regression.py:90 [test] scheduler._list_repo_tasks = lambda: [stale_task]
     - core/runtime/persistent_runtime_orchestrator.py:574 [production] tasks = self._list_repo_tasks(task_repository)
     - core/runtime/persistent_runtime_orchestrator.py:710 [production] tasks = self._list_repo_tasks(task_repository)
+    - core/tasks/scheduler.py:2658 [target] repo_tasks = self._list_repo_tasks()
+    - core/tasks/scheduler.py:2697 [target] tasks = self._list_repo_tasks()
+    - core/tasks/scheduler.py:3031 [target] tasks = self._list_repo_tasks()
     - ... truncated 7
   sample_archived_references:
     - <none>
@@ -3657,11 +3745,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 40
   sample_active_references:
-    - tests/test_runtime_boundary_candidates.py:14 [test] "_append_history",
-    - tools/apply_failure_observability_envelope_v1.py:10 [tool] OLD_FAILED_BLOCK = '''    task["history"] = scheduler._append_history(task.get("history"), "failed")
-    - tools/apply_failure_observability_envelope_v1.py:17 [tool] NEW_FAILED_BLOCK = '''    task["history"] = scheduler._append_history(task.get("history"), "failed")
-    - tools/apply_failure_observability_envelope_v1.py:31 [tool] OLD_QUEUED_BLOCK = '''    task["history"] = scheduler._append_history(task.get("history"), "queued")
-    - tools/apply_failure_observability_envelope_v1.py:36 [tool] NEW_QUEUED_BLOCK = '''    task["history"] = scheduler._append_history(task.get("history"), "queued")
+    - core/runtime/runtime_state_machine.py:339 [production] updated = self._append_history(
+    - core/tasks/runtime_repair_confirmation_actions.py:211 [production] "history": _append_history(
+    - core/tasks/runtime_repair_confirmation_actions.py:251 [production] "history": _append_history(
+    - core/tasks/scheduler.py:2174 [target] task["history"] = self._append_history(task.get("history"), "replanned")
+    - core/tasks/scheduler.py:2175 [target] task["history"] = self._append_history(task.get("history"), "queued")
     - ... truncated 31
   sample_archived_references:
     - <none>
@@ -3699,10 +3787,10 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 5
   sample_active_references:
+    - core/tasks/scheduler.py:5983 [target] func_name = self._extract_function_name_for_fix(raw)
     - tests/test_scheduler_parser_helpers.py:199 [test] scheduler._extract_function_name_for_fix("Fix the add function so it returns correct result"),
     - tests/test_scheduler_parser_helpers.py:203 [test] scheduler._extract_function_name_for_fix("repair multiply function"),
     - tests/test_scheduler_parser_helpers.py:207 [test] scheduler._extract_function_name_for_fix("def divide(a, b): pass"),
-    - core/tasks/scheduler.py:5983 [target] func_name = self._extract_function_name_for_fix(raw)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -3771,11 +3859,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 11
   sample_active_references:
+    - core/tasks/scheduler.py:186 [target] _extract_python_file_paths as _scheduler_path_parser_helper_extract_python_file_paths,
+    - core/tasks/scheduler.py:5800 [target] explicit_paths = self._extract_python_file_paths(raw)
+    - core/tasks/scheduler.py:5987 [target] explicit_paths = self._extract_python_file_paths(raw)
     - tests/test_scheduler_extraction_boundary.py:57 [test] self.scheduler._extract_python_file_paths(
     - tests/test_scheduler_extraction_boundary.py:94 [test] self.assertTrue(hasattr(path_parser_helpers, "_extract_python_file_paths"))
-    - tests/test_scheduler_parser_helpers.py:15 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_python_file_paths
-    - tests/test_scheduler_parser_helpers.py:19 [test] _extract_python_file_paths(text),
-    - core/tasks/scheduler.py:186 [target] _extract_python_file_paths as _scheduler_path_parser_helper_extract_python_file_paths,
     - ... truncated 2
   sample_archived_references:
     - <none>
@@ -3792,11 +3880,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 24
   sample_active_references:
-    - tests/test_scheduler_extraction_boundary.py:63 [test] self.assertTrue(self.scheduler._is_shared_like_path("workspace/shared/demo.txt"))
-    - tests/test_scheduler_extraction_boundary.py:64 [test] self.assertTrue(self.scheduler._is_shared_like_path(r"shared\demo.txt"))
-    - tests/test_scheduler_extraction_boundary.py:65 [test] self.assertFalse(self.scheduler._is_shared_like_path("workspace/private/demo.txt"))
-    - tests/test_scheduler_parser_helpers.py:24 [test] from core.tasks.scheduler_core.path_parser_helpers import _is_shared_like_path
-    - tests/test_scheduler_parser_helpers.py:26 [test] self.assertTrue(_is_shared_like_path("workspace/shared/demo.txt"))
+    - core/tasks/scheduler.py:187 [target] _is_shared_like_path as _scheduler_path_parser_helper_is_shared_like_path,
+    - core/tasks/scheduler.py:5838 [target] "scope": "shared" if self._is_shared_like_path(logical_path) else "task",
+    - core/tasks/scheduler.py:5839 [target] "edit_mode": "direct_workspace_edit" if self._is_shared_like_path(logical_path) else "task_edit",
+    - core/tasks/scheduler.py:5840 [target] "target_policy": "preserve_original_workspace_file" if self._is_shared_like_path(logical_path) else "task_local_file",
+    - core/tasks/scheduler.py:5877 [target] "scope": "shared" if self._is_shared_like_path(logical_path) else "task",
     - ... truncated 15
   sample_archived_references:
     - <none>
@@ -3840,10 +3928,10 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 6
   sample_active_references:
-    - tests/test_scheduler_no_direct_mutation_contract.py:81 [test] result = scheduler._execute_code_edit_step(
-    - tests/test_scheduler_no_direct_mutation_contract.py:118 [test] result = scheduler._execute_code_edit_step(
     - core/tasks/scheduler.py:2241 [target] # inside _execute_code_edit_step before touching disk.
     - core/tasks/scheduler.py:2243 [target] code_edit_result = self._execute_code_edit_step(task=task, step=step)
+    - tests/test_scheduler_no_direct_mutation_contract.py:81 [test] result = scheduler._execute_code_edit_step(
+    - tests/test_scheduler_no_direct_mutation_contract.py:118 [test] result = scheduler._execute_code_edit_step(
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -3873,11 +3961,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 12
   sample_active_references:
+    - core/tasks/scheduler.py:188 [target] _strip_markdown_code_fences as _scheduler_path_parser_helper_strip_markdown_code_fences,
+    - core/tasks/scheduler.py:6156 [target] after = self._strip_markdown_code_fences(after)
+    - core/tasks/scheduler.py:6281 [target] after = self._strip_markdown_code_fences(after)
     - tests/test_scheduler_extraction_boundary.py:68 [test] self.scheduler._strip_markdown_code_fences("```python\nprint('ok')\n```"),
     - tests/test_scheduler_extraction_boundary.py:71 [test] self.assertEqual(self.scheduler._strip_markdown_code_fences("plain text"), "plain text")
-    - tests/test_scheduler_parser_helpers.py:31 [test] from core.tasks.scheduler_core.path_parser_helpers import _strip_markdown_code_fences
-    - tests/test_scheduler_parser_helpers.py:34 [test] _strip_markdown_code_fences("```python\nprint('ok')\n```"),
-    - tests/test_scheduler_parser_helpers.py:37 [test] self.assertEqual(_strip_markdown_code_fences("plain text"), "plain text")
     - ... truncated 3
   sample_archived_references:
     - <none>
@@ -3959,11 +4047,11 @@ Referenced / Not Removal Candidates
   report_refs: 7
   non_definition_refs: 15
   sample_active_references:
+    - core/tasks/scheduler.py:205 [target] _should_force_deterministic_task_planner as _scheduler_planner_adapter_helper_should_force_deterministic_task_planner,
+    - core/tasks/scheduler.py:6503 [target] if self._should_force_deterministic_task_planner(clean_goal):
+    - core/tasks/scheduler_core/planner_adapter_helpers.py:12 [production] _should_force_deterministic_task_planner as _policy_should_force_deterministic_task_planner,
     - tests/test_scheduler_planner_adapter_helpers.py:48 [test] assert scheduler._should_force_deterministic_task_planner("write workspace/shared/report.txt")
     - tests/test_scheduler_planner_adapter_helpers.py:49 [test] assert scheduler._should_force_deterministic_task_planner("verify the file exists at workspace/output.txt")
-    - tests/test_scheduler_planner_adapter_helpers.py:50 [test] assert scheduler._should_force_deterministic_task_planner("confirm that result contains alpha")
-    - tests/test_scheduler_planner_adapter_helpers.py:51 [test] assert scheduler._should_force_deterministic_task_planner("check if artifact exists")
-    - tests/test_scheduler_planner_adapter_helpers.py:57 [test] assert not scheduler._should_force_deterministic_task_planner("summarize the project direction")
     - ... truncated 3
   sample_archived_references:
     - <none>
@@ -4001,9 +4089,9 @@ Referenced / Not Removal Candidates
   report_refs: 25
   non_definition_refs: 28
   sample_active_references:
-    - tests/test_runtime_kernel_boundary_contract.py:19 [test] "_plan_goal",
     - core/tasks/scheduler.py:3632 [target] planner_result = self._plan_goal(clean_goal, document_payload=document_payload)
     - core/tasks/scheduler.py:5731 [target] plan = self._plan_goal(goal)
+    - tests/test_runtime_kernel_boundary_contract.py:19 [test] "_plan_goal",
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -4021,11 +4109,11 @@ Referenced / Not Removal Candidates
   report_refs: 5
   non_definition_refs: 12
   sample_active_references:
-    - tests/test_scheduler_planner_adapter_helpers.py:64 [test] assert scheduler._plan_goal_via_agent_planners("write a file") is None
-    - tests/test_scheduler_planner_adapter_helpers.py:90 [test] plan = scheduler._plan_goal_via_agent_planners("plan this")
-    - tests/test_scheduler_planner_adapter_helpers.py:117 [test] plan = scheduler._plan_goal_via_agent_planners("convert document", document_payload=payload)
     - core/tasks/scheduler.py:207 [target] _plan_goal_via_agent_planners as _scheduler_planner_adapter_helper_plan_goal_via_agent_planners,
     - core/tasks/scheduler.py:6494 [target] external_plan = self._plan_goal_via_agent_planners(
+    - core/tasks/scheduler.py:6510 [target] external_plan = self._plan_goal_via_agent_planners(
+    - core/tasks/scheduler_core/planner_adapter_helpers.py:10 [production] _plan_goal_via_agent_planners as _policy_plan_goal_via_agent_planners,
+    - tests/test_scheduler_planner_adapter_helpers.py:64 [test] assert scheduler._plan_goal_via_agent_planners("write a file") is None
     - ... truncated 2
   sample_archived_references:
     - <none>
@@ -4043,11 +4131,11 @@ Referenced / Not Removal Candidates
   report_refs: 5
   non_definition_refs: 12
   sample_active_references:
-    - tests/test_scheduler_planner_adapter_helpers.py:139 [test] plan = scheduler._call_planner_like(
-    - tests/test_scheduler_planner_adapter_helpers.py:163 [test] plan = scheduler._call_planner_like(
-    - tests/test_scheduler_planner_adapter_helpers.py:187 [test] raw_plan = scheduler._call_planner_like(
     - core/tasks/scheduler.py:208 [target] _call_planner_like as _scheduler_planner_adapter_helper_call_planner_like,
     - core/tasks/scheduler_core/planner_adapter_helpers.py:6 [production] _call_planner_like as _execution_call_planner_like,
+    - core/tasks/scheduler_core/planner_policy_helpers.py:99 [production] plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+    - core/tasks/scheduler_core/planner_policy_helpers.py:142 [production] plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+    - tests/test_scheduler_planner_adapter_helpers.py:139 [test] plan = scheduler._call_planner_like(
     - ... truncated 2
   sample_archived_references:
     - <none>
@@ -4065,11 +4153,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 13
   sample_active_references:
-    - tests/test_runtime_kernel_convergence.py:45 [test] plan = scheduler._normalize_external_plan(normalized.payload)
-    - tests/test_scheduler_planner_adapter_helpers.py:193 [test] normalized = scheduler._normalize_external_plan(raw_plan)
-    - tests/test_scheduler_planner_contract_normalization.py:47 [test] plan = scheduler._normalize_external_plan(
-    - tests/test_scheduler_planner_contract_normalization.py:75 [test] plan = scheduler._normalize_external_plan(
-    - tests/test_scheduler_planner_contract_normalization.py:99 [test] plan = scheduler._normalize_external_plan(
+    - core/tasks/scheduler.py:209 [target] _normalize_external_plan as _scheduler_planner_adapter_helper_normalize_external_plan,
+    - core/tasks/scheduler_core/planner_adapter_helpers.py:7 [production] _normalize_external_plan as _execution_normalize_external_plan,
+    - core/tasks/scheduler_core/planner_execution_helpers.py:50 [production] return planner_normalization_helpers._normalize_external_plan(self, plan)
+    - core/tasks/scheduler_core/planner_policy_helpers.py:101 [production] normalized = self._normalize_external_plan(plan)
+    - core/tasks/scheduler_core/planner_policy_helpers.py:143 [production] normalized = self._normalize_external_plan(plan)
     - ... truncated 7
   sample_archived_references:
     - <none>
@@ -4083,11 +4171,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 9
   sample_active_references:
-    - tests/test_scheduler_runtime_tail_regression.py:134 [test] scheduler._parse_goal_overrides = lambda goal: {"clean_goal": goal}
-    - tests/test_scheduler_runtime_tail_regression.py:210 [test] scheduler._parse_goal_overrides = lambda goal: {"clean_goal": goal}
     - core/tasks/scheduler.py:196 [target] _parse_goal_overrides as _scheduler_goal_parser_helper_parse_goal_overrides,
     - core/tasks/scheduler.py:3583 [target] parsed = self._parse_goal_overrides(goal.strip())
     - core/tasks/scheduler.py:3928 [target] parsed = self._parse_goal_overrides(str(goal or "").strip())
+    - core/tasks/scheduler.py:7451 [target] parsed = self._parse_goal_overrides(str(goal or "").strip())
+    - tests/test_scheduler_runtime_tail_regression.py:134 [test] scheduler._parse_goal_overrides = lambda goal: {"clean_goal": goal}
     - ... truncated 1
   sample_archived_references:
     - <none>
@@ -4103,11 +4191,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 10
   sample_active_references:
-    - tests/test_scheduler_extraction_boundary.py:74 [test] self.scheduler._extract_all_document_file_paths(
-    - tests/test_scheduler_parser_helpers.py:40 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_all_document_file_paths
-    - tests/test_scheduler_parser_helpers.py:44 [test] _extract_all_document_file_paths(text),
     - core/tasks/scheduler.py:189 [target] _extract_all_document_file_paths as _scheduler_path_parser_helper_extract_all_document_file_paths,
     - core/tasks/scheduler_core/goal_parser_helpers.py:7 [production] _extract_all_document_file_paths,
+    - core/tasks/scheduler_core/goal_parser_helpers.py:57 [production] all_paths = _extract_all_document_file_paths(stripped)
+    - tests/test_scheduler_extraction_boundary.py:74 [test] self.scheduler._extract_all_document_file_paths(
+    - tests/test_scheduler_parser_helpers.py:40 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_all_document_file_paths
     - ... truncated 1
   sample_archived_references:
     - <none>
@@ -4124,11 +4212,11 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 13
   sample_active_references:
+    - core/tasks/scheduler.py:190 [target] _extract_document_arrow_paths as _scheduler_path_parser_helper_extract_document_arrow_paths,
+    - core/tasks/scheduler_core/path_parser_helpers.py:90 [production] arrow = _extract_document_arrow_paths(stripped)
+    - core/tasks/scheduler_core/path_parser_helpers.py:116 [production] arrow = _extract_document_arrow_paths(stripped)
     - tests/test_scheduler_extraction_boundary.py:81 [test] self.scheduler._extract_document_arrow_paths(
     - tests/test_scheduler_extraction_boundary.py:86 [test] self.assertIsNone(self.scheduler._extract_document_arrow_paths("workspace/shared/input.txt"))
-    - tests/test_scheduler_extraction_boundary.py:95 [test] self.assertTrue(hasattr(path_parser_helpers, "_extract_document_arrow_paths"))
-    - tests/test_scheduler_parser_helpers.py:49 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_document_arrow_paths
-    - tests/test_scheduler_parser_helpers.py:52 [test] _extract_document_arrow_paths("workspace/shared/input.txt -> workspace/shared/summary.md"),
     - ... truncated 4
   sample_archived_references:
     - <none>
@@ -4145,11 +4233,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 14
   sample_active_references:
-    - tests/test_scheduler_parser_helpers.py:58 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_document_source_path
-    - tests/test_scheduler_parser_helpers.py:62 [test] _extract_document_source_path("summarize workspace/shared/input.txt", paths),
-    - tests/test_scheduler_parser_helpers.py:66 [test] _extract_document_source_path("workspace/shared/input.txt -> workspace/shared/summary.md", paths),
-    - tests/test_scheduler_parser_helpers.py:69 [test] self.assertEqual(_extract_document_source_path("make summary", paths), "workspace/shared/input.txt")
-    - tests/test_scheduler_parser_helpers.py:70 [test] self.assertEqual(_extract_document_source_path("make summary", []), "")
+    - core/system/llm_planner.py:204 [production] explicit_source = self._extract_document_source_path(text, all_paths)
+    - core/system/llm_planner.py:289 [production] source_path = self._extract_document_source_path(stripped, all_paths)
+    - core/tasks/scheduler.py:192 [target] _extract_document_source_path as _scheduler_path_parser_helper_extract_document_source_path,
+    - core/tasks/scheduler_core/goal_parser_helpers.py:9 [production] _extract_document_source_path,
+    - core/tasks/scheduler_core/goal_parser_helpers.py:85 [production] input_file = _extract_document_source_path(stripped, all_paths) or "input.txt"
     - ... truncated 6
   sample_archived_references:
     - <none>
@@ -4165,11 +4253,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 15
   sample_active_references:
-    - tests/test_scheduler_parser_helpers.py:73 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_document_output_path
-    - tests/test_scheduler_parser_helpers.py:77 [test] _extract_document_output_path("write summary to workspace/shared/summary.md", paths),
-    - tests/test_scheduler_parser_helpers.py:81 [test] _extract_document_output_path("workspace/shared/input.txt -> workspace/shared/summary.md", paths),
-    - tests/test_scheduler_parser_helpers.py:84 [test] self.assertEqual(_extract_document_output_path("make summary", paths), "workspace/shared/summary.md")
-    - tests/test_scheduler_parser_helpers.py:85 [test] self.assertEqual(_extract_document_output_path("make summary", ["workspace/shared/input.txt"]), "")
+    - core/system/llm_planner.py:205 [production] explicit_output = self._extract_document_output_path(text, all_paths)
+    - core/tasks/scheduler.py:193 [target] _extract_document_output_path as _scheduler_path_parser_helper_extract_document_output_path,
+    - core/tasks/scheduler_core/goal_parser_helpers.py:8 [production] _extract_document_output_path,
+    - core/tasks/scheduler_core/goal_parser_helpers.py:76 [production] output_hint = _extract_document_output_path(stripped, all_paths).lower()
+    - core/tasks/scheduler_core/goal_parser_helpers.py:88 [production] output_file = _extract_document_output_path(stripped, all_paths) or "action_items.txt"
     - ... truncated 7
   sample_archived_references:
     - <none>
@@ -4242,10 +4330,10 @@ Referenced / Not Removal Candidates
   report_refs: 4
   non_definition_refs: 8
   sample_active_references:
-    - tests/test_scheduler_command_planner.py:34 [test] assert scheduler._try_plan_command("??? echo hello") is None
-    - tests/test_scheduler_command_planner.py:35 [test] assert scheduler._try_plan_command("run echo hello") == {
     - core/planning/task_replanner.py:789 [production] command_step = self._try_plan_command(text)
     - core/tasks/scheduler.py:6523 [target] command_step = self._try_plan_command(clean_goal)
+    - tests/test_scheduler_command_planner.py:34 [test] assert scheduler._try_plan_command("??? echo hello") is None
+    - tests/test_scheduler_command_planner.py:35 [test] assert scheduler._try_plan_command("run echo hello") == {
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -4301,11 +4389,11 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 16
   sample_active_references:
-    - tests/test_scheduler_extraction_boundary.py:28 [test] self.assertEqual(self.scheduler._strip_quotes('"abc"'), "abc")
-    - tests/test_scheduler_extraction_boundary.py:29 [test] self.assertEqual(self.scheduler._strip_quotes("'abc'"), "abc")
-    - tests/test_scheduler_extraction_boundary.py:30 [test] self.assertEqual(self.scheduler._strip_quotes("abc"), "abc")
-    - tests/test_scheduler_parser_helpers.py:118 [test] from core.tasks.scheduler_core.pure_helpers import _strip_quotes
-    - tests/test_scheduler_parser_helpers.py:120 [test] self.assertEqual(_strip_quotes('"hello"'), "hello")
+    - core/system/llm_planner.py:812 [production] return self._normalize_special_content(self._strip_quotes(raw)), True
+    - core/system/llm_planner.py:829 [production] return self._normalize_special_content(self._strip_quotes(tail)), True
+    - core/tasks/scheduler.py:182 [target] _strip_quotes as _scheduler_helper_strip_quotes,
+    - core/tasks/scheduler_core/goal_parser_helpers.py:12 [production] from core.tasks.scheduler_core.pure_helpers import _strip_quotes
+    - core/tasks/scheduler_core/goal_parser_helpers.py:233 [production] return _strip_quotes(value), True
     - ... truncated 8
   sample_archived_references:
     - <none>
@@ -4321,11 +4409,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 8
   sample_active_references:
-    - tests/test_scheduler_parser_helpers.py:217 [test] scheduler._try_plan_read_file("read workspace/shared/input.txt"),
-    - tests/test_scheduler_parser_helpers.py:221 [test] scheduler._try_plan_read_file("查看 workspace/shared/input.md"),
-    - tests/test_scheduler_parser_helpers.py:224 [test] self.assertIsNone(scheduler._try_plan_read_file("write workspace/shared/input.txt"))
     - core/planning/task_replanner.py:780 [production] read_file_step = self._try_plan_read_file(text)
     - core/tasks/scheduler.py:202 [target] _try_plan_read_file as _scheduler_goal_parser_helper_try_plan_read_file,
+    - core/tasks/scheduler.py:6541 [target] read_step = self._try_plan_read_file(clean_goal)
+    - tests/test_scheduler_parser_helpers.py:217 [test] scheduler._try_plan_read_file("read workspace/shared/input.txt"),
+    - tests/test_scheduler_parser_helpers.py:221 [test] scheduler._try_plan_read_file("查看 workspace/shared/input.md"),
     - ... truncated 1
   sample_archived_references:
     - <none>
@@ -4340,11 +4428,11 @@ Referenced / Not Removal Candidates
   report_refs: 5
   non_definition_refs: 24
   sample_active_references:
-    - tests/test_scheduler_extraction_boundary.py:33 [test] self.scheduler._extract_file_path("read workspace/shared/input.txt"),
-    - tests/test_scheduler_extraction_boundary.py:36 [test] self.assertIsNone(self.scheduler._extract_file_path("no path"))
-    - tests/test_scheduler_parser_helpers.py:126 [test] from core.tasks.scheduler_core.path_parser_helpers import _extract_file_path
-    - tests/test_scheduler_parser_helpers.py:129 [test] _extract_file_path("please read workspace/shared/input.txt now"),
-    - tests/test_scheduler_parser_helpers.py:133 [test] _extract_file_path(r"check core\tasks\scheduler.py"),
+    - core/planning/planner.py:1696 [production] "resolved_from_last_path": self._extract_file_path(stripped) is None and last_path is not None,
+    - core/repo_sandbox/intent.py:156 [production] file_path = _extract_file_path(text)
+    - core/system/llm_planner.py:737 [production] explicit_path = self._extract_file_path(text)
+    - core/system/llm_planner.py:780 [production] path = self._extract_file_path(text)
+    - core/system/llm_planner.py:814 [production] file_path = self._extract_file_path(stripped)
     - ... truncated 14
   sample_archived_references:
     - <none>
@@ -4622,8 +4710,8 @@ Referenced / Not Removal Candidates
   report_refs: 11
   non_definition_refs: 13
   sample_active_references:
-    - tests/test_scheduler_execution_boundary_seal.py:111 [test] "_zero_v702_scheduler_execute_simple_step",
     - core/tasks/scheduler.py:6908 [target] Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step
+    - tests/test_scheduler_execution_boundary_seal.py:111 [test] "_zero_v702_scheduler_execute_simple_step",
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -4641,8 +4729,8 @@ Referenced / Not Removal Candidates
   report_refs: 10
   non_definition_refs: 12
   sample_active_references:
-    - tests/test_scheduler_execution_boundary_seal.py:112 [test] "_zero_v7335_scheduler_execute_simple_step_no_direct_mutation",
     - core/tasks/scheduler.py:6942 [target] Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation
+    - tests/test_scheduler_execution_boundary_seal.py:112 [test] "_zero_v7335_scheduler_execute_simple_step_no_direct_mutation",
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -4972,10 +5060,10 @@ Referenced / Not Removal Candidates
   report_refs: 3
   non_definition_refs: 7
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:139 [tool] message = _zero_v11_scheduler_str(payload.get("message"), "執行完成" if ok else "執行失敗")
-    - tools/apply_scheduler_aggregate_adapter_v1.py:140 [tool] final_answer = _zero_v11_scheduler_str(payload.get("final_answer"), message)
     - core/tasks/scheduler.py:7823 [target] message = _zero_v11_scheduler_str(payload.get("message"), "step executed" if ok else "runtime execution failed")
     - core/tasks/scheduler.py:7824 [target] final_answer = _zero_v11_scheduler_str(payload.get("final_answer"), message)
+    - tools/apply_scheduler_aggregate_adapter_v1.py:139 [tool] message = _zero_v11_scheduler_str(payload.get("message"), "執行完成" if ok else "執行失敗")
+    - tools/apply_scheduler_aggregate_adapter_v1.py:140 [tool] final_answer = _zero_v11_scheduler_str(payload.get("final_answer"), message)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -4990,8 +5078,8 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 4
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:150 [tool] "last_result": _zero_v11_scheduler_copy_dict(payload.get("last_result")),
     - core/tasks/scheduler.py:7834 [target] "last_result": _zero_v11_scheduler_copy_dict(payload.get("last_result")),
+    - tools/apply_scheduler_aggregate_adapter_v1.py:150 [tool] "last_result": _zero_v11_scheduler_copy_dict(payload.get("last_result")),
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5005,8 +5093,8 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 4
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:148 [tool] "error_type": "" if ok else _zero_v11_extract_scheduler_error_type(payload),
     - core/tasks/scheduler.py:7832 [target] "error_type": "" if ok else _zero_v11_extract_scheduler_error_type(payload),
+    - tools/apply_scheduler_aggregate_adapter_v1.py:148 [tool] "error_type": "" if ok else _zero_v11_extract_scheduler_error_type(payload),
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5020,8 +5108,8 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 4
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:147 [tool] "error_text": "" if ok else _zero_v11_extract_scheduler_error_text(payload),
     - core/tasks/scheduler.py:7831 [target] "error_text": "" if ok else _zero_v11_extract_scheduler_error_text(payload),
+    - tools/apply_scheduler_aggregate_adapter_v1.py:147 [tool] "error_text": "" if ok else _zero_v11_extract_scheduler_error_text(payload),
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5035,8 +5123,8 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 4
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:149 [tool] "runtime_mode": _zero_v11_extract_scheduler_runtime_mode(payload),
     - core/tasks/scheduler.py:7833 [target] "runtime_mode": _zero_v11_extract_scheduler_runtime_mode(payload),
+    - tools/apply_scheduler_aggregate_adapter_v1.py:149 [tool] "runtime_mode": _zero_v11_extract_scheduler_runtime_mode(payload),
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5050,8 +5138,8 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 4
   sample_active_references:
-    - tools/apply_scheduler_aggregate_adapter_v1.py:151 [tool] "execution_trace": _zero_v11_extract_scheduler_trace(payload),
     - core/tasks/scheduler.py:7835 [target] "execution_trace": _zero_v11_extract_scheduler_trace(payload),
+    - tools/apply_scheduler_aggregate_adapter_v1.py:151 [tool] "execution_trace": _zero_v11_extract_scheduler_trace(payload),
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5065,11 +5153,11 @@ Referenced / Not Removal Candidates
   report_refs: 2
   non_definition_refs: 17
   sample_active_references:
+    - core/tasks/scheduler.py:8068 [target] return _zero_v11_attach_scheduler_adapter_payload(result)
     - tests/test_scheduler_aggregate_adapter_contract.py:22 [test] from core.tasks.scheduler import _zero_v11_attach_scheduler_adapter_payload
     - tests/test_scheduler_aggregate_adapter_contract.py:32 [test] adapted = _zero_v11_attach_scheduler_adapter_payload(copy.deepcopy(result))
     - tests/test_scheduler_aggregate_adapter_contract.py:47 [test] from core.tasks.scheduler import _zero_v11_attach_scheduler_adapter_payload
     - tests/test_scheduler_aggregate_adapter_contract.py:60 [test] adapted = _zero_v11_attach_scheduler_adapter_payload(copy.deepcopy(result))
-    - tests/test_scheduler_aggregate_adapter_contract.py:72 [test] from core.tasks.scheduler import _zero_v11_attach_scheduler_adapter_payload
     - ... truncated 10
   sample_archived_references:
     - <none>
@@ -5165,10 +5253,10 @@ Referenced / Not Removal Candidates
   report_refs: 11
   non_definition_refs: 15
   sample_active_references:
+    - core/tasks/scheduler.py:8071 [target] Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
     - tools/apply_scheduler_aggregate_adapter_v1.py:160 [tool] OLD_WRAPPER = '''def _zero_v352_scheduler_run_one_step(
     - tools/apply_scheduler_aggregate_adapter_v1.py:185 [tool] NEW_WRAPPER = '''def _zero_v352_scheduler_run_one_step(
     - tools/scheduler_run_one_step_wrapper_diff_inventory.py:18 [tool] "_zero_v352_scheduler_run_one_step",
-    - core/tasks/scheduler.py:8071 [target] Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5186,8 +5274,8 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 3
   sample_active_references:
-    - tests/test_legacy_surface_followup_seals.py:132 [test] monkeypatch.setattr(scheduler_module, "_zero_scheduler_update_step_progress", lambda task, result: None)
     - core/tasks/scheduler.py:8138 [target] _zero_scheduler_update_step_progress(task, result)
+    - tests/test_legacy_surface_followup_seals.py:132 [test] monkeypatch.setattr(scheduler_module, "_zero_scheduler_update_step_progress", lambda task, result: None)
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5200,11 +5288,11 @@ Referenced / Not Removal Candidates
   report_refs: 12
   non_definition_refs: 18
   sample_active_references:
+    - core/tasks/scheduler.py:8147 [target] Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
+    - core/tasks/scheduler.py:8217 [target] _zero_scheduler_base_run_one_step_v16 = _zero_scheduler_run_one_step_v8
     - tests/test_scheduler_run_one_step_active_chain_seal.py:22 [test] "_zero_scheduler_run_one_step_v8",
     - tests/test_scheduler_run_one_step_legacy_chain_probe.py:14 [test] "_zero_scheduler_run_one_step_v8"
     - tools/scheduler_run_one_step_wrapper_diff_inventory.py:31 [tool] "_zero_scheduler_run_one_step_v8",
-    - core/tasks/scheduler.py:8147 [target] Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
-    - core/tasks/scheduler.py:8217 [target] _zero_scheduler_base_run_one_step_v16 = _zero_scheduler_run_one_step_v8
   sample_archived_references:
     - tools/archive/runtime_governance_closure/patch_runtime_gate_final_v8.py:169 [archive] Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
   sample_report_references:
@@ -5263,11 +5351,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 7
   sample_active_references:
+    - core/tasks/scheduler.py:226 [target] _zero_scheduler_complete_operator as _completion_pipeline_complete_operator,
+    - core/tasks/scheduler.py:8143 [target] _zero_scheduler_complete_operator(self, task, result, outcome="complete")
     - tests/test_legacy_surface_followup_seals.py:133 [test] monkeypatch.setattr(scheduler_module, "_zero_scheduler_complete_operator", lambda self, task, result, *, outcome="complete": None)
     - tests/test_scheduler_operator_completion_adapter.py:22 [test] applied = scheduler_module._zero_scheduler_complete_operator(
     - tests/test_scheduler_operator_completion_adapter.py:51 [test] applied = scheduler_module._zero_scheduler_complete_operator(
-    - tests/test_scheduler_operator_completion_adapter.py:93 [test] applied = scheduler_module._zero_scheduler_complete_operator(
-    - core/tasks/scheduler.py:226 [target] _zero_scheduler_complete_operator as _completion_pipeline_complete_operator,
     - ... truncated 1
   sample_archived_references:
     - <none>
@@ -5281,10 +5369,10 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 5
   sample_active_references:
+    - core/tasks/scheduler.py:230 [target] _zero_scheduler_mark_operator_complete_if_ok as _completion_pipeline_mark_operator_complete_if_ok,
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:38 [test] scheduler_module._zero_scheduler_mark_operator_complete_if_ok(task, {"ok": True})
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:93 [test] scheduler_module._zero_scheduler_mark_operator_complete_if_ok(task, {"ok": True})
     - tests/test_scheduler_run_one_step_active_chain_seal.py:42 [test] assert callable(scheduler_module._zero_scheduler_mark_operator_complete_if_ok)
-    - core/tasks/scheduler.py:230 [target] _zero_scheduler_mark_operator_complete_if_ok as _completion_pipeline_mark_operator_complete_if_ok,
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5297,9 +5385,9 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 4
   sample_active_references:
+    - core/tasks/scheduler.py:231 [target] _zero_scheduler_mark_operator_complete_or_failed as _completion_pipeline_mark_operator_complete_or_failed,
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:94 [test] scheduler_module._zero_scheduler_mark_operator_complete_or_failed(task, {"ok": False})
     - tests/test_scheduler_run_one_step_active_chain_seal.py:43 [test] assert callable(scheduler_module._zero_scheduler_mark_operator_complete_or_failed)
-    - core/tasks/scheduler.py:231 [target] _zero_scheduler_mark_operator_complete_or_failed as _completion_pipeline_mark_operator_complete_or_failed,
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5312,10 +5400,10 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 5
   sample_active_references:
+    - core/tasks/scheduler.py:229 [target] _zero_scheduler_mark_failed_step_if_needed as _completion_pipeline_mark_failed_step_if_needed,
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:76 [test] scheduler_module._zero_scheduler_mark_failed_step_if_needed(task, {"ok": True})
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:95 [test] scheduler_module._zero_scheduler_mark_failed_step_if_needed(task, {"ok": True})
     - tests/test_scheduler_run_one_step_active_chain_seal.py:44 [test] assert callable(scheduler_module._zero_scheduler_mark_failed_step_if_needed)
-    - core/tasks/scheduler.py:229 [target] _zero_scheduler_mark_failed_step_if_needed as _completion_pipeline_mark_failed_step_if_needed,
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5328,11 +5416,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 6
   sample_active_references:
+    - core/tasks/scheduler.py:228 [target] _zero_scheduler_mark_failed_if_ok_without_completion as _completion_pipeline_mark_failed_if_ok_without_completion,
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:39 [test] scheduler_module._zero_scheduler_mark_failed_if_ok_without_completion(task, {"ok": True})
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:58 [test] scheduler_module._zero_scheduler_mark_failed_if_ok_without_completion(task, {"ok": True})
     - tests/test_scheduler_operator_completion_pipeline_phase2_seal.py:96 [test] scheduler_module._zero_scheduler_mark_failed_if_ok_without_completion(task, {"ok": True})
     - tests/test_scheduler_run_one_step_active_chain_seal.py:45 [test] assert callable(scheduler_module._zero_scheduler_mark_failed_if_ok_without_completion)
-    - core/tasks/scheduler.py:228 [target] _zero_scheduler_mark_failed_if_ok_without_completion as _completion_pipeline_mark_failed_if_ok_without_completion,
   sample_archived_references:
     - <none>
   sample_report_references:
@@ -5345,11 +5433,11 @@ Referenced / Not Removal Candidates
   report_refs: 1
   non_definition_refs: 8
   sample_active_references:
+    - core/tasks/scheduler.py:232 [target] _zero_scheduler_run_operator_completion_pipeline as _completion_pipeline_run_operator_completion_pipeline,
+    - core/tasks/scheduler.py:8225 [target] run_operator_completion_pipeline=_zero_scheduler_run_operator_completion_pipeline,
+    - core/tasks/scheduler_core/scheduler_completion_pipeline.py:132 [production] run_operator_completion_pipeline: Callable[..., Any] = _zero_scheduler_run_operator_completion_pipeline,
     - tests/test_scheduler_operator_failed_chain_seal.py:31 [test] scheduler_module._zero_scheduler_run_operator_completion_pipeline(
     - tests/test_scheduler_run_one_step_active_chain_seal.py:41 [test] assert callable(scheduler_module._zero_scheduler_run_operator_completion_pipeline)
-    - tests/test_scheduler_run_one_step_legacy_chain_probe.py:48 [test] scheduler_module._zero_scheduler_run_operator_completion_pipeline(
-    - tests/test_scheduler_run_one_step_legacy_chain_probe.py:90 [test] scheduler_module._zero_scheduler_run_operator_completion_pipeline(
-    - core/tasks/scheduler.py:232 [target] _zero_scheduler_run_operator_completion_pipeline as _completion_pipeline_run_operator_completion_pipeline,
     - ... truncated 2
   sample_archived_references:
     - <none>
@@ -5363,11 +5451,11 @@ Referenced / Not Removal Candidates
   report_refs: 17
   non_definition_refs: 26
   sample_active_references:
+    - core/tasks/scheduler.py:8229 [target] Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
     - tests/test_scheduler_operator_failed_chain_seal.py:70 [test] result = scheduler_module._zero_scheduler_run_one_step_v16(scheduler, task=task)
     - tests/test_scheduler_operator_failed_chain_seal.py:106 [test] result = scheduler_module._zero_scheduler_run_one_step_v16(scheduler, task=task)
     - tests/test_scheduler_run_one_step_active_chain_seal.py:12 [test] assert Scheduler.run_one_step.__name__ == "_zero_scheduler_run_one_step_v16"
     - tests/test_scheduler_run_one_step_behavior_lock.py:8 [test] assert Scheduler.run_one_step.__name__ == "_zero_scheduler_run_one_step_v16"
-    - tests/test_scheduler_run_one_step_legacy_chain_probe.py:7 [test] assert Scheduler.run_one_step.__name__ == "_zero_scheduler_run_one_step_v16"
     - ... truncated 3
   sample_archived_references:
     - tools/archive/runtime_governance_closure/patch_scheduler_operator_failed_step_v16.py:38 [archive] Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
