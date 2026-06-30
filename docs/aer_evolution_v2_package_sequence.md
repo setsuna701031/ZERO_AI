@@ -29,17 +29,18 @@ Scheduler and runtime integration begins only at Package 89 or later.
 
 ## Current Package
 
-Package 82 adds the shared operator execution context contract and in-memory helpers.
+Package 83 adds the checkpoint repository/store boundary for v2 checkpoint persistence.
 
-Package 82 must not:
+All future v2 modules that need persistence must access persistence through repository/store modules. Resume, Loop, Scheduler, Issue Reporter, Approval, and runtime business modules must not directly open, read, write, or delete checkpoint files.
 
-- perform state transitions
-- write files
-- read files
+Package 83 must not:
+
+- implement resume
+- implement operator loop behavior
 - call scheduler
 - call task_runner
-- implement resume
-- implement checkpoint persistence
+- introduce SQLite, Redis, memory caches, or multi-backend abstractions
+- change broad runtime behavior
 - change RC1 behavior
 
 ## Non-mainline Issues Found
