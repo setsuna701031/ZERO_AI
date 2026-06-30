@@ -31,7 +31,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 21. Package 98 - Operator Handoff Contract
 22. Package 99 - Runtime Intake Contract
 23. Package 100 - Public Surface Export Seal
-24. Package 101+ - Long-running Operator Loop / Scheduler / Runtime integration
+24. Package 101 - Runtime Bootstrap Contract
+25. Package 102+ - Long-running Operator Loop / Scheduler / Runtime integration
 
 ## Package Boundaries
 
@@ -576,6 +577,103 @@ Future packages own:
 
 - Package 100 inventory found that core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; the seal treats this as inventory, not a failing future-work expectation.
 - Package 94 through Package 99 implementation files were still untracked in the working tree when Package 100 was implemented; Package 100 tested those local surfaces without modifying them.
+
+## Package 101
+
+Package 101 adds the Runtime Bootstrap Contract for AER v2 as a passive transport and preparation data wrapper over Runtime Intake. The bootstrap payload describes what a future Runtime would need, but it does not create, resolve, bind, initialize, execute, dispatch, schedule, allocate runtime sessions, persist, checkpoint, resume, or call any runtime loop.
+
+Package 101 owns:
+
+- runtime bootstrap contract shape
+- immutable bootstrap creation from a runtime intake dict
+- valid runtime intake issue outcomes carried as valid issue_reported bootstrap
+- malformed runtime intake payload handling as invalid runtime bootstrap
+- validation of the bootstrap wrapper and nested runtime intake summary projection
+- summary projection containing only outcome, runtime intake summary, and bootstrap structural validity
+- separation of bootstrap structural validity from business outcome
+
+Package 101 must not:
+
+- execute runtime work
+- dispatch runtime work
+- call Scheduler
+- call TaskRunner
+- emit events
+- write checkpoints
+- resume execution
+- persist state
+- start loops
+- perform retries
+- repair code
+- generate session ids
+- allocate runtime identity
+- create runtime objects
+- construct runtime instances
+- perform dependency injection
+- resolve services
+- bind workspaces
+- bind filesystems
+- bind repositories
+- load configuration
+- load environment state
+- load plugins
+- run runtime initialization callbacks
+- describe execution mode
+- describe execution policy
+- describe retry policy
+- describe timeout behavior
+- describe priority
+- select schedules
+- select queues
+- select workers
+- select executors
+- classify runtime resources
+- introduce concurrency
+- introduce parallelism
+- advertise supported features
+- advertise supported capabilities
+- introduce capability flags
+- describe runtime capabilities
+- negotiate features
+- define compatibility matrices
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- introduce recovery metadata
+- introduce watchdog metadata
+- reference runtime sessions
+- implement state transitions
+- implement lifecycle behavior
+- implement runtime integration
+- implement scheduler integration
+- implement operator loop behavior
+- import scheduler, task_runner, persistent_operator, operator_loop, event_log, checkpoint_store, resume, or audit_reader modules
+- automatically pass through unknown runtime intake fields
+
+Future packages own:
+
+- runtime object creation, if any
+- runtime instance construction, if any
+- dependency injection and service resolution, if any
+- workspace, filesystem, repository, configuration, environment, and plugin binding, if any
+- runtime initialization callbacks, if any
+- execution strategy, including mode, policy, retry policy, timeout, priority, scheduling, queues, workers, executors, resource classes, concurrency, and parallelism
+- capability discovery, feature negotiation, and compatibility matrices
+- runtime execution
+- scheduler integration
+- operator loop integration
+- event emission
+- checkpoint mutation
+- resume execution
+- retry and repair behavior
+- runtime identity allocation
+
+## Non-mainline Issues Found
+
+- Package 94 through Package 100 implementation and test files were still untracked in the working tree when Package 101 was implemented; Package 101 composed those local surfaces without modifying unrelated implementation files.
 
 ## Future Foundation Work
 
