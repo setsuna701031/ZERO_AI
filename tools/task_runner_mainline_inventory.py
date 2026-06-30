@@ -191,14 +191,16 @@ def _bucket_for_path(path: Path) -> str:
         return "self_report"
     if rel == "tools/task_runner_mainline_inventory.py":
         return "self_tool"
+    if rel.startswith("archive/") or "/archive/" in rel or "_archive_candidate/" in rel:
+        return "archive"
+    if rel.startswith("docs/") or "/docs/" in rel:
+        return "doc"
+    if path.suffix.lower() != ".py":
+        return "report_or_text"
     if rel.startswith("tests/") or "/tests/" in rel:
         return "test"
     if rel.startswith("tools/") or "/tools/" in rel:
         return "tool"
-    if rel.startswith("docs/") or "/docs/" in rel:
-        return "doc"
-    if "/archive/" in rel or rel.startswith("archive/") or "_archive_candidate/" in rel:
-        return "archive"
     return "production"
 
 
@@ -260,31 +262,47 @@ def _reference_rows(names: list[str]) -> dict[str, list[dict[str, object]]]:
 
 
 def _classify_refs(refs: list[dict[str, object]]) -> tuple[str, str]:
-    relevant = [
+    active = _active_refs(refs)
+    archived = _archived_refs(refs)
+    reports = _report_refs(refs)
+    if active:
+        buckets = {str(ref["bucket"]) for ref in active}
+        return "C", f"active-code references exist: {', '.join(sorted(buckets))}"
+    if archived or reports:
+        return "B", "active_refs=0; archived/report references only"
+    return "A", "no non-definition references found"
+
+
+def _active_refs(refs: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
         ref
         for ref in refs
         if not ref["is_definition"]
-        and ref["bucket"] not in {"self_tool", "self_report", "read_error"}
+        and ref["bucket"] in {"target", "production", "test", "tool"}
     ]
-    if not relevant:
-        return "A", "no non-definition references found"
 
-    buckets = {str(ref["bucket"]) for ref in relevant}
-    if "production" in buckets or "target" in buckets:
-        return "C", "production or target-module reference exists"
-    if buckets <= {"test", "tool", "doc", "archive"}:
-        return "B", "only tests/tools/docs/archive references found"
-    return "B", f"non-production references only: {', '.join(sorted(buckets))}"
+
+def _archived_refs(refs: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        ref
+        for ref in refs
+        if not ref["is_definition"]
+        and ref["bucket"] == "archive"
+    ]
+
+
+def _report_refs(refs: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        ref
+        for ref in refs
+        if not ref["is_definition"]
+        and ref["bucket"] in {"doc", "report_or_text"}
+    ]
 
 
 def _likely_removal_score(name: str, kind: str, refs: list[dict[str, object]]) -> tuple[int, int, str]:
     label, _ = _classify_refs(refs)
-    non_def_count = sum(
-        1
-        for ref in refs
-        if not ref["is_definition"]
-        and ref["bucket"] not in {"self_tool", "self_report", "read_error"}
-    )
+    active_count = len(_active_refs(refs))
     legacy_bonus = 0
     lowered = name.lower()
     if lowered.startswith("_zero") or re.search(r"(^|_)v\d+", lowered):
@@ -295,15 +313,30 @@ def _likely_removal_score(name: str, kind: str, refs: list[dict[str, object]]) -
         legacy_bonus += 1
 
     label_weight = {"A": 100, "B": 50, "C": 0}[label]
-    return label_weight + legacy_bonus, -non_def_count, name
+    return label_weight + legacy_bonus, -active_count, name
 
 
-def _format_ref_summary(refs: list[dict[str, object]], *, limit: int = 8) -> list[str]:
-    relevant = [
-        ref
-        for ref in refs
-        if not ref["is_definition"] and ref["bucket"] not in {"self_tool", "self_report"}
-    ]
+def _format_ref_summary(
+    refs: list[dict[str, object]],
+    *,
+    limit: int = 8,
+    active_only: bool = False,
+    archived_only: bool = False,
+    report_only: bool = False,
+) -> list[str]:
+    if active_only:
+        relevant = _active_refs(refs)
+    elif archived_only:
+        relevant = _archived_refs(refs)
+    elif report_only:
+        relevant = _report_refs(refs)
+    else:
+        relevant = [
+            ref
+            for ref in refs
+            if not ref["is_definition"]
+            and ref["bucket"] not in {"self_tool", "self_report", "read_error"}
+        ]
     if not relevant:
         return ["    - <none>"]
     lines: list[str] = []
@@ -352,12 +385,16 @@ def _write_report() -> dict[str, object]:
 
     refs = _reference_rows([str(item["name"]) for item in inventory_items])
     for item in inventory_items:
+        item_refs = refs[str(item["name"])]
         label, reason = _classify_refs(refs[str(item["name"])])
         item["reference_class"] = label
         item["reference_reason"] = reason
+        item["active_refs"] = len(_active_refs(item_refs))
+        item["archived_refs"] = len(_archived_refs(item_refs))
+        item["report_refs"] = len(_report_refs(item_refs))
         item["non_definition_refs"] = sum(
             1
-            for ref in refs[str(item["name"])]
+            for ref in item_refs
             if not ref["is_definition"]
             and ref["bucket"] not in {"self_tool", "self_report", "read_error"}
         )
@@ -426,7 +463,10 @@ def _write_report() -> dict[str, object]:
             for item in rows:
                 report_lines.append(
                     f"- line {item['line']}: {item['name']} "
-                    f"[refs={item['non_definition_refs']}; class={item['reference_class']}]"
+                    f"[active_refs={item['active_refs']}; "
+                    f"archived_refs={item['archived_refs']}; "
+                    f"report_refs={item['report_refs']}; "
+                    f"class={item['reference_class']}]"
                 )
         else:
             report_lines.append("- <none>")
@@ -435,9 +475,9 @@ def _write_report() -> dict[str, object]:
     report_lines.append("=" * 80)
     report_lines.append("Likely Dead Helper Candidates")
     report_lines.append("=" * 80)
-    report_lines.append("A = no non-definition references found")
-    report_lines.append("B = only tests/tools/docs/archive references found")
-    report_lines.append("C = production or target-module reference exists; do not remove yet")
+    report_lines.append("A = active_refs=0 and no archived/report references")
+    report_lines.append("B = active_refs=0 with archived_refs or report_refs only")
+    report_lines.append("C = active_refs > 0; do not remove yet")
     report_lines.append("")
     for item in candidates:
         if item["reference_class"] == "C":
@@ -448,9 +488,16 @@ def _write_report() -> dict[str, object]:
             f"category={item['category']}, class={item['reference_class']})"
         )
         report_lines.append(f"  reason: {item['reference_reason']}")
+        report_lines.append(f"  active_refs: {item['active_refs']}")
+        report_lines.append(f"  archived_refs: {item['archived_refs']}")
+        report_lines.append(f"  report_refs: {item['report_refs']}")
         report_lines.append(f"  non_definition_refs: {item['non_definition_refs']}")
-        report_lines.append("  references:")
-        report_lines.extend(_format_ref_summary(refs[name]))
+        report_lines.append("  active_references:")
+        report_lines.extend(_format_ref_summary(refs[name], active_only=True))
+        report_lines.append("  archived_references:")
+        report_lines.extend(_format_ref_summary(refs[name], archived_only=True))
+        report_lines.append("  report_references:")
+        report_lines.extend(_format_ref_summary(refs[name], report_only=True))
         report_lines.append("")
 
     report_lines.append("=" * 80)
@@ -465,9 +512,16 @@ def _write_report() -> dict[str, object]:
             f"category={item['category']})"
         )
         report_lines.append(f"  reason: {item['reference_reason']}")
+        report_lines.append(f"  active_refs: {item['active_refs']}")
+        report_lines.append(f"  archived_refs: {item['archived_refs']}")
+        report_lines.append(f"  report_refs: {item['report_refs']}")
         report_lines.append(f"  non_definition_refs: {item['non_definition_refs']}")
-        report_lines.append("  sample_references:")
-        report_lines.extend(_format_ref_summary(refs[name], limit=5))
+        report_lines.append("  sample_active_references:")
+        report_lines.extend(_format_ref_summary(refs[name], limit=5, active_only=True))
+        report_lines.append("  sample_archived_references:")
+        report_lines.extend(_format_ref_summary(refs[name], limit=5, archived_only=True))
+        report_lines.append("  sample_report_references:")
+        report_lines.extend(_format_ref_summary(refs[name], limit=5, report_only=True))
         report_lines.append("")
 
     report_lines.append("=" * 80)
@@ -503,7 +557,9 @@ def main() -> int:
         print(
             f"- {item['name']} "
             f"({item['kind']}, line {item['line']}, class {item['reference_class']}, "
-            f"refs {item['non_definition_refs']})"
+            f"active_refs {item['active_refs']}, "
+            f"archived_refs {item['archived_refs']}, "
+            f"report_refs {item['report_refs']})"
         )
     return 0
 
