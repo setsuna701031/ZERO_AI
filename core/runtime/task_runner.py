@@ -1753,20 +1753,8 @@ class TaskRunner:
     # ============================================================
 
 
-    def _normalize_target_repo_root(self, value: Any) -> str:
-        return normalize_target_repo_root(value)
-
-
-    def _extract_target_repo_root_from_mapping(self, value: Any) -> str:
-        return extract_target_repo_root_from_mapping(value)
-
-
     def _resolve_target_repo_root(self, task: Dict[str, Any], state: Optional[Dict[str, Any]] = None) -> str:
         return resolve_target_repo_root(task=task, state=state)
-
-
-    def _sync_target_repo_context(self, task: Dict[str, Any], state: Dict[str, Any]) -> str:
-        return sync_target_repo_context(task=task, state=state)
 
 
     def _resolve_step_cwd(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> str:

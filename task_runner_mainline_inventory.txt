@@ -2,10 +2,10 @@ TaskRunner Mainline Closure Inventory
 
 repo_root: E:\zero_ai
 target: core\runtime\task_runner.py
-total_lines: 5735
+total_lines: 5723
 import_count: 42
 class_count: 1
-method_count_inside_TaskRunner: 101
+method_count_inside_TaskRunner: 98
 top_level_helper_function_count: 70
 
 ================================================================================
@@ -13,84 +13,84 @@ Top-Level Helper Functions
 ================================================================================
 - line 121: _zero_runtime_authority_for_step
 - line 193: _zero_attach_step_authority
-- line 3737: _zero_v702_runner_normalize_rel_path
-- line 3744: _zero_v702_runner_extract_workspace_py_path
-- line 3751: _zero_v702_runner_looks_like_autonomous_repair
-- line 3763: _zero_v702_runner_repair_task_steps_if_needed
-- line 3813: _zero_v702_task_runner_run_one_step
-- line 3852: _zero_v703_task_runner_determine_failure_type
-- line 3892: _zero_v710_task_runner_determine_failure_type
-- line 3945: _zero_v731_task_runner_determine_failure_type
-- line 3977: _zero_v800_extract_action
-- line 3983: _zero_v800_extract_status
-- line 3989: _zero_v800_extract_error
-- line 4005: _zero_v800_build_observation
-- line 4047: _zero_v800_decide_from_observation
-- line 4129: _zero_v800_last_step_type
-- line 4144: _zero_v800_represents_failed_step_observation
-- line 4165: _zero_v800_task_runner_run_one_step
-- line 4246: _zero_v801_public_runtime_value
-- line 4260: _zero_v801_task_runner_finalize_public_result
-- line 4341: _zero_v810_taskrunner_init
-- line 4352: _zero_v810_persist_step_result_to_runtime_state
-- line 4401: _zero_v810_finalize_public_result
-- line 4431: _zero_boundary_norm_text
-- line 4435: _zero_boundary_step_type
-- line 4441: _zero_boundary_step_target
-- line 4452: _zero_boundary_extract_authority_context
-- line 4465: _zero_boundary_extract_execution_authority
-- line 4478: _zero_boundary_document_pipeline_allowed
-- line 4550: _zero_boundary_document_action_type
-- line 4561: _zero_boundary_build_document_execution_authority
-- line 4585: _zero_boundary_build_taskrunner_authority_context
-- line 4691: _zero_run_task_adaptive
-- line 4716: _taskrunner_result_text
-- line 4730: _taskrunner_is_soft_authority_gate_failure
-- line 4744: _taskrunner_has_dispatch_authority
-- line 4761: _taskrunner_select_current_step
-- line 4777: _taskrunner_authority_denial_shape
-- line 4833: _taskrunner_runtime_gate_fallback_step
-- line 4903: _stage3b_taskrunner_enrich_success_result
-- line 4935: _stage3b_run_task_tick
-- line 4955: _zero_stage3b_mapping_v2
-- line 4958: _zero_stage3b_select_step_v2
-- line 4972: _zero_stage3b_runtime_mode_v2
-- line 4984: _zero_stage3b_state_path_v2
-- line 4988: _zero_stage3b_read_state_v2
-- line 5002: _zero_stage3b_write_state_v2
-- line 5014: _zero_stage3b_normalize_success_v2
-- line 5076: _zero_stage3b_normalize_blocked_v2
-- line 5111: _zero_stage3b_call_registered_handler_v2
-- line 5132: _zero_stage3b_run_task_tick_v2
-- line 5319: _zero_stage3b_taskrunner_record_operator_failure_v4
-- line 5345: _zero_stage3b_run_task_tick_v4
-- line 5365: _repair_chain_has_live_dispatcher_capability
-- line 5390: _is_explicit_repair_chain_task
-- line 5404: _repair_chain_dispatcher_denial_shape
-- line 5461: _repair_lineage_run_task_tick
-- line 5495: _zero_operator_registry_phase1c_session_id
-- line 5506: _zero_operator_registry_phase1c_is_initial_tick
-- line 5515: _zero_operator_registry_phase1c_run_task_tick
-- line 5529: _zero_taskrunner_registry_admit_aer_closure_v24
-- line 5576: _zero_taskrunner_registry_admit_owned_step_v24
-- line 5580: _zero_taskrunner_registry_admit_tick_v24
-- line 5598: _zero_taskrunner_registry_callsite_payload_v26
-- line 5638: _zero_taskrunner_registry_callsite_admit_v26
-- line 5651: _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26
-- line 5662: _zero_taskrunner_registry_callsite_wrap_tick_v26
-- line 5673: _zero_taskrunner_registry_callsite_install_v26
-- line 5697: _zero_taskrunner_registry_legacy_cleanup_guard_v28
-- line 5721: _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28
+- line 3725: _zero_v702_runner_normalize_rel_path
+- line 3732: _zero_v702_runner_extract_workspace_py_path
+- line 3739: _zero_v702_runner_looks_like_autonomous_repair
+- line 3751: _zero_v702_runner_repair_task_steps_if_needed
+- line 3801: _zero_v702_task_runner_run_one_step
+- line 3840: _zero_v703_task_runner_determine_failure_type
+- line 3880: _zero_v710_task_runner_determine_failure_type
+- line 3933: _zero_v731_task_runner_determine_failure_type
+- line 3965: _zero_v800_extract_action
+- line 3971: _zero_v800_extract_status
+- line 3977: _zero_v800_extract_error
+- line 3993: _zero_v800_build_observation
+- line 4035: _zero_v800_decide_from_observation
+- line 4117: _zero_v800_last_step_type
+- line 4132: _zero_v800_represents_failed_step_observation
+- line 4153: _zero_v800_task_runner_run_one_step
+- line 4234: _zero_v801_public_runtime_value
+- line 4248: _zero_v801_task_runner_finalize_public_result
+- line 4329: _zero_v810_taskrunner_init
+- line 4340: _zero_v810_persist_step_result_to_runtime_state
+- line 4389: _zero_v810_finalize_public_result
+- line 4419: _zero_boundary_norm_text
+- line 4423: _zero_boundary_step_type
+- line 4429: _zero_boundary_step_target
+- line 4440: _zero_boundary_extract_authority_context
+- line 4453: _zero_boundary_extract_execution_authority
+- line 4466: _zero_boundary_document_pipeline_allowed
+- line 4538: _zero_boundary_document_action_type
+- line 4549: _zero_boundary_build_document_execution_authority
+- line 4573: _zero_boundary_build_taskrunner_authority_context
+- line 4679: _zero_run_task_adaptive
+- line 4704: _taskrunner_result_text
+- line 4718: _taskrunner_is_soft_authority_gate_failure
+- line 4732: _taskrunner_has_dispatch_authority
+- line 4749: _taskrunner_select_current_step
+- line 4765: _taskrunner_authority_denial_shape
+- line 4821: _taskrunner_runtime_gate_fallback_step
+- line 4891: _stage3b_taskrunner_enrich_success_result
+- line 4923: _stage3b_run_task_tick
+- line 4943: _zero_stage3b_mapping_v2
+- line 4946: _zero_stage3b_select_step_v2
+- line 4960: _zero_stage3b_runtime_mode_v2
+- line 4972: _zero_stage3b_state_path_v2
+- line 4976: _zero_stage3b_read_state_v2
+- line 4990: _zero_stage3b_write_state_v2
+- line 5002: _zero_stage3b_normalize_success_v2
+- line 5064: _zero_stage3b_normalize_blocked_v2
+- line 5099: _zero_stage3b_call_registered_handler_v2
+- line 5120: _zero_stage3b_run_task_tick_v2
+- line 5307: _zero_stage3b_taskrunner_record_operator_failure_v4
+- line 5333: _zero_stage3b_run_task_tick_v4
+- line 5353: _repair_chain_has_live_dispatcher_capability
+- line 5378: _is_explicit_repair_chain_task
+- line 5392: _repair_chain_dispatcher_denial_shape
+- line 5449: _repair_lineage_run_task_tick
+- line 5483: _zero_operator_registry_phase1c_session_id
+- line 5494: _zero_operator_registry_phase1c_is_initial_tick
+- line 5503: _zero_operator_registry_phase1c_run_task_tick
+- line 5517: _zero_taskrunner_registry_admit_aer_closure_v24
+- line 5564: _zero_taskrunner_registry_admit_owned_step_v24
+- line 5568: _zero_taskrunner_registry_admit_tick_v24
+- line 5586: _zero_taskrunner_registry_callsite_payload_v26
+- line 5626: _zero_taskrunner_registry_callsite_admit_v26
+- line 5639: _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26
+- line 5650: _zero_taskrunner_registry_callsite_wrap_tick_v26
+- line 5661: _zero_taskrunner_registry_callsite_install_v26
+- line 5685: _zero_taskrunner_registry_legacy_cleanup_guard_v28
+- line 5709: _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28
 
 ================================================================================
 Private Methods By Category
 ================================================================================
 runtime_mode: 5
-- line 1898: _normalize_runtime_mode [refs=15; class=C]
-- line 1902: _extract_runtime_mode_from_mapping [refs=5; class=C]
-- line 1906: _resolve_runtime_mode [refs=3; class=B]
-- line 1910: _apply_runtime_mode_to_step [refs=38; class=C]
-- line 2007: _execute_current_runtime_step [refs=1; class=C]
+- line 1886: _normalize_runtime_mode [refs=15; class=C]
+- line 1890: _extract_runtime_mode_from_mapping [refs=5; class=C]
+- line 1894: _resolve_runtime_mode [refs=3; class=B]
+- line 1898: _apply_runtime_mode_to_step [refs=38; class=C]
+- line 1995: _execute_current_runtime_step [refs=1; class=C]
 
 execution: 52
 - line 228: __init__ [refs=270; class=C]
@@ -108,88 +108,85 @@ execution: 52
 - line 1539: _resolve_max_auto_ticks [refs=42; class=C]
 - line 1589: _maybe_run_enabled_capability [refs=47; class=C]
 - line 1700: _get_capability_execution [refs=32; class=C]
-- line 1772: _resolve_step_cwd [refs=1; class=B]
-- line 1806: _build_taskrunner_authority_context [refs=147; class=C]
-- line 1824: _attach_system_rollback_capability [refs=41; class=C]
-- line 1917: _runtime_step_action_type [refs=3; class=B]
-- line 1920: _runtime_step_target [refs=31; class=C]
-- line 1923: _runtime_step_id [refs=3; class=B]
-- line 1926: _runtime_action_id [refs=3; class=B]
-- line 1929: _runtime_linked_session_node [refs=3; class=B]
-- line 1932: _runtime_action_metadata [refs=3; class=B]
-- line 2000: _extract_changed_files_from_step_result [refs=1; class=B]
-- line 2202: _prepare_runtime_step_context [refs=1; class=C]
-- line 2225: _commit_runtime_state [refs=16; class=C]
-- line 2237: _runtime_step_result_payload [refs=13; class=C]
-- line 2262: _handle_runtime_step_success [refs=1; class=C]
-- line 2293: _handle_runtime_step_failure [refs=1; class=C]
-- line 2699: _commit_runtime_step_result [refs=1; class=C]
-- line 2869: _run_one_step [refs=257; class=C]
-- line 2910: _ensure_execution_trace_defaults [refs=74; class=C]
-- line 2916: _ensure_step_execution_trace [refs=35; class=C]
-- line 2930: _extract_trace_from_step_result [refs=1; class=B]
-- line 2933: _persist_step_result_to_runtime_state [refs=59; class=C]
-- line 2954: _sync_runtime_state_back_to_task [refs=13; class=C]
-- line 2989: _trace_tick_for_step [refs=38; class=C]
-- line 3022: _extract_final_answer_from_step_result [refs=39; class=C]
-- line 3051: _should_advance_failed_step_observation [refs=37; class=C]
-- line 3087: _maybe_inject_repair_steps_after_failure [refs=38; class=C]
-- line 3154: _is_apply_step [refs=36; class=C]
-- line 3159: _maybe_block_direct_missing_subgoal_dependency [refs=3; class=C]
-- line 3228: _mark_syntax_function_rewrite_completion_if_needed [refs=38; class=C]
-- line 3298: _run_regression_verify_phase [refs=40; class=C]
-- line 3374: _build_regression_verify_commands [refs=28; class=C]
-- line 3392: _validate_regression_command [refs=28; class=C]
-- line 3488: _compact_runtime_state_for_public_payload [refs=42; class=C]
-- line 3527: _sync_repair_chain_summary_from_execution_log [refs=38; class=C]
-- line 3539: _finalize_public_result [refs=130; class=C]
-- line 3615: _append_step_result_trace_json [refs=35; class=C]
-- line 3662: _resolve_task_dir_for_trace [refs=2; class=C]
+- line 1760: _resolve_step_cwd [refs=1; class=B]
+- line 1794: _build_taskrunner_authority_context [refs=147; class=C]
+- line 1812: _attach_system_rollback_capability [refs=41; class=C]
+- line 1905: _runtime_step_action_type [refs=3; class=B]
+- line 1908: _runtime_step_target [refs=31; class=C]
+- line 1911: _runtime_step_id [refs=3; class=B]
+- line 1914: _runtime_action_id [refs=3; class=B]
+- line 1917: _runtime_linked_session_node [refs=3; class=B]
+- line 1920: _runtime_action_metadata [refs=3; class=B]
+- line 1988: _extract_changed_files_from_step_result [refs=1; class=B]
+- line 2190: _prepare_runtime_step_context [refs=1; class=C]
+- line 2213: _commit_runtime_state [refs=16; class=C]
+- line 2225: _runtime_step_result_payload [refs=13; class=C]
+- line 2250: _handle_runtime_step_success [refs=1; class=C]
+- line 2281: _handle_runtime_step_failure [refs=1; class=C]
+- line 2687: _commit_runtime_step_result [refs=1; class=C]
+- line 2857: _run_one_step [refs=257; class=C]
+- line 2898: _ensure_execution_trace_defaults [refs=74; class=C]
+- line 2904: _ensure_step_execution_trace [refs=35; class=C]
+- line 2918: _extract_trace_from_step_result [refs=1; class=B]
+- line 2921: _persist_step_result_to_runtime_state [refs=59; class=C]
+- line 2942: _sync_runtime_state_back_to_task [refs=13; class=C]
+- line 2977: _trace_tick_for_step [refs=38; class=C]
+- line 3010: _extract_final_answer_from_step_result [refs=39; class=C]
+- line 3039: _should_advance_failed_step_observation [refs=37; class=C]
+- line 3075: _maybe_inject_repair_steps_after_failure [refs=38; class=C]
+- line 3142: _is_apply_step [refs=36; class=C]
+- line 3147: _maybe_block_direct_missing_subgoal_dependency [refs=3; class=C]
+- line 3216: _mark_syntax_function_rewrite_completion_if_needed [refs=38; class=C]
+- line 3286: _run_regression_verify_phase [refs=40; class=C]
+- line 3362: _build_regression_verify_commands [refs=28; class=C]
+- line 3380: _validate_regression_command [refs=28; class=C]
+- line 3476: _compact_runtime_state_for_public_payload [refs=42; class=C]
+- line 3515: _sync_repair_chain_summary_from_execution_log [refs=38; class=C]
+- line 3527: _finalize_public_result [refs=130; class=C]
+- line 3603: _append_step_result_trace_json [refs=35; class=C]
+- line 3650: _resolve_task_dir_for_trace [refs=2; class=C]
 
 registry: 2
 - line 1711: _get_capability_route [refs=32; class=C]
-- line 1873: _format_capability_final_answer [refs=32; class=C]
+- line 1861: _format_capability_final_answer [refs=32; class=C]
 
 ownership: 1
-- line 1838: _make_json_safe [refs=40; class=C]
+- line 1826: _make_json_safe [refs=40; class=C]
 
 repair: 7
 - line 836: _build_repair_replay_validation [refs=28; class=C]
-- line 1988: _safe_record_rollback_restore_action [refs=40; class=C]
-- line 3119: _build_repair_chain_id [refs=3; class=B]
-- line 3131: _infer_repair_source_path [refs=4; class=C]
-- line 3134: _read_repair_source_text [refs=4; class=C]
-- line 3144: _first_repair_action_path [refs=4; class=C]
-- line 3147: _should_rollback_after_failed_verify [refs=38; class=C]
+- line 1976: _safe_record_rollback_restore_action [refs=40; class=C]
+- line 3107: _build_repair_chain_id [refs=3; class=B]
+- line 3119: _infer_repair_source_path [refs=4; class=C]
+- line 3122: _read_repair_source_text [refs=4; class=C]
+- line 3132: _first_repair_action_path [refs=4; class=C]
+- line 3135: _should_rollback_after_failed_verify [refs=38; class=C]
 
 evidence: 8
 - line 1059: _reconcile_mutation_boundary_result [refs=28; class=C]
-- line 3007: _get_previous_result [refs=35; class=C]
-- line 3025: _should_convert_policy_block_to_review [refs=36; class=C]
-- line 3438: _determine_failure_type [refs=135; class=C]
-- line 3634: _append_trace_json_event [refs=38; class=C]
-- line 3645: _read_trace_json [refs=1; class=C]
-- line 3687: _extract_error_type [refs=3; class=C]
-- line 3700: _trace [refs=53; class=C]
+- line 2995: _get_previous_result [refs=35; class=C]
+- line 3013: _should_convert_policy_block_to_review [refs=36; class=C]
+- line 3426: _determine_failure_type [refs=135; class=C]
+- line 3622: _append_trace_json_event [refs=38; class=C]
+- line 3633: _read_trace_json [refs=1; class=C]
+- line 3675: _extract_error_type [refs=3; class=C]
+- line 3688: _trace [refs=53; class=C]
 
 legacy/zero/v-prefixed: 1
-- line 3290: _syntax_strategy_compat_marker_present [refs=49; class=C]
+- line 3278: _syntax_strategy_compat_marker_present [refs=49; class=C]
 
-other_private: 14
-- line 1756: _normalize_target_repo_root [refs=0; class=A]
-- line 1760: _extract_target_repo_root_from_mapping [refs=0; class=A]
-- line 1764: _resolve_target_repo_root [refs=30; class=C]
-- line 1768: _sync_target_repo_context [refs=0; class=A]
-- line 1776: _target_routed_context [refs=35; class=C]
-- line 1785: _operator_session_id_from_payloads [refs=3; class=C]
-- line 1940: _safe_update_current_engineering_action [refs=35; class=C]
-- line 1951: _safe_complete_engineering_action [refs=35; class=C]
-- line 1963: _safe_fail_engineering_action [refs=36; class=C]
-- line 1975: _safe_block_engineering_action [refs=37; class=C]
-- line 2983: _safe_int [refs=343; class=C]
-- line 3426: _build_policy_review_id [refs=35; class=C]
-- line 3476: _stringify_failure_message [refs=59; class=C]
-- line 3502: _make_public_payload_safe [refs=31; class=C]
+other_private: 11
+- line 1756: _resolve_target_repo_root [refs=30; class=C]
+- line 1764: _target_routed_context [refs=35; class=C]
+- line 1773: _operator_session_id_from_payloads [refs=3; class=C]
+- line 1928: _safe_update_current_engineering_action [refs=35; class=C]
+- line 1939: _safe_complete_engineering_action [refs=35; class=C]
+- line 1951: _safe_fail_engineering_action [refs=36; class=C]
+- line 1963: _safe_block_engineering_action [refs=37; class=C]
+- line 2971: _safe_int [refs=343; class=C]
+- line 3414: _build_policy_review_id [refs=35; class=C]
+- line 3464: _stringify_failure_message [refs=59; class=C]
+- line 3490: _make_public_payload_safe [refs=31; class=C]
 
 ================================================================================
 Likely Dead Helper Candidates
@@ -198,32 +195,14 @@ A = no non-definition references found
 B = only tests/tools/docs/archive references found
 C = production or target-module reference exists; do not remove yet
 
-- _sync_target_repo_context (private_method, line 1768, category=other_private, class=A)
-  reason: no non-definition references found
-  non_definition_refs: 0
-  references:
-    - <none>
-
-- _normalize_target_repo_root (private_method, line 1756, category=other_private, class=A)
-  reason: no non-definition references found
-  non_definition_refs: 0
-  references:
-    - <none>
-
-- _extract_target_repo_root_from_mapping (private_method, line 1760, category=other_private, class=A)
-  reason: no non-definition references found
-  non_definition_refs: 0
-  references:
-    - <none>
-
-- _zero_boundary_document_pipeline_allowed (top_level_helper, line 4478, category=top_level_helper, class=B)
+- _zero_boundary_document_pipeline_allowed (top_level_helper, line 4466, category=top_level_helper, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 2
   references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:27 [archive] <- _zero_boundary_document_pipeline_allowed [line 4327]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:66 [archive] <- _zero_boundary_document_pipeline_allowed [line 4327]
 
-- _zero_boundary_build_document_execution_authority (top_level_helper, line 4561, category=top_level_helper, class=B)
+- _zero_boundary_build_document_execution_authority (top_level_helper, line 4549, category=top_level_helper, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 4
   references:
@@ -246,10 +225,11 @@ C = production or target-module reference exists; do not remove yet
     - docs/architecture/mainline_audit/zero_mainline_audit_report.json:55733 [doc] "text": "\"task, step = _zero_attach_step_authority(task, step, endpoint=\\\"scheduler\\\")\\n        result = self.step_executor.execute_step(task, step)\",",
     - ... truncated 10
 
-- _zero_boundary_build_taskrunner_authority_context (top_level_helper, line 4585, category=top_level_helper, class=B)
+- _zero_boundary_build_taskrunner_authority_context (top_level_helper, line 4573, category=top_level_helper, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 25
   references:
+    - tests/test_runtime_execution_authority_bypass_proof.py:50 [test] active_builder = source[source.rfind("def _zero_boundary_build_taskrunner_authority_context"):]
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:456 [archive] - line 4434: _zero_boundary_build_taskrunner_authority_context
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:26 [archive] <- _zero_boundary_build_taskrunner_authority_context [line 4434]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:681 [archive] - _zero_boundary_build_taskrunner_authority_context [line 4434]
@@ -257,28 +237,27 @@ C = production or target-module reference exists; do not remove yet
     - docs/architecture/mainline_audit/zero_mainline_audit_report.json:53463 [doc] "text": "\"inactive_legacy_helpers_visible\": \"_zero_boundary_build_taskrunner_authority_context\" in taskrunner_source,",
     - docs/architecture/mainline_audit/zero_mainline_audit_report.json:98415 [doc] "text": "\"inactive_legacy_helpers_visible\": \"_zero_boundary_build_taskrunner_authority_context\" in taskrunner_source,",
     - docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:5040 [doc] "current_owner": "class-level assignment in core/runtime/task_runner.py:5449 via _zero_boundary_build_taskrunner_authority_context",
-    - docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:5148 [doc] "ast_function:core/runtime/task_runner.py::_zero_boundary_build_taskrunner_authority_context",
     - ... truncated 17
 
-- _resolve_step_cwd (private_method, line 1772, category=execution, class=B)
+- _resolve_step_cwd (private_method, line 1760, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 1
   references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:670 [archive] - _resolve_step_cwd [line 1772]
 
-- _extract_trace_from_step_result (private_method, line 2930, category=execution, class=B)
+- _extract_trace_from_step_result (private_method, line 2918, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 1
   references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:661 [archive] - _extract_trace_from_step_result [line 2779]
 
-- _extract_changed_files_from_step_result (private_method, line 2000, category=execution, class=B)
+- _extract_changed_files_from_step_result (private_method, line 1988, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 1
   references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:659 [archive] - _extract_changed_files_from_step_result [line 2000]
 
-- _runtime_step_id (private_method, line 1923, category=execution, class=B)
+- _runtime_step_id (private_method, line 1911, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -286,7 +265,7 @@ C = production or target-module reference exists; do not remove yet
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:675 [archive] - _runtime_step_id [line 1923]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:333 [archive] - line 1923: function _runtime_step_id
 
-- _runtime_step_action_type (private_method, line 1917, category=execution, class=B)
+- _runtime_step_action_type (private_method, line 1905, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -294,7 +273,7 @@ C = production or target-module reference exists; do not remove yet
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:674 [archive] - _runtime_step_action_type [line 1917]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:317 [archive] - line 1917: function _runtime_step_action_type
 
-- _runtime_linked_session_node (private_method, line 1929, category=execution, class=B)
+- _runtime_linked_session_node (private_method, line 1917, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -302,7 +281,7 @@ C = production or target-module reference exists; do not remove yet
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:673 [archive] - _runtime_linked_session_node [line 1929]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:349 [archive] - line 1929: function _runtime_linked_session_node
 
-- _runtime_action_metadata (private_method, line 1932, category=execution, class=B)
+- _runtime_action_metadata (private_method, line 1920, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -310,7 +289,7 @@ C = production or target-module reference exists; do not remove yet
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:672 [archive] - _runtime_action_metadata [line 1932]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:357 [archive] - line 1932: function _runtime_action_metadata
 
-- _runtime_action_id (private_method, line 1926, category=execution, class=B)
+- _runtime_action_id (private_method, line 1914, category=execution, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -318,7 +297,7 @@ C = production or target-module reference exists; do not remove yet
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:671 [archive] - _runtime_action_id [line 1926]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:341 [archive] - line 1926: function _runtime_action_id
 
-- _resolve_runtime_mode (private_method, line 1906, category=runtime_mode, class=B)
+- _resolve_runtime_mode (private_method, line 1894, category=runtime_mode, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -326,7 +305,7 @@ C = production or target-module reference exists; do not remove yet
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:669 [archive] - _resolve_runtime_mode [line 1906]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:301 [archive] - line 1906: function _resolve_runtime_mode
 
-- _build_repair_chain_id (private_method, line 3119, category=repair, class=B)
+- _build_repair_chain_id (private_method, line 3107, category=repair, class=B)
   reason: only tests/tools/docs/archive references found
   non_definition_refs: 3
   references:
@@ -337,7 +316,7 @@ C = production or target-module reference exists; do not remove yet
 ================================================================================
 Referenced / Not Removal Candidates
 ================================================================================
-- _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28 (top_level_helper, line 5721, category=top_level_helper)
+- _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28 (top_level_helper, line 5709, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 7
   sample_references:
@@ -348,7 +327,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2132 [archive] - line 5570: _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28
     - ... truncated 2
 
-- _zero_stage3b_call_registered_handler_v2 (top_level_helper, line 5111, category=top_level_helper)
+- _zero_stage3b_call_registered_handler_v2 (top_level_helper, line 5099, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 8
   sample_references:
@@ -359,7 +338,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2197 [archive] -> _zero_stage3b_call_registered_handler_v2
     - ... truncated 3
 
-- _zero_stage3b_write_state_v2 (top_level_helper, line 5002, category=top_level_helper)
+- _zero_stage3b_write_state_v2 (top_level_helper, line 4990, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 9
   sample_references:
@@ -370,7 +349,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2244 [archive] - line 4851: _zero_stage3b_write_state_v2
     - ... truncated 4
 
-- _zero_stage3b_read_state_v2 (top_level_helper, line 4988, category=top_level_helper)
+- _zero_stage3b_read_state_v2 (top_level_helper, line 4976, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 9
   sample_references:
@@ -381,7 +360,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2192 [archive] - line 4837: _zero_stage3b_read_state_v2
     - ... truncated 4
 
-- _zero_stage3b_state_path_v2 (top_level_helper, line 4984, category=top_level_helper)
+- _zero_stage3b_state_path_v2 (top_level_helper, line 4972, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 11
   sample_references:
@@ -392,7 +371,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:633 [archive] - _zero_stage3b_state_path_v2 [line 4833]
     - ... truncated 6
 
-- _zero_stage3b_runtime_mode_v2 (top_level_helper, line 4972, category=top_level_helper)
+- _zero_stage3b_runtime_mode_v2 (top_level_helper, line 4960, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 14
   sample_references:
@@ -403,7 +382,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:412 [archive] - _zero_stage3b_runtime_mode_v2 [line 4821]
     - ... truncated 9
 
-- _zero_stage3b_normalize_blocked_v2 (top_level_helper, line 5076, category=top_level_helper)
+- _zero_stage3b_normalize_blocked_v2 (top_level_helper, line 5064, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 18
   sample_references:
@@ -414,18 +393,18 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:620 [archive] - _zero_stage3b_normalize_blocked_v2 [line 4925]
     - ... truncated 13
 
-- _zero_taskrunner_registry_legacy_cleanup_guard_v28 (top_level_helper, line 5697, category=top_level_helper)
+- _zero_taskrunner_registry_legacy_cleanup_guard_v28 (top_level_helper, line 5685, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 21
   sample_references:
-    - archive/packages/runtime_closure_20260629/package28_taskrunner_registry_legacy_cleanup_phase1.py:18 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\nREPORT = ROOT / "taskrunner_registry_lega
-    - archive/packages/runtime_closure_20260629/package28_taskrunner_registry_legacy_cleanup_phase1.py:18 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\nREPORT = ROOT / "taskrunner_registry_lega
-    - archive/packages/runtime_closure_20260629/package28_taskrunner_registry_legacy_cleanup_phase1.py:18 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\nREPORT = ROOT / "taskrunner_registry_lega
-    - archive/packages/runtime_closure_20260629/package28_taskrunner_registry_legacy_cleanup_phase1.py:19 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE28_TASKRUNNER_REGISTRY_LEGACY_CLEANUP_PHASE1_BEGIN\ndef _zero_taskrunner_registry_legacy_cleanup_guard_v28(self, event, payload=None):\n    payload = dict(payload or {})\n    event = str(event or "").strip() or
-    - archive/packages/runtime_closure_20260629/package28_taskrunner_registry_legacy_cleanup_phase1.py:19 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE28_TASKRUNNER_REGISTRY_LEGACY_CLEANUP_PHASE1_BEGIN\ndef _zero_taskrunner_registry_legacy_cleanup_guard_v28(self, event, payload=None):\n    payload = dict(payload or {})\n    event = str(event or "").strip() or
+    - tests/test_taskrunner_registry_closure_seal.py:99 [test] assert "_zero_taskrunner_registry_legacy_cleanup_guard_v28" in source
+    - tests/test_taskrunner_registry_legacy_cleanup_phase1.py:53 [test] result = module._zero_taskrunner_registry_legacy_cleanup_guard_v28(
+    - tests/test_taskrunner_registry_legacy_cleanup_phase1.py:73 [test] result = module._zero_taskrunner_registry_legacy_cleanup_guard_v28(
+    - tests/test_taskrunner_registry_legacy_cleanup_phase1.py:88 [test] assert hasattr(module, "_zero_taskrunner_registry_legacy_cleanup_guard_v28")
+    - tests/test_taskrunner_registry_legacy_cleanup_phase2.py:96 [test] assert "_zero_taskrunner_registry_legacy_cleanup_guard_v28" in source
     - ... truncated 16
 
-- _zero_stage3b_select_step_v2 (top_level_helper, line 4958, category=top_level_helper)
+- _zero_stage3b_select_step_v2 (top_level_helper, line 4946, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 21
   sample_references:
@@ -436,7 +415,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:373 [archive] -> _zero_stage3b_select_step_v2 [line 4807]
     - ... truncated 16
 
-- _zero_stage3b_normalize_success_v2 (top_level_helper, line 5014, category=top_level_helper)
+- _zero_stage3b_normalize_success_v2 (top_level_helper, line 5002, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 23
   sample_references:
@@ -447,7 +426,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:337 [archive] - _zero_stage3b_normalize_success_v2 [line 4863]
     - ... truncated 18
 
-- _zero_stage3b_taskrunner_record_operator_failure_v4 (top_level_helper, line 5319, category=top_level_helper)
+- _zero_stage3b_taskrunner_record_operator_failure_v4 (top_level_helper, line 5307, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 24
   sample_references:
@@ -458,7 +437,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:442 [archive] - _zero_stage3b_taskrunner_record_operator_failure_v4 [line 5168]
     - ... truncated 19
 
-- _zero_stage3b_mapping_v2 (top_level_helper, line 4955, category=top_level_helper)
+- _zero_stage3b_mapping_v2 (top_level_helper, line 4943, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 28
   sample_references:
@@ -469,36 +448,36 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:433 [archive] -> _zero_stage3b_mapping_v2 [line 4804]
     - ... truncated 23
 
-- _zero_stage3b_run_task_tick_v4 (top_level_helper, line 5345, category=top_level_helper)
+- _zero_stage3b_run_task_tick_v4 (top_level_helper, line 5333, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 92
   sample_references:
+    - tools/taskrunner_legacy_reference_audit.py:19 [tool] "_zero_stage3b_run_task_tick_v4",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:477 [archive] - line 5194: _zero_stage3b_run_task_tick_v4
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:25 [archive] - _zero_stage3b_run_task_tick_v4
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:52 [archive] - taskrunner_aer_closure_inventory.txt:477 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:60 [archive] - taskrunner_runtime_caller_analysis_report.txt:112 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:79 [archive] - taskrunner_runtime_caller_analysis_report.txt:382 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
     - ... truncated 87
 
-- _zero_stage3b_run_task_tick_v2 (top_level_helper, line 5132, category=top_level_helper)
+- _zero_stage3b_run_task_tick_v2 (top_level_helper, line 5120, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 112
   sample_references:
+    - tools/taskrunner_legacy_reference_audit.py:17 [tool] "_zero_stage3b_run_task_tick_v2",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:470 [archive] - line 4981: _zero_stage3b_run_task_tick_v2
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:23 [archive] - _zero_stage3b_run_task_tick_v2
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:48 [archive] - taskrunner_aer_closure_inventory.txt:470 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:54 [archive] - taskrunner_runtime_caller_analysis_report.txt:61 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:56 [archive] - taskrunner_runtime_caller_analysis_report.txt:76 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
     - ... truncated 107
 
-- _zero_boundary_document_action_type (top_level_helper, line 4550, category=top_level_helper)
+- _zero_boundary_document_action_type (top_level_helper, line 4538, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 2
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:65 [archive] <- _zero_boundary_document_action_type [line 4399]
-    - core/runtime/task_runner.py:4570 [target] action_type = _zero_boundary_document_action_type(step)
+    - core/runtime/task_runner.py:4558 [target] action_type = _zero_boundary_document_action_type(step)
 
-- _zero_boundary_extract_execution_authority (top_level_helper, line 4465, category=top_level_helper)
+- _zero_boundary_extract_execution_authority (top_level_helper, line 4453, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 6
   sample_references:
@@ -509,18 +488,18 @@ Referenced / Not Removal Candidates
     - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12420 [doc] "text": "def _zero_boundary_extract_execution_authority(*sources):"
     - ... truncated 1
 
-- _zero_boundary_extract_authority_context (top_level_helper, line 4452, category=top_level_helper)
+- _zero_boundary_extract_authority_context (top_level_helper, line 4440, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 6
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:453 [archive] - line 4301: _zero_boundary_extract_authority_context
     - core/runtime/step_executor.py:9107 [production] authority_context = _zero_boundary_extract_authority_context(context)
     - core/runtime/step_executor.py:9488 [production] authority_context = _zero_boundary_extract_authority_context(context)
-    - core/runtime/task_runner.py:4591 [target] incoming = _zero_boundary_extract_authority_context(task, state, upstream_context)
+    - core/runtime/task_runner.py:4579 [target] incoming = _zero_boundary_extract_authority_context(task, state, upstream_context)
     - docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e.json:79 [doc] "_zero_boundary_extract_authority_context",
     - ... truncated 1
 
-- _zero_taskrunner_registry_callsite_install_v26 (top_level_helper, line 5673, category=top_level_helper)
+- _zero_taskrunner_registry_callsite_install_v26 (top_level_helper, line 5661, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 7
   sample_references:
@@ -531,7 +510,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2117 [archive] - line 5522: _zero_taskrunner_registry_callsite_install_v26
     - ... truncated 2
 
-- _zero_boundary_step_target (top_level_helper, line 4441, category=top_level_helper)
+- _zero_boundary_step_target (top_level_helper, line 4429, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 7
   sample_references:
@@ -542,7 +521,7 @@ Referenced / Not Removal Candidates
     - core/runtime/step_executor.py:9340 [production] target = _zero_boundary_step_target(step) or step.get("path") or step.get("target_path")
     - ... truncated 2
 
-- _zero_v702_runner_normalize_rel_path (top_level_helper, line 3737, category=top_level_helper)
+- _zero_v702_runner_normalize_rel_path (top_level_helper, line 3725, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 8
   sample_references:
@@ -553,7 +532,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2248 [archive] -> _zero_v702_runner_normalize_rel_path
     - ... truncated 3
 
-- _zero_operator_registry_phase1c_run_task_tick (top_level_helper, line 5515, category=top_level_helper)
+- _zero_operator_registry_phase1c_run_task_tick (top_level_helper, line 5503, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 8
   sample_references:
@@ -564,7 +543,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2095 [archive] - line 5364: _zero_operator_registry_phase1c_run_task_tick
     - ... truncated 3
 
-- _zero_v702_runner_extract_workspace_py_path (top_level_helper, line 3744, category=top_level_helper)
+- _zero_v702_runner_extract_workspace_py_path (top_level_helper, line 3732, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 9
   sample_references:
@@ -575,7 +554,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:636 [archive] - _zero_v702_runner_extract_workspace_py_path [line 3593]
     - ... truncated 4
 
-- _zero_operator_registry_phase1c_session_id (top_level_helper, line 5495, category=top_level_helper)
+- _zero_operator_registry_phase1c_session_id (top_level_helper, line 5483, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 9
   sample_references:
@@ -586,7 +565,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2102 [archive] - line 5344: _zero_operator_registry_phase1c_session_id
     - ... truncated 4
 
-- _zero_operator_registry_phase1c_is_initial_tick (top_level_helper, line 5506, category=top_level_helper)
+- _zero_operator_registry_phase1c_is_initial_tick (top_level_helper, line 5494, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 9
   sample_references:
@@ -597,7 +576,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2097 [archive] -> _zero_operator_registry_phase1c_is_initial_tick
     - ... truncated 4
 
-- _zero_v702_runner_looks_like_autonomous_repair (top_level_helper, line 3751, category=top_level_helper)
+- _zero_v702_runner_looks_like_autonomous_repair (top_level_helper, line 3739, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 10
   sample_references:
@@ -608,7 +587,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2250 [archive] - line 3600: _zero_v702_runner_looks_like_autonomous_repair
     - ... truncated 5
 
-- _zero_v801_public_runtime_value (top_level_helper, line 4246, category=top_level_helper)
+- _zero_v801_public_runtime_value (top_level_helper, line 4234, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 12
   sample_references:
@@ -619,7 +598,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2308 [archive] - line 4095: _zero_v801_public_runtime_value
     - ... truncated 7
 
-- _zero_v800_extract_status (top_level_helper, line 3983, category=top_level_helper)
+- _zero_v800_extract_status (top_level_helper, line 3971, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 12
   sample_references:
@@ -630,7 +609,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2284 [archive] - line 3832: _zero_v800_extract_status
     - ... truncated 7
 
-- _zero_v800_extract_action (top_level_helper, line 3977, category=top_level_helper)
+- _zero_v800_extract_action (top_level_helper, line 3965, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 12
   sample_references:
@@ -652,7 +631,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:25 [archive] - _zero_runtime_authority_for_step
     - ... truncated 7
 
-- _zero_v800_extract_error (top_level_helper, line 3989, category=top_level_helper)
+- _zero_v800_extract_error (top_level_helper, line 3977, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
@@ -663,7 +642,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2281 [archive] - line 3838: _zero_v800_extract_error
     - ... truncated 8
 
-- _zero_v702_runner_repair_task_steps_if_needed (top_level_helper, line 3763, category=top_level_helper)
+- _zero_v702_runner_repair_task_steps_if_needed (top_level_helper, line 3751, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
@@ -674,18 +653,18 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:491 [archive] -> _zero_v702_runner_repair_task_steps_if_needed [line 3612]
     - ... truncated 8
 
-- _zero_taskrunner_registry_callsite_payload_v26 (top_level_helper, line 5598, category=top_level_helper)
+- _zero_taskrunner_registry_callsite_payload_v26 (top_level_helper, line 5586, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
+    - tests/test_taskrunner_registry_callsite_migration.py:35 [test] assert hasattr(module, "_zero_taskrunner_registry_callsite_payload_v26")
+    - tests/test_taskrunner_registry_callsite_migration.py:43 [test] payload = module._zero_taskrunner_registry_callsite_payload_v26(
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\ndef test_taskrunner_registry_callsite
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\ndef test_taskrunner_registry_callsite
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:42 [archive] "_zero_taskrunner_registry_callsite_payload_v26",
     - ... truncated 8
 
-- _zero_taskrunner_registry_admit_tick_v24 (top_level_helper, line 5580, category=top_level_helper)
+- _zero_taskrunner_registry_admit_tick_v24 (top_level_helper, line 5568, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
@@ -696,7 +675,7 @@ Referenced / Not Removal Candidates
     - archive/packages/runtime_closure_20260629/package27_taskrunner_registry_legacy_cleanup_inventory.py:134 [archive] "_zero_taskrunner_registry_admit_tick_v24",
     - ... truncated 8
 
-- _zero_taskrunner_registry_admit_owned_step_v24 (top_level_helper, line 5576, category=top_level_helper)
+- _zero_taskrunner_registry_admit_owned_step_v24 (top_level_helper, line 5564, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
@@ -707,73 +686,73 @@ Referenced / Not Removal Candidates
     - archive/packages/runtime_closure_20260629/package27_taskrunner_registry_legacy_cleanup_inventory.py:133 [archive] "_zero_taskrunner_registry_admit_owned_step_v24",
     - ... truncated 8
 
-- _zero_v731_task_runner_determine_failure_type (top_level_helper, line 3945, category=top_level_helper)
+- _zero_v731_task_runner_determine_failure_type (top_level_helper, line 3933, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 14
   sample_references:
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:447 [archive] - line 3794: _zero_v731_task_runner_determine_failure_type
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:702 [archive] - _zero_v731_task_runner_determine_failure_type [line 3794]
-    - core/runtime/task_runner.py:3964 [target] TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type
     - docs/execution_gateway_preflight_audit.md:168 [doc] - `core\runtime\task_runner.py`:3904 — `task_runner` — `def _zero_v731_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:`
     - docs/execution_gateway_preflight_audit.md:169 [doc] - `core\runtime\task_runner.py`:3923 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type`
+    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:447 [archive] - line 3794: _zero_v731_task_runner_determine_failure_type
+    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:702 [archive] - _zero_v731_task_runner_determine_failure_type [line 3794]
+    - core/runtime/task_runner.py:3952 [target] TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type
     - ... truncated 9
 
-- _zero_v710_task_runner_determine_failure_type (top_level_helper, line 3892, category=top_level_helper)
+- _zero_v710_task_runner_determine_failure_type (top_level_helper, line 3880, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 14
   sample_references:
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:446 [archive] - line 3741: _zero_v710_task_runner_determine_failure_type
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:701 [archive] - _zero_v710_task_runner_determine_failure_type [line 3741]
-    - core/runtime/task_runner.py:3911 [target] TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type
     - docs/execution_gateway_preflight_audit.md:166 [doc] - `core\runtime\task_runner.py`:3851 — `task_runner` — `def _zero_v710_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:`
     - docs/execution_gateway_preflight_audit.md:167 [doc] - `core\runtime\task_runner.py`:3870 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type`
+    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:446 [archive] - line 3741: _zero_v710_task_runner_determine_failure_type
+    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:701 [archive] - _zero_v710_task_runner_determine_failure_type [line 3741]
+    - core/runtime/task_runner.py:3899 [target] TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type
     - ... truncated 9
 
-- _zero_v703_task_runner_determine_failure_type (top_level_helper, line 3852, category=top_level_helper)
+- _zero_v703_task_runner_determine_failure_type (top_level_helper, line 3840, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 14
   sample_references:
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:445 [archive] - line 3701: _zero_v703_task_runner_determine_failure_type
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:700 [archive] - _zero_v703_task_runner_determine_failure_type [line 3701]
-    - core/runtime/task_runner.py:3866 [target] TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type
     - docs/execution_gateway_preflight_audit.md:164 [doc] - `core\runtime\task_runner.py`:3811 — `task_runner` — `def _zero_v703_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:`
     - docs/execution_gateway_preflight_audit.md:165 [doc] - `core\runtime\task_runner.py`:3825 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type`
+    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:445 [archive] - line 3701: _zero_v703_task_runner_determine_failure_type
+    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:700 [archive] - _zero_v703_task_runner_determine_failure_type [line 3701]
+    - core/runtime/task_runner.py:3854 [target] TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type
     - ... truncated 9
 
-- _zero_run_task_adaptive (top_level_helper, line 4691, category=top_level_helper)
+- _zero_run_task_adaptive (top_level_helper, line 4679, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 14
   sample_references:
+    - tests/test_adaptive_runtime_boundary.py:71 [test] if isinstance(node, ast.FunctionDef) and node.name == "_zero_run_task_adaptive"
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:457 [archive] - line 4540: _zero_run_task_adaptive
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:244 [archive] <- _zero_run_task_adaptive [line 4540]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:684 [archive] - _zero_run_task_adaptive [line 4540]
-    - core/runtime/task_runner.py:4715 [target] TaskRunner.run_task_adaptive = _zero_run_task_adaptive
-    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1336 [doc] "expression": "TaskRunner.run_task_adaptive = _zero_run_task_adaptive"
+    - core/runtime/task_runner.py:4703 [target] TaskRunner.run_task_adaptive = _zero_run_task_adaptive
     - ... truncated 9
 
-- _zero_taskrunner_registry_callsite_wrap_tick_v26 (top_level_helper, line 5662, category=top_level_helper)
+- _zero_taskrunner_registry_callsite_wrap_tick_v26 (top_level_helper, line 5650, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 17
   sample_references:
+    - tests/test_taskrunner_registry_callsite_migration.py:37 [test] assert hasattr(module, "_zero_taskrunner_registry_callsite_wrap_tick_v26")
+    - tests/test_taskrunner_registry_callsite_migration.py:97 [test] wrapped = module._zero_taskrunner_registry_callsite_wrap_tick_v26(base)
+    - tests/test_taskrunner_registry_legacy_cleanup_phase1.py:87 [test] assert hasattr(module, "_zero_taskrunner_registry_callsite_wrap_tick_v26")
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\ndef test_taskrunner_registry_callsite
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\ndef test_taskrunner_registry_callsite
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:45 [archive] "_zero_taskrunner_registry_callsite_wrap_tick_v26",
     - ... truncated 12
 
-- _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26 (top_level_helper, line 5651, category=top_level_helper)
+- _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26 (top_level_helper, line 5639, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 17
   sample_references:
+    - tests/test_taskrunner_registry_callsite_migration.py:36 [test] assert hasattr(module, "_zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26")
+    - tests/test_taskrunner_registry_callsite_migration.py:75 [test] wrapped = module._zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26(base)
+    - tests/test_taskrunner_registry_legacy_cleanup_phase1.py:86 [test] assert hasattr(module, "_zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26")
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\ndef test_taskrunner_registry_callsite
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\ndef test_taskrunner_registry_callsite
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:44 [archive] "_zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26",
     - ... truncated 12
 
-- _zero_boundary_step_type (top_level_helper, line 4435, category=top_level_helper)
+- _zero_boundary_step_type (top_level_helper, line 4423, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 17
   sample_references:
@@ -784,18 +763,18 @@ Referenced / Not Removal Candidates
     - core/runtime/step_executor.py:9185 [production] "step_type": _zero_boundary_step_type(step),
     - ... truncated 12
 
-- _zero_taskrunner_registry_callsite_admit_v26 (top_level_helper, line 5638, category=top_level_helper)
+- _zero_taskrunner_registry_callsite_admit_v26 (top_level_helper, line 5626, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 31
   sample_references:
+    - tests/test_taskrunner_registry_closure_seal.py:98 [test] assert "_zero_taskrunner_registry_callsite_admit_v26" in source
+    - tests/test_taskrunner_registry_legacy_cleanup_phase2.py:95 [test] assert "_zero_taskrunner_registry_callsite_admit_v26" in source
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
     - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE26_TASKRUNNER_REGISTRY_CALLSITE_MIGRATION_BEGIN\ndef _zero_taskrunner_registry_callsite_payload_v26(event, args=None, kwargs=None):\n    args = tuple(args or ())\n    kwargs = dict(kwargs or {})\n    payload = 
-    - archive/packages/runtime_closure_20260629/package26_taskrunner_registry_callsite_migration.py:43 [archive] "_zero_taskrunner_registry_callsite_admit_v26",
-    - archive/packages/runtime_closure_20260629/package27_taskrunner_registry_legacy_cleanup_inventory.py:135 [archive] "_zero_taskrunner_registry_callsite_admit_v26",
     - ... truncated 26
 
-- _zero_boundary_norm_text (top_level_helper, line 4431, category=top_level_helper)
+- _zero_boundary_norm_text (top_level_helper, line 4419, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 31
   sample_references:
@@ -806,84 +785,84 @@ Referenced / Not Removal Candidates
     - core/runtime/step_executor.py:9124 [production] package_id = _zero_boundary_norm_text(task.get("package_id") or task.get("work_package_id"))
     - ... truncated 26
 
-- _zero_taskrunner_registry_admit_aer_closure_v24 (top_level_helper, line 5529, category=top_level_helper)
+- _zero_taskrunner_registry_admit_aer_closure_v24 (top_level_helper, line 5517, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 34
   sample_references:
+    - tests/test_taskrunner_registry_admission_consolidation.py:31 [test] assert source.count("def _zero_taskrunner_registry_admit_aer_closure_v24") == 1
+    - tests/test_taskrunner_registry_admission_consolidation.py:46 [test] result = module._zero_taskrunner_registry_admit_aer_closure_v24(
+    - tests/test_taskrunner_registry_admission_consolidation.py:70 [test] result = module._zero_taskrunner_registry_admit_aer_closure_v24(
+    - tests/test_taskrunner_registry_direct_admission_inventory.py:32 [test] assert "_zero_taskrunner_registry_admit_aer_closure_v24" in text
     - archive/packages/runtime_closure_20260629/package24_taskrunner_registry_admission_consolidation.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\nfrom types import SimpleNamespace\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\nde
-    - archive/packages/runtime_closure_20260629/package24_taskrunner_registry_admission_consolidation.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\nfrom types import SimpleNamespace\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\nde
-    - archive/packages/runtime_closure_20260629/package24_taskrunner_registry_admission_consolidation.py:17 [archive] TEST_SOURCE = 'from __future__ import annotations\n\nimport ast\nfrom pathlib import Path\nfrom types import SimpleNamespace\n\n\nROOT = Path(__file__).resolve().parents[1]\nTASK_RUNNER = ROOT / "core" / "runtime" / "task_runner.py"\n\n\nde
-    - archive/packages/runtime_closure_20260629/package24_taskrunner_registry_admission_consolidation.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE24_TASKRUNNER_REGISTRY_ADMISSION_CONSOLIDATION_BEGIN\ndef _zero_taskrunner_registry_admit_aer_closure_v24(self, event, payload=None):\n    payload = dict(payload or {})\n    event = str(event or "").strip() or 
-    - archive/packages/runtime_closure_20260629/package24_taskrunner_registry_admission_consolidation.py:18 [archive] BLOCK_SOURCE = '# ZERO_PACKAGE24_TASKRUNNER_REGISTRY_ADMISSION_CONSOLIDATION_BEGIN\ndef _zero_taskrunner_registry_admit_aer_closure_v24(self, event, payload=None):\n    payload = dict(payload or {})\n    event = str(event or "").strip() or 
     - ... truncated 29
 
-- _zero_v810_finalize_public_result (top_level_helper, line 4401, category=top_level_helper)
+- _zero_v810_finalize_public_result (top_level_helper, line 4389, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 41
   sample_references:
+    - tools/taskrunner_legacy_reference_audit.py:26 [tool] "_zero_v810_finalize_public_result",
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:32 [archive] - _zero_v810_finalize_public_result
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:717 [archive] - _zero_v810_finalize_public_result
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:723 [archive] - taskrunner_runtime_caller_analysis_report.txt:569 [production; reference] - _zero_v810_finalize_public_result [line 4250]
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:724 [archive] - taskrunner_runtime_caller_analysis_report.txt:606 [production; reference] - _zero_v810_finalize_public_result [line 4250]
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:725 [archive] - taskrunner_runtime_caller_analysis_report.txt:651 [production; reference] - _zero_v810_finalize_public_result [line 4250]
     - ... truncated 36
 
-- _zero_v801_task_runner_finalize_public_result (top_level_helper, line 4260, category=top_level_helper)
+- _zero_v801_task_runner_finalize_public_result (top_level_helper, line 4248, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 43
   sample_references:
+    - docs/execution_gateway_preflight_audit.md:172 [doc] - `core\runtime\task_runner.py`:4219 — `task_runner` — `def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:`
+    - docs/execution_gateway_preflight_audit.md:173 [doc] - `core\runtime\task_runner.py`:4283 — `task_runner` — `TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result`
+    - tools/taskrunner_legacy_reference_audit.py:25 [tool] "_zero_v801_task_runner_finalize_public_result",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:450 [archive] - line 4109: _zero_v801_task_runner_finalize_public_result
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:31 [archive] - _zero_v801_task_runner_finalize_public_result
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:689 [archive] - _zero_v801_task_runner_finalize_public_result
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:695 [archive] - taskrunner_aer_closure_inventory.txt:450 [production; reference] - line 4109: _zero_v801_task_runner_finalize_public_result
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:696 [archive] - taskrunner_runtime_caller_analysis_report.txt:558 [production; reference] <- _zero_v801_task_runner_finalize_public_result [line 4109]
     - ... truncated 38
 
-- _zero_v810_taskrunner_init (top_level_helper, line 4341, category=top_level_helper)
+- _zero_v810_taskrunner_init (top_level_helper, line 4329, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 47
   sample_references:
+    - tools/taskrunner_legacy_reference_audit.py:28 [tool] "_zero_v810_taskrunner_init",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:451 [archive] - line 4190: _zero_v810_taskrunner_init
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:34 [archive] - _zero_v810_taskrunner_init
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:762 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:868 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _ze
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:765 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4634 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _z
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:774 [archive] - _zero_v810_taskrunner_init
     - ... truncated 42
 
-- _zero_v702_task_runner_run_one_step (top_level_helper, line 3813, category=top_level_helper)
+- _zero_v702_task_runner_run_one_step (top_level_helper, line 3801, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 47
   sample_references:
+    - docs/execution_gateway_preflight_audit.md:162 [doc] - `core\runtime\task_runner.py`:3772 — `task_runner` — `def _zero_v702_task_runner_run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:`
+    - docs/execution_gateway_preflight_audit.md:163 [doc] - `core\runtime\task_runner.py`:3790 — `task_runner` — `TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step`
+    - tools/taskrunner_legacy_reference_audit.py:23 [tool] "_zero_v702_task_runner_run_one_step",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:444 [archive] - line 3662: _zero_v702_task_runner_run_one_step
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:29 [archive] - _zero_v702_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:614 [archive] - _zero_v702_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:620 [archive] - taskrunner_aer_closure_inventory.txt:444 [production; reference] - line 3662: _zero_v702_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:621 [archive] - taskrunner_runtime_caller_analysis_report.txt:481 [production; reference] <- _zero_v702_task_runner_run_one_step [line 3662]
     - ... truncated 42
 
-- _zero_v810_persist_step_result_to_runtime_state (top_level_helper, line 4352, category=top_level_helper)
+- _zero_v810_persist_step_result_to_runtime_state (top_level_helper, line 4340, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 53
   sample_references:
+    - tools/taskrunner_legacy_reference_audit.py:27 [tool] "_zero_v810_persist_step_result_to_runtime_state",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:452 [archive] - line 4201: _zero_v810_persist_step_result_to_runtime_state
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:33 [archive] - _zero_v810_persist_step_result_to_runtime_state
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:730 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:835 [production; reference] "context_after": "5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state\n5181: TaskR
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:733 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4601 [production; reference] "context_after": "5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state\n5181: Task
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:743 [archive] - _zero_v810_persist_step_result_to_runtime_state
     - ... truncated 48
 
-- _zero_v800_task_runner_run_one_step (top_level_helper, line 4165, category=top_level_helper)
+- _zero_v800_task_runner_run_one_step (top_level_helper, line 4153, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 77
   sample_references:
+    - docs/execution_gateway_preflight_audit.md:170 [doc] - `core\runtime\task_runner.py`:4124 — `task_runner` — `def _zero_v800_task_runner_run_one_step(self: TaskRunner, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:`
+    - docs/execution_gateway_preflight_audit.md:171 [doc] - `core\runtime\task_runner.py`:4188 — `task_runner` — `TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step`
+    - tools/taskrunner_legacy_reference_audit.py:24 [tool] "_zero_v800_task_runner_run_one_step",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:448 [archive] - line 4014: _zero_v800_task_runner_run_one_step
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:30 [archive] - _zero_v800_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:644 [archive] - _zero_v800_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:650 [archive] - taskrunner_aer_closure_inventory.txt:448 [production; reference] - line 4014: _zero_v800_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:651 [archive] - taskrunner_runtime_caller_analysis_report.txt:496 [production; reference] <- _zero_v800_task_runner_run_one_step [line 4014]
     - ... truncated 72
 
-- _zero_v800_build_observation (top_level_helper, line 4005, category=top_level_helper)
+- _zero_v800_build_observation (top_level_helper, line 3993, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 83
   sample_references:
@@ -894,7 +873,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:528 [archive] <- _zero_v800_build_observation [line 3854]
     - ... truncated 78
 
-- _zero_v800_decide_from_observation (top_level_helper, line 4047, category=top_level_helper)
+- _zero_v800_decide_from_observation (top_level_helper, line 4035, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 85
   sample_references:
@@ -905,7 +884,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:2301 [archive] -> self._zero_v800_decide_from_observation
     - ... truncated 80
 
-- _zero_v800_represents_failed_step_observation (top_level_helper, line 4144, category=top_level_helper)
+- _zero_v800_represents_failed_step_observation (top_level_helper, line 4132, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 92
   sample_references:
@@ -916,7 +895,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:107 [archive] <- _zero_v800_represents_failed_step_observation [line 3993]
     - ... truncated 87
 
-- _zero_v800_last_step_type (top_level_helper, line 4129, category=top_level_helper)
+- _zero_v800_last_step_type (top_level_helper, line 4117, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 101
   sample_references:
@@ -927,7 +906,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:646 [archive] - _zero_v800_last_step_type [line 3978]
     - ... truncated 96
 
-- _stage3b_taskrunner_enrich_success_result (top_level_helper, line 4903, category=top_level_helper)
+- _stage3b_taskrunner_enrich_success_result (top_level_helper, line 4891, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 23
   sample_references:
@@ -938,18 +917,18 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:286 [archive] - _stage3b_taskrunner_enrich_success_result [line 4752]
     - ... truncated 18
 
-- _stage3b_run_task_tick (top_level_helper, line 4935, category=top_level_helper)
+- _stage3b_run_task_tick (top_level_helper, line 4923, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 69
   sample_references:
+    - tools/taskrunner_legacy_reference_audit.py:14 [tool] "_stage3b_run_task_tick",
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:467 [archive] - line 4784: _stage3b_run_task_tick
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:20 [archive] - _stage3b_run_task_tick
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:46 [archive] - taskrunner_aer_closure_inventory.txt:467 [production; reference] - line 4784: _stage3b_run_task_tick
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:65 [archive] - taskrunner_runtime_caller_analysis_report.txt:131 [production; reference] <- _stage3b_run_task_tick [line 4784]
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:67 [archive] - taskrunner_runtime_caller_analysis_report.txt:279 [production; reference] - _stage3b_run_task_tick [line 4784]
     - ... truncated 64
 
-- _syntax_strategy_compat_marker_present (private_method, line 3290, category=legacy/zero/v-prefixed)
+- _syntax_strategy_compat_marker_present (private_method, line 3278, category=legacy/zero/v-prefixed)
   reason: production or target-module reference exists
   non_definition_refs: 49
   sample_references:
@@ -960,7 +939,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:127 [archive] -> _syntax_strategy_compat_marker_present  [line 3139]
     - ... truncated 44
 
-- _repair_lineage_run_task_tick (top_level_helper, line 5461, category=top_level_helper)
+- _repair_lineage_run_task_tick (top_level_helper, line 5449, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 6
   sample_references:
@@ -971,7 +950,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:807 [archive] - line 5310: function _repair_lineage_run_task_tick
     - ... truncated 1
 
-- _repair_chain_dispatcher_denial_shape (top_level_helper, line 5404, category=top_level_helper)
+- _repair_chain_dispatcher_denial_shape (top_level_helper, line 5392, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 9
   sample_references:
@@ -982,7 +961,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:796 [archive] - line 5253: function _repair_chain_dispatcher_denial_shape
     - ... truncated 4
 
-- _is_explicit_repair_chain_task (top_level_helper, line 5390, category=top_level_helper)
+- _is_explicit_repair_chain_task (top_level_helper, line 5378, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 10
   sample_references:
@@ -993,7 +972,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:802 [archive] - _is_explicit_repair_chain_task
     - ... truncated 5
 
-- _taskrunner_has_dispatch_authority (top_level_helper, line 4744, category=top_level_helper)
+- _taskrunner_has_dispatch_authority (top_level_helper, line 4732, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 12
   sample_references:
@@ -1004,18 +983,18 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:662 [archive] - _taskrunner_has_dispatch_authority
     - ... truncated 7
 
-- _taskrunner_result_text (top_level_helper, line 4716, category=top_level_helper)
+- _taskrunner_result_text (top_level_helper, line 4704, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:458 [archive] - line 4565: _taskrunner_result_text
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:120 [archive] - _taskrunner_result_text [line 4565] | callers=2 | callees=0
-    - core/runtime/task_runner.py:4733 [target] text = _taskrunner_result_text(result)
-    - core/runtime/task_runner.py:4785 [target] text = _taskrunner_result_text(result)
+    - core/runtime/task_runner.py:4721 [target] text = _taskrunner_result_text(result)
+    - core/runtime/task_runner.py:4773 [target] text = _taskrunner_result_text(result)
     - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:903 [doc] "context_after": "5477: def _taskrunner_result_text(result):\n5478:     if not isinstance(result, dict):",
     - ... truncated 8
 
-- _taskrunner_is_soft_authority_gate_failure (top_level_helper, line 4730, category=top_level_helper)
+- _taskrunner_is_soft_authority_gate_failure (top_level_helper, line 4718, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 16
   sample_references:
@@ -1026,7 +1005,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:309 [archive] -> _taskrunner_is_soft_authority_gate_failure [line 4579]
     - ... truncated 11
 
-- _taskrunner_authority_denial_shape (top_level_helper, line 4777, category=top_level_helper)
+- _taskrunner_authority_denial_shape (top_level_helper, line 4765, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 22
   sample_references:
@@ -1037,7 +1016,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:299 [archive] -> _taskrunner_authority_denial_shape [line 4626]
     - ... truncated 17
 
-- _repair_chain_has_live_dispatcher_capability (top_level_helper, line 5365, category=top_level_helper)
+- _repair_chain_has_live_dispatcher_capability (top_level_helper, line 5353, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 46
   sample_references:
@@ -1048,7 +1027,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:14 [archive] -> _repair_chain_has_live_dispatcher_capability  [line 5214]
     - ... truncated 41
 
-- _taskrunner_select_current_step (top_level_helper, line 4761, category=top_level_helper)
+- _taskrunner_select_current_step (top_level_helper, line 4749, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 49
   sample_references:
@@ -1059,7 +1038,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:16 [archive] -> _taskrunner_select_current_step  [line 4610]
     - ... truncated 44
 
-- _taskrunner_runtime_gate_fallback_step (top_level_helper, line 4833, category=top_level_helper)
+- _taskrunner_runtime_gate_fallback_step (top_level_helper, line 4821, category=top_level_helper)
   reason: production or target-module reference exists
   non_definition_refs: 50
   sample_references:
@@ -1070,99 +1049,99 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:301 [archive] -> _taskrunner_runtime_gate_fallback_step [line 4682]
     - ... truncated 45
 
-- _read_trace_json (private_method, line 3645, category=evidence)
+- _read_trace_json (private_method, line 3633, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 1
   sample_references:
-    - core/runtime/task_runner.py:3641 [target] read_trace_json=self._read_trace_json,
+    - core/runtime/task_runner.py:3629 [target] read_trace_json=self._read_trace_json,
 
-- _prepare_runtime_step_context (private_method, line 2202, category=execution)
+- _prepare_runtime_step_context (private_method, line 2190, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 1
   sample_references:
-    - core/runtime/task_runner.py:2870 [target] context = self._prepare_runtime_step_context(task, current_tick)
+    - core/runtime/task_runner.py:2858 [target] context = self._prepare_runtime_step_context(task, current_tick)
 
-- _handle_runtime_step_success (private_method, line 2262, category=execution)
+- _handle_runtime_step_success (private_method, line 2250, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 1
   sample_references:
-    - core/runtime/task_runner.py:2711 [target] success = self._handle_runtime_step_success(
+    - core/runtime/task_runner.py:2699 [target] success = self._handle_runtime_step_success(
 
-- _handle_runtime_step_failure (private_method, line 2293, category=execution)
+- _handle_runtime_step_failure (private_method, line 2281, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 1
   sample_references:
-    - core/runtime/task_runner.py:2881 [target] failure_result = self._handle_runtime_step_failure(
+    - core/runtime/task_runner.py:2869 [target] failure_result = self._handle_runtime_step_failure(
 
-- _execute_current_runtime_step (private_method, line 2007, category=runtime_mode)
+- _execute_current_runtime_step (private_method, line 1995, category=runtime_mode)
   reason: production or target-module reference exists
   non_definition_refs: 1
   sample_references:
-    - core/runtime/task_runner.py:2874 [target] execution = self._execute_current_runtime_step(
+    - core/runtime/task_runner.py:2862 [target] execution = self._execute_current_runtime_step(
 
-- _commit_runtime_step_result (private_method, line 2699, category=execution)
+- _commit_runtime_step_result (private_method, line 2687, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 1
   sample_references:
-    - core/runtime/task_runner.py:2895 [target] return self._commit_runtime_step_result(
+    - core/runtime/task_runner.py:2883 [target] return self._commit_runtime_step_result(
 
-- _resolve_task_dir_for_trace (private_method, line 3662, category=execution)
+- _resolve_task_dir_for_trace (private_method, line 3650, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 2
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:515 [archive] - line 3511: function _resolve_task_dir_for_trace
-    - core/runtime/task_runner.py:3640 [target] resolve_task_dir_for_trace=self._resolve_task_dir_for_trace,
+    - core/runtime/task_runner.py:3628 [target] resolve_task_dir_for_trace=self._resolve_task_dir_for_trace,
 
-- _operator_session_id_from_payloads (private_method, line 1785, category=other_private)
+- _operator_session_id_from_payloads (private_method, line 1773, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 3
   sample_references:
-    - core/runtime/task_runner.py:1782 [target] operator_session_id_from_payloads=self._operator_session_id_from_payloads,
+    - core/runtime/task_runner.py:1770 [target] operator_session_id_from_payloads=self._operator_session_id_from_payloads,
     - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:8379 [doc] "text": "operator_session_id = self._operator_session_id_from_payloads(task, state)"
     - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:8406 [doc] "text": "def _operator_session_id_from_payloads(self, *payloads: Any) -> str:"
 
-- _maybe_block_direct_missing_subgoal_dependency (private_method, line 3159, category=execution)
+- _maybe_block_direct_missing_subgoal_dependency (private_method, line 3147, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 3
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:51 [archive] <- _maybe_block_direct_missing_subgoal_dependency [line 3008]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:455 [archive] - line 3008: function _maybe_block_direct_missing_subgoal_dependency
-    - core/runtime/task_runner.py:2208 [target] maybe_block_direct_missing_subgoal_dependency=self._maybe_block_direct_missing_subgoal_dependency,
+    - core/runtime/task_runner.py:2196 [target] maybe_block_direct_missing_subgoal_dependency=self._maybe_block_direct_missing_subgoal_dependency,
 
-- _extract_error_type (private_method, line 3687, category=evidence)
+- _extract_error_type (private_method, line 3675, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 3
   sample_references:
     - core/agent/local_observer.py:245 [production] error_type = _extract_error_type(
-    - core/runtime/task_runner.py:3630 [target] extract_error_type=self._extract_error_type,
+    - core/runtime/task_runner.py:3618 [target] extract_error_type=self._extract_error_type,
     - docs/architecture/mainline_audit/zero_mainline_audit_report.json:4833 [doc] "text": "def _extract_error_type(raw_result: Dict[str, Any], nested_result: Dict[str, Any], *, action: str, status: str, error: str, returncode: Optional[int]) -> str:",
 
-- _read_repair_source_text (private_method, line 3134, category=repair)
+- _read_repair_source_text (private_method, line 3122, category=repair)
   reason: production or target-module reference exists
   non_definition_refs: 4
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:433 [archive] - line 2983: _read_repair_source_text
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:666 [archive] - _read_repair_source_text [line 2983]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:439 [archive] - line 2983: function _read_repair_source_text
-    - core/runtime/task_runner.py:3111 [target] read_repair_source_text=self._read_repair_source_text,
+    - core/runtime/task_runner.py:3099 [target] read_repair_source_text=self._read_repair_source_text,
 
-- _infer_repair_source_path (private_method, line 3131, category=repair)
+- _infer_repair_source_path (private_method, line 3119, category=repair)
   reason: production or target-module reference exists
   non_definition_refs: 4
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:432 [archive] - line 2980: _infer_repair_source_path
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:663 [archive] - _infer_repair_source_path [line 2980]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:431 [archive] - line 2980: function _infer_repair_source_path
-    - core/runtime/task_runner.py:3110 [target] infer_repair_source_path=self._infer_repair_source_path,
+    - core/runtime/task_runner.py:3098 [target] infer_repair_source_path=self._infer_repair_source_path,
 
-- _first_repair_action_path (private_method, line 3144, category=repair)
+- _first_repair_action_path (private_method, line 3132, category=repair)
   reason: production or target-module reference exists
   non_definition_refs: 4
   sample_references:
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:434 [archive] - line 2993: _first_repair_action_path
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:662 [archive] - _first_repair_action_path [line 2993]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:447 [archive] - line 2993: function _first_repair_action_path
-    - core/runtime/task_runner.py:3112 [target] first_repair_action_path=self._first_repair_action_path,
+    - core/runtime/task_runner.py:3100 [target] first_repair_action_path=self._first_repair_action_path,
 
 - _build_mutation_runtime_integration (private_method, line 589, category=execution)
   reason: production or target-module reference exists
@@ -1173,7 +1152,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:108 [archive] - line 589: function _build_mutation_runtime_integration
     - core/runtime/task_runner.py:257 [target] self.mutation_runtime = self._build_mutation_runtime_integration()
 
-- _extract_runtime_mode_from_mapping (private_method, line 1902, category=runtime_mode)
+- _extract_runtime_mode_from_mapping (private_method, line 1890, category=runtime_mode)
   reason: production or target-module reference exists
   non_definition_refs: 5
   sample_references:
@@ -1183,7 +1162,7 @@ Referenced / Not Removal Candidates
     - core/runtime/step_executor.py:1227 [production] self._extract_runtime_mode_from_mapping(context)
     - core/runtime/step_executor.py:1228 [production] or self._extract_runtime_mode_from_mapping(task)
 
-- _sync_runtime_state_back_to_task (private_method, line 2954, category=execution)
+- _sync_runtime_state_back_to_task (private_method, line 2942, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
@@ -1194,40 +1173,40 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:398 [archive] - line 2803: function _sync_runtime_state_back_to_task
     - ... truncated 8
 
-- _runtime_step_result_payload (private_method, line 2237, category=execution)
+- _runtime_step_result_payload (private_method, line 2225, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 13
   sample_references:
-    - core/runtime/task_runner.py:2356 [target] return self._runtime_step_result_payload(
-    - core/runtime/task_runner.py:2401 [target] return self._runtime_step_result_payload(
-    - core/runtime/task_runner.py:2440 [target] return self._runtime_step_result_payload(
-    - core/runtime/task_runner.py:2503 [target] return self._runtime_step_result_payload(
-    - core/runtime/task_runner.py:2524 [target] return self._runtime_step_result_payload(
+    - core/runtime/task_runner.py:2344 [target] return self._runtime_step_result_payload(
+    - core/runtime/task_runner.py:2389 [target] return self._runtime_step_result_payload(
+    - core/runtime/task_runner.py:2428 [target] return self._runtime_step_result_payload(
+    - core/runtime/task_runner.py:2491 [target] return self._runtime_step_result_payload(
+    - core/runtime/task_runner.py:2512 [target] return self._runtime_step_result_payload(
     - ... truncated 8
 
-- _normalize_runtime_mode (private_method, line 1898, category=runtime_mode)
+- _normalize_runtime_mode (private_method, line 1886, category=runtime_mode)
   reason: production or target-module reference exists
   non_definition_refs: 15
   sample_references:
+    - tools/apply_runtime_aggregate_adapter_v1.py:79 [tool] normalized["runtime_mode"] = self._normalize_runtime_mode(
+    - tools/apply_runtime_aggregate_adapter_v1.py:136 [tool] normalized["runtime_mode"] = self._normalize_runtime_mode(
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:415 [archive] - line 1898: _normalize_runtime_mode
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:664 [archive] - _normalize_runtime_mode [line 1898]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_inventory_report.txt:285 [archive] - line 1898: function _normalize_runtime_mode
-    - core/runtime/step_executor.py:465 [production] "runtime_mode": self._normalize_runtime_mode(
-    - core/runtime/step_executor.py:1172 [production] return self._normalize_runtime_mode(raw)
     - ... truncated 10
 
-- _commit_runtime_state (private_method, line 2225, category=execution)
+- _commit_runtime_state (private_method, line 2213, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 16
   sample_references:
-    - core/runtime/task_runner.py:2287 [target] new_state = self._commit_runtime_state(task=task, commit_result=advance_result)
-    - core/runtime/task_runner.py:2337 [target] runtime_state = self._commit_runtime_state(task=task, commit_result=wait_result)
-    - core/runtime/task_runner.py:2391 [target] runtime_state = self._commit_runtime_state(task=task, commit_result=failure_record_result)
-    - core/runtime/task_runner.py:2439 [target] runtime_state = self._commit_runtime_state(task=task, commit_result=advance_result)
-    - core/runtime/task_runner.py:2478 [target] state = self._commit_runtime_state(task=task, commit_result=failure_record_result)
+    - core/runtime/task_runner.py:2275 [target] new_state = self._commit_runtime_state(task=task, commit_result=advance_result)
+    - core/runtime/task_runner.py:2325 [target] runtime_state = self._commit_runtime_state(task=task, commit_result=wait_result)
+    - core/runtime/task_runner.py:2379 [target] runtime_state = self._commit_runtime_state(task=task, commit_result=failure_record_result)
+    - core/runtime/task_runner.py:2427 [target] runtime_state = self._commit_runtime_state(task=task, commit_result=advance_result)
+    - core/runtime/task_runner.py:2466 [target] state = self._commit_runtime_state(task=task, commit_result=failure_record_result)
     - ... truncated 11
 
-- _validate_regression_command (private_method, line 3392, category=execution)
+- _validate_regression_command (private_method, line 3380, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 28
   sample_references:
@@ -1260,7 +1239,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:227 [archive] -> _build_repair_replay_validation  [line 836]
     - ... truncated 23
 
-- _build_regression_verify_commands (private_method, line 3374, category=execution)
+- _build_regression_verify_commands (private_method, line 3362, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 28
   sample_references:
@@ -1271,7 +1250,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:293 [archive] -> _build_regression_verify_commands  [line 3223]
     - ... truncated 23
 
-- _resolve_target_repo_root (private_method, line 1764, category=other_private)
+- _resolve_target_repo_root (private_method, line 1756, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 30
   sample_references:
@@ -1282,7 +1261,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:229 [archive] -> _resolve_target_repo_root  [line 1764]
     - ... truncated 25
 
-- _runtime_step_target (private_method, line 1920, category=execution)
+- _runtime_step_target (private_method, line 1908, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 31
   sample_references:
@@ -1293,7 +1272,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:114 [archive] -> _runtime_step_target  [line 1920]
     - ... truncated 26
 
-- _make_public_payload_safe (private_method, line 3502, category=other_private)
+- _make_public_payload_safe (private_method, line 3490, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 31
   sample_references:
@@ -1359,7 +1338,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:269 [archive] -> _get_capability_execution  [line 1700]
     - ... truncated 27
 
-- _format_capability_final_answer (private_method, line 1873, category=registry)
+- _format_capability_final_answer (private_method, line 1861, category=registry)
   reason: production or target-module reference exists
   non_definition_refs: 32
   sample_references:
@@ -1381,7 +1360,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:46 [archive] -> _attach_autonomous_repair_mutation_metadata  [line 856]
     - ... truncated 29
 
-- _target_routed_context (private_method, line 1776, category=other_private)
+- _target_routed_context (private_method, line 1764, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1392,7 +1371,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:253 [archive] -> _target_routed_context  [line 1776]
     - ... truncated 30
 
-- _safe_update_current_engineering_action (private_method, line 1940, category=other_private)
+- _safe_update_current_engineering_action (private_method, line 1928, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1403,7 +1382,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:248 [archive] -> _safe_update_current_engineering_action  [line 1940]
     - ... truncated 30
 
-- _safe_complete_engineering_action (private_method, line 1951, category=other_private)
+- _safe_complete_engineering_action (private_method, line 1939, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1414,7 +1393,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:245 [archive] -> _safe_complete_engineering_action  [line 1951]
     - ... truncated 30
 
-- _get_previous_result (private_method, line 3007, category=evidence)
+- _get_previous_result (private_method, line 2995, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1425,7 +1404,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:235 [archive] -> _get_previous_result  [line 2856]
     - ... truncated 30
 
-- _ensure_step_execution_trace (private_method, line 2916, category=execution)
+- _ensure_step_execution_trace (private_method, line 2904, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1436,7 +1415,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:234 [archive] -> _ensure_step_execution_trace  [line 2765]
     - ... truncated 30
 
-- _build_policy_review_id (private_method, line 3426, category=other_private)
+- _build_policy_review_id (private_method, line 3414, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1447,7 +1426,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:231 [archive] -> _build_policy_review_id  [line 3275]
     - ... truncated 30
 
-- _append_step_result_trace_json (private_method, line 3615, category=execution)
+- _append_step_result_trace_json (private_method, line 3603, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 35
   sample_references:
@@ -1458,7 +1437,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:221 [archive] -> _append_step_result_trace_json  [line 3464]
     - ... truncated 30
 
-- _should_convert_policy_block_to_review (private_method, line 3025, category=evidence)
+- _should_convert_policy_block_to_review (private_method, line 3013, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 36
   sample_references:
@@ -1469,7 +1448,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:197 [archive] -> _should_convert_policy_block_to_review  [line 2874]
     - ... truncated 31
 
-- _safe_fail_engineering_action (private_method, line 1963, category=other_private)
+- _safe_fail_engineering_action (private_method, line 1951, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 36
   sample_references:
@@ -1480,7 +1459,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:246 [archive] -> _safe_fail_engineering_action  [line 1963]
     - ... truncated 31
 
-- _is_apply_step (private_method, line 3154, category=execution)
+- _is_apply_step (private_method, line 3142, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 36
   sample_references:
@@ -1491,7 +1470,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:236 [archive] -> _is_apply_step  [line 3003]
     - ... truncated 31
 
-- _should_advance_failed_step_observation (private_method, line 3051, category=execution)
+- _should_advance_failed_step_observation (private_method, line 3039, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 37
   sample_references:
@@ -1502,7 +1481,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:249 [archive] -> _should_advance_failed_step_observation  [line 2900]
     - ... truncated 32
 
-- _safe_block_engineering_action (private_method, line 1975, category=other_private)
+- _safe_block_engineering_action (private_method, line 1963, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 37
   sample_references:
@@ -1513,7 +1492,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:244 [archive] -> _safe_block_engineering_action  [line 1975]
     - ... truncated 32
 
-- _trace_tick_for_step (private_method, line 2989, category=execution)
+- _trace_tick_for_step (private_method, line 2977, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1524,7 +1503,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:202 [archive] -> _trace_tick_for_step  [line 2838]
     - ... truncated 33
 
-- _sync_repair_chain_summary_from_execution_log (private_method, line 3527, category=execution)
+- _sync_repair_chain_summary_from_execution_log (private_method, line 3515, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1535,7 +1514,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:212 [archive] -> _sync_repair_chain_summary_from_execution_log  [line 3376]
     - ... truncated 33
 
-- _should_rollback_after_failed_verify (private_method, line 3147, category=repair)
+- _should_rollback_after_failed_verify (private_method, line 3135, category=repair)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1546,7 +1525,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:80 [archive] -> _should_rollback_after_failed_verify  [line 2996]
     - ... truncated 33
 
-- _maybe_inject_repair_steps_after_failure (private_method, line 3087, category=execution)
+- _maybe_inject_repair_steps_after_failure (private_method, line 3075, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1557,7 +1536,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:186 [archive] -> _maybe_inject_repair_steps_after_failure  [line 2936]
     - ... truncated 33
 
-- _mark_syntax_function_rewrite_completion_if_needed (private_method, line 3228, category=execution)
+- _mark_syntax_function_rewrite_completion_if_needed (private_method, line 3216, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1572,14 +1551,14 @@ Referenced / Not Removal Candidates
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
+    - docs/execution_authority_seal_matrix.md:57 [doc] | TaskRunner mutation boundary attachment | `core/runtime/task_runner.py` | `_attach_mutation_boundary_after_step` | audit / mutate metadata | Optional governed mutation integration after step execution | Mutation boundary, mutation reconci
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:136 [archive] <- _attach_mutation_boundary_after_step [line 946]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:169 [archive] -> _attach_mutation_boundary_after_step [line 946]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:45 [archive] -> _attach_mutation_boundary_after_step  [line 946]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:109 [archive] -> _attach_mutation_boundary_after_step  [line 946]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:167 [archive] -> _attach_mutation_boundary_after_step  [line 946]
     - ... truncated 33
 
-- _apply_runtime_mode_to_step (private_method, line 1910, category=runtime_mode)
+- _apply_runtime_mode_to_step (private_method, line 1898, category=runtime_mode)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1590,7 +1569,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:166 [archive] -> _apply_runtime_mode_to_step  [line 1910]
     - ... truncated 33
 
-- _append_trace_json_event (private_method, line 3634, category=evidence)
+- _append_trace_json_event (private_method, line 3622, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 38
   sample_references:
@@ -1601,7 +1580,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:222 [archive] -> _append_trace_json_event  [line 3483]
     - ... truncated 33
 
-- _extract_final_answer_from_step_result (private_method, line 3022, category=execution)
+- _extract_final_answer_from_step_result (private_method, line 3010, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 39
   sample_references:
@@ -1612,7 +1591,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:153 [archive] -> _extract_final_answer_from_step_result  [line 2871]
     - ... truncated 34
 
-- _safe_record_rollback_restore_action (private_method, line 1988, category=repair)
+- _safe_record_rollback_restore_action (private_method, line 1976, category=repair)
   reason: production or target-module reference exists
   non_definition_refs: 40
   sample_references:
@@ -1623,7 +1602,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:186 [archive] -> _safe_record_rollback_restore_action [line 1988]
     - ... truncated 35
 
-- _run_regression_verify_phase (private_method, line 3298, category=execution)
+- _run_regression_verify_phase (private_method, line 3286, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 40
   sample_references:
@@ -1634,7 +1613,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:130 [archive] -> _run_regression_verify_phase  [line 3147]
     - ... truncated 35
 
-- _make_json_safe (private_method, line 1838, category=ownership)
+- _make_json_safe (private_method, line 1826, category=ownership)
   reason: production or target-module reference exists
   non_definition_refs: 40
   sample_references:
@@ -1645,7 +1624,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:34 [archive] -> _make_json_safe  [line 1838]
     - ... truncated 35
 
-- _attach_system_rollback_capability (private_method, line 1824, category=execution)
+- _attach_system_rollback_capability (private_method, line 1812, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 41
   sample_references:
@@ -1660,11 +1639,11 @@ Referenced / Not Removal Candidates
   reason: production or target-module reference exists
   non_definition_refs: 42
   sample_references:
+    - tests/test_aer_terminal_authority_lineage_seal.py:53 [test] authority = runner._terminal_completion_authority(task=task, step={"id": "step-a"}, result=result)
+    - tests/test_task_intake_pipeline.py:204 [test] completion_authority = runner._terminal_completion_authority(
     - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:410 [archive] - line 1454: _terminal_completion_authority
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:117 [archive] - _terminal_completion_authority [line 1454] | callers=2 | callees=0
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:193 [archive] -> _terminal_completion_authority [line 1454]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:39 [archive] -> _terminal_completion_authority  [line 1454]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:103 [archive] -> _terminal_completion_authority  [line 1454]
     - ... truncated 37
 
 - _resolve_max_auto_ticks (private_method, line 1539, category=execution)
@@ -1678,7 +1657,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:162 [archive] -> _resolve_max_auto_ticks  [line 1539]
     - ... truncated 37
 
-- _compact_runtime_state_for_public_payload (private_method, line 3488, category=execution)
+- _compact_runtime_state_for_public_payload (private_method, line 3476, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 42
   sample_references:
@@ -1700,15 +1679,15 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:118 [archive] <- _maybe_run_enabled_capability [line 1589]
     - ... truncated 42
 
-- _trace (private_method, line 3700, category=evidence)
+- _trace (private_method, line 3688, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 53
   sample_references:
+    - docs/runtime_contract_tiers.md:9 [doc] \- execution\_trace
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:194 [archive] -> _trace [line 3549]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:83 [archive] -> _trace  [line 3549]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:143 [archive] -> _trace  [line 3549]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:201 [archive] -> _trace  [line 3549]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:254 [archive] -> _trace  [line 3549]
     - ... truncated 48
 
 - _runtime_route_key_for_entrypoint (private_method, line 295, category=execution)
@@ -1722,7 +1701,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:205 [archive] -> _runtime_route_key_for_entrypoint  [line 295]
     - ... truncated 48
 
-- _stringify_failure_message (private_method, line 3476, category=other_private)
+- _stringify_failure_message (private_method, line 3464, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 59
   sample_references:
@@ -1733,7 +1712,7 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:140 [archive] -> _stringify_failure_message  [line 3325]
     - ... truncated 54
 
-- _persist_step_result_to_runtime_state (private_method, line 2933, category=execution)
+- _persist_step_result_to_runtime_state (private_method, line 2921, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 59
   sample_references:
@@ -1744,15 +1723,15 @@ Referenced / Not Removal Candidates
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:758 [archive] - core/runtime/task_runner.py:4271 [production; reference] TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state
     - ... truncated 54
 
-- _ensure_execution_trace_defaults (private_method, line 2910, category=execution)
+- _ensure_execution_trace_defaults (private_method, line 2898, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 74
   sample_references:
+    - tests/test_legacy_surface_followup_seals.py:281 [test] runner._ensure_execution_trace_defaults = lambda task, state: None
+    - tests/test_runtime_surface_registry_closure_seal.py:140 [test] runner._ensure_execution_trace_defaults = lambda task, state: None
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:50 [archive] - _ensure_execution_trace_defaults [line 2759] | callers=4 | callees=0
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:174 [archive] -> _ensure_execution_trace_defaults [line 2759]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:256 [archive] -> _ensure_execution_trace_defaults [line 2759]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:17 [archive] -> _ensure_execution_trace_defaults  [line 2759]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:28 [archive] -> _ensure_execution_trace_defaults  [line 2759]
     - ... truncated 69
 
 - _pre_execution_authority_denial (private_method, line 326, category=execution)
@@ -1770,88 +1749,88 @@ Referenced / Not Removal Candidates
   reason: production or target-module reference exists
   non_definition_refs: 86
   sample_references:
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:392 [archive] - line 259: _runtime_native_mainline_active
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:45 [archive] - _runtime_native_mainline_active [line 259] | callers=4 | callees=0
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:203 [archive] -> _runtime_native_mainline_active [line 259]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:213 [archive] -> _runtime_native_mainline_active [line 259]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:221 [archive] -> _runtime_native_mainline_active [line 259]
+    - tests/test_runtime_entry_migration_wave1.py:175 [test] runner=lambda: active.append(loop._runtime_native_mainline_active()) or {"ok": True},
+    - tests/test_runtime_entry_migration_wave1.py:184 [test] assert loop._runtime_native_mainline_active() is False
+    - tests/test_runtime_native_compatibility_entry_semantics.py:94 [test] runner=lambda: active_during_runner.append(loop._runtime_native_mainline_active()) or {"ok": True},
+    - tests/test_runtime_native_compatibility_entry_semantics.py:102 [test] assert loop._runtime_native_mainline_active() is False
+    - tests/test_runtime_route_registry_admission.py:126 [test] runner=lambda: active_during_runner.append(loop._runtime_native_mainline_active()) or {"ok": True},
     - ... truncated 81
 
 - _run_via_runtime_native_mainline (private_method, line 262, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 94
   sample_references:
+    - tests/test_aer_mainline_closure_seal.py:99 [test] tick_admission_result = task_runner_module.TaskRunner._run_via_runtime_native_mainline(
+    - tests/test_runtime_native_compatibility_entry_semantics.py:92 [test] result = loop._run_via_runtime_native_mainline(
+    - tools/taskrunner_runtime_caller_analysis.py:32 [tool] "_run_via_runtime_native_mainline",
+    - tools/taskrunner_runtime_call_graph.py:21 [tool] "_run_via_runtime_native_mainline",
     - archive/reports/runtime_closure_20260629/aer_mainline_closure_inventory.txt:37 [archive] Scheduler public method -> Scheduler._run_via_runtime_native_mainline -> RuntimeRouteRegistry -> RuntimeNativeMainline.run_compatibility_entry -> delegated legacy body.
-    - archive/reports/runtime_closure_20260629/aer_mainline_closure_inventory.txt:39 [archive] TaskRunner public method -> TaskRunner._run_via_runtime_native_mainline -> RuntimeRouteRegistry -> RuntimeNativeMainline.run_compatibility_entry -> delegated legacy body.
-    - archive/reports/runtime_closure_20260629/runtime_entry_migration_closure_inventory.txt:205 [archive] - Current path: Scheduler._run_via_runtime_native_mainline
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:144 [archive] line 94:     tick_admission_result = task_runner_module.TaskRunner._run_via_runtime_native_mainline(
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:393 [archive] - line 262: _run_via_runtime_native_mainline
     - ... truncated 89
 
-- _finalize_public_result (private_method, line 3539, category=execution)
+- _finalize_public_result (private_method, line 3527, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 130
   sample_references:
     - README.md:160 [production] TaskRunner._finalize_public_result
+    - docs/execution_gateway_preflight_audit.md:173 [doc] - `core\runtime\task_runner.py`:4283 — `task_runner` — `TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result`
+    - tests/test_legacy_surface_followup_seals.py:283 [test] runner._finalize_public_result = lambda result: result
+    - tests/test_runtime_surface_registry_closure_seal.py:142 [test] runner._finalize_public_result = lambda result: result
     - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:704 [archive] - core/runtime/task_runner.py:4173 [production; reference] TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:706 [archive] - docs/execution_gateway_preflight_audit.md:173 [production; reference] - `core\runtime\task_runner.py`:4283 — `task_runner` — `TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result`
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:707 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2561 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result"
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:708 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:808 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result",
     - ... truncated 125
 
-- _determine_failure_type (private_method, line 3438, category=evidence)
+- _determine_failure_type (private_method, line 3426, category=evidence)
   reason: production or target-module reference exists
   non_definition_refs: 135
   sample_references:
+    - docs/execution_gateway_preflight_audit.md:165 [doc] - `core\runtime\task_runner.py`:3825 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type`
+    - docs/execution_gateway_preflight_audit.md:167 [doc] - `core\runtime\task_runner.py`:3870 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type`
+    - docs/execution_gateway_preflight_audit.md:169 [doc] - `core\runtime\task_runner.py`:3923 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type`
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:173 [archive] -> _determine_failure_type [line 3287]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:61 [archive] -> _determine_failure_type  [line 3287]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:122 [archive] -> _determine_failure_type  [line 3287]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:180 [archive] -> _determine_failure_type  [line 3287]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:233 [archive] -> _determine_failure_type  [line 3287]
     - ... truncated 130
 
-- _build_taskrunner_authority_context (private_method, line 1806, category=execution)
+- _build_taskrunner_authority_context (private_method, line 1794, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 147
   sample_references:
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:250 [archive] line 85:     runner._build_taskrunner_authority_context = lambda **kwargs: {"authority_phase": "test"}
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:413 [archive] - line 1806: _build_taskrunner_authority_context
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:150 [archive] - _build_taskrunner_authority_context [line 1806] | callers=2 | callees=0
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:172 [archive] -> _build_taskrunner_authority_context [line 1806]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:210 [archive] -> _build_taskrunner_authority_context [line 1806]
+    - tests/test_aer_live_execution_lineage_subject_binding.py:48 [test] authority_context = runner._build_taskrunner_authority_context(
+    - tests/test_aer_live_execution_lineage_subject_binding.py:80 [test] authority_context = runner._build_taskrunner_authority_context(
+    - tests/test_aer_live_execution_lineage_subject_binding.py:105 [test] authority_context = runner._build_taskrunner_authority_context(
+    - tests/test_aer_mainline_closure_seal.py:90 [test] runner._build_taskrunner_authority_context = lambda **kwargs: {"authority_phase": "test"}
+    - tests/test_agentloop_createtask_mutation_bridge_contract.py:200 [test] context = runner._build_taskrunner_authority_context(
     - ... truncated 142
 
-- _run_one_step (private_method, line 2869, category=execution)
+- _run_one_step (private_method, line 2857, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 257
   sample_references:
     - legacy_surface_retirement_plan.txt:187 [production] - TaskRunner internal _run_one_step, mutation boundary integration, terminal evidence/completion sealing
-    - archive/reports/runtime_closure_20260629/aer_mainline_closure_inventory.txt:129 [archive] - TaskRunner internal _run_one_step.
-    - archive/reports/runtime_closure_20260629/taskrunner_aer_closure_inventory.txt:426 [archive] - line 2007: _run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:630 [archive] - core/runtime/task_runner.py:3680 [production; reference] TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:632 [archive] - docs/execution_gateway_preflight_audit.md:163 [production; reference] - `core\runtime\task_runner.py`:3790 — `task_runner` — `TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step`
+    - docs/aer_seal_audit.md:395 [doc] - `TaskRunner._run_one_step`
+    - docs/execution_authority_seal_matrix.md:54 [doc] | TaskRunner step bridge | `core/runtime/task_runner.py` | `TaskRunner._run_one_step` | execute / retry / dispatch-to-step | Uses failure policy, side-effect step classification, mutation runtime integration, rollback conditions | `AuditLog
+    - docs/execution_authority_seal_matrix.md:161 [doc] - `TaskRunner._run_one_step`
+    - docs/execution_gateway_preflight_audit.md:163 [doc] - `core\runtime\task_runner.py`:3790 — `task_runner` — `TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step`
     - ... truncated 252
 
 - __init__ (private_method, line 228, category=execution)
   reason: production or target-module reference exists
   non_definition_refs: 270
   sample_references:
-    - archive/packages/runtime_closure_20260629/package16_runtime_native_adapter_extraction_v3.py:20 [archive] ADAPTER_SOURCE = 'from __future__ import annotations\n\nfrom dataclasses import dataclass, field\nfrom typing import Any, Dict, Mapping, Optional\n\n\n_RUNTIME_TERMINAL_OK = {"finished", "success", "completed", "done", "ok"}\n_RUNTIME_TERMI
-    - archive/packages/runtime_closure_20260629/package16_runtime_native_adapter_extraction_v4.py:20 [archive] ADAPTER_SOURCE = 'from __future__ import annotations\n\nfrom dataclasses import dataclass, field\nfrom typing import Any, Dict, Mapping, Optional\n\n\n_RUNTIME_TERMINAL_OK = {"finished", "success", "completed", "done", "ok"}\n_RUNTIME_TERMI
-    - archive/packages/runtime_closure_20260629/package16_runtime_native_adapter_extraction_v5.py:20 [archive] ADAPTER_SOURCE = 'from __future__ import annotations\n\nfrom dataclasses import dataclass, field\nfrom typing import Any, Dict, Mapping, Optional\n\n\n_RUNTIME_TERMINAL_OK = {"finished", "success", "completed", "done", "ok"}\n_RUNTIME_TERMI
-    - archive/reports/runtime_closure_20260629/runtime_native_entry_inventory.txt:43 [archive] - run_mutation(...) can start mutation execution through mutation_loop directly. It currently accepts mainline/dispatch references in __init__, but does not require them for execution.
-    - archive/reports/runtime_closure_20260629/taskrunner_legacy_reference_audit_report.txt:762 [archive] - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:868 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _ze
+    - docs/execution_gateway_preflight_audit.md:134 [doc] - `core\runtime\step_executor.py`:3504 — `step_executor` — `StepExecutor.__init__ = _zero_v703_step_executor_init`
+    - docs/execution_gateway_preflight_audit.md:137 [doc] - `core\runtime\step_executor.py`:5105 — `step_executor` — `StepExecutor.__init__ = _zero_v734_step_executor_init`
+    - docs/execution_gateway_preflight_audit.md:281 [doc] - `core\tools\__init__.py`:14 — `command_tool` — `_command_tool_module = _safe_import("command_tool")`
+    - docs/execution_gateway_preflight_audit.md:282 [doc] - `core\tools\__init__.py`:19 — `command_tool` — `CommandTool = getattr(_command_tool_module, "CommandTool", None)`
+    - tests/run_agent_loop_reflection.py:51 [test] raise RuntimeError("無法建立 scheduler，請檢查 scheduler.__init__ 參數。")
     - ... truncated 265
 
-- _safe_int (private_method, line 2983, category=other_private)
+- _safe_int (private_method, line 2971, category=other_private)
   reason: production or target-module reference exists
   non_definition_refs: 343
   sample_references:
+    - tests/test_legacy_surface_followup_seals.py:282 [test] runner._safe_int = lambda value, default=0: int(value or default)
+    - tests/test_runtime_surface_registry_closure_seal.py:141 [test] runner._safe_int = lambda value, default=0: int(value or default)
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:71 [archive] - _safe_int [line 2832] | callers=3 | callees=0
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_caller_analysis_report.txt:264 [archive] -> _safe_int [line 2832]
     - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:38 [archive] -> _safe_int  [line 2832]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:51 [archive] -> _safe_int  [line 2832]
-    - archive/reports/runtime_closure_20260629/taskrunner_runtime_call_graph_report.txt:89 [archive] -> _safe_int  [line 2832]
     - ... truncated 338
 
 ================================================================================
