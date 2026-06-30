@@ -22,7 +22,7 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 12. Package 89 - Audit Snapshot Composition
 13. Package 90 - Human Approval Boundary
 14. Package 91 - Issue Reporter
-15. Package 92 - Stop Condition
+15. Package 92 - Stop Condition Contract
 16. Package 93 - Long-running Operator Loop
 17. Package 94+ - Scheduler / Runtime integration
 
@@ -148,6 +148,47 @@ Future packages own:
 ## Non-mainline Issues Found
 
 - None for Package 91.
+
+## Package 92
+
+Package 92 adds the Stop Condition contract for AER v2 without operator loop behavior, scheduler integration, runtime execution, retry, repair, resume behavior, approval workflow, issue workflow, event emission, persistence, or checkpoint mutation.
+
+Package 92 owns:
+
+- stop condition contract shape
+- stop condition id, operator session id, package id, reason, status, message, and metadata
+- completed, failed, blocked, waiting_for_approval, validation_failed, unsafe_to_continue, checkpoint_missing, checkpoint_invalid, resume_identity_mismatch, and non_mainline_issue_detected stop reasons
+- active and resolved stop condition statuses
+- pure dict helpers for creating, resolving, validating, and summarizing stop condition payloads
+
+Package 92 must not:
+
+- implement operator loop behavior
+- implement scheduler integration
+- execute runtime work
+- implement retry logic
+- implement repair behavior
+- own resume behavior
+- implement approval workflow
+- implement issue workflow
+- emit events
+- persist stop conditions
+- mutate checkpoints
+- own checkpoint state
+- own state machine behavior
+- interpret lifecycle transitions
+- import scheduler, task_runner, resume, checkpoint_store, event_log, audit_reader, approval, issue_reporter, operator_loop, runtime_execution, repair, or state_machine modules
+
+Future packages own:
+
+- loop integration
+- event emission
+- runtime interpretation
+- retry and repair behavior
+
+## Non-mainline Issues Found
+
+- None for Package 92.
 
 ## Future Foundation Work
 
