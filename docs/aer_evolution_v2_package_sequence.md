@@ -20,8 +20,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 10. Package 87 - Audit Reader
 11. Package 88 - Checkpoint Store Read Index
 12. Package 89 - Audit Snapshot Composition
-13. Package 90 - Stop Condition
-14. Package 91 - Human Approval Boundary
+13. Package 90 - Human Approval Boundary
+14. Package 91 - Stop Condition
 15. Package 92 - Issue Reporter
 16. Package 93 - Long-running Operator Loop
 17. Package 94+ - Scheduler / Runtime integration
@@ -32,20 +32,20 @@ Packages 78 through 93 define v2 foundation surfaces without changing RC1 schedu
 
 Scheduler and runtime integration begins only at Package 94 or later.
 
-## Package 89
+## Package 90
 
-Package 89 upgrades the Audit Reader to compose the latest checkpoint snapshot from Checkpoint Store read-index APIs with the append-order event timeline.
+Package 90 adds the Human Approval Boundary contract for AER v2 without persistence, event emission, UI, operator loop behavior, scheduler integration, or runtime execution.
 
 All future v2 modules that need persistence must access persistence through repository/store modules. Resume, Loop, Scheduler, Issue Reporter, Approval, and runtime business modules must not directly open, read, write, or delete checkpoint files.
 
-Package 89 owns:
+Package 90 owns:
 
-- composing the latest matching checkpoint snapshot, when present, before the event timeline
-- exposing `checkpoint = None` when no matching checkpoint exists
-- summarizing checkpoint presence, checkpoint count, and append-order event boundaries
-- consuming only published read APIs for checkpoint and event timeline data
+- approval request contract shape
+- approval id, operator session id, package id, requested action, request reason, status, and metadata
+- pending, approved, rejected, and expired approval statuses
+- pure dict helpers for creating, approving, rejecting, and validating approval payloads
 
-Package 89 must not:
+Package 90 must not:
 
 - implement operator loop behavior
 - call scheduler
@@ -54,6 +54,18 @@ Package 89 must not:
 - call replay
 - write checkpoints
 - mutate checkpoints
+- own checkpoints
+- own resume behavior
+- own runtime state
+- own operator state machine behavior
+- own event ledger behavior
+- own audit reader behavior
+- persist approvals
+- append events
+- implement approval UI
+- implement retry logic
+- implement timers
+- implement a transition engine
 - change checkpoint persistence
 - change checkpoint schema
 - parse checkpoint files
@@ -95,7 +107,7 @@ Package 89 must not:
 
 ## Non-mainline Issues Found
 
-- None for Package 89.
+- None for Package 90.
 
 ## Future Foundation Work
 
@@ -103,7 +115,7 @@ Package 89 must not:
 - Future modules must compose the foundation modules instead of reimplementing lifecycle phases, transition rules, context data, or checkpoint serialization.
 - Future long-running state retention belongs to the Operator Loop, not Resume.
 - Issue Reporter decides when to emit issue events.
-- Approval decides when to emit approval events.
+- Future Approval integration decides when to emit approval events and how approval decisions are consumed.
 - Resume may emit resume events in a future package, but Package 86 does not integrate Resume and Event Log.
 - Operator Loop decides when events are emitted during execution.
 - Future Audit Reader extensions must continue composing published repository read APIs instead of deriving persistence state from Event Ledger payloads.
