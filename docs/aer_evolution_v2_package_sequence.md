@@ -34,7 +34,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 24. Package 101 - Runtime Bootstrap Contract
 25. Package 102 - Runtime Context Contract
 26. Package 103 - Runtime Projection Contract
-27. Package 104+ - Long-running Operator Loop / Scheduler / Runtime integration
+27. Package 104 - Runtime Session Contract
+28. Package 105+ - Long-running Operator Loop / Scheduler / Runtime integration
 
 ## Package Boundaries
 
@@ -811,6 +812,86 @@ Future packages own:
 ## Non-mainline Issues Found
 
 - Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 103 does not modify them.
+
+
+## Package 104
+
+Package 104 adds the Runtime Session Contract for AER v2 as a passive data contract over Runtime Projection. The session payload is the first Runtime-named public contract, but it does not allocate a session id, create a Runtime object, bind resources, dispatch work, schedule work, checkpoint, resume, retry, or call any runtime loop.
+
+Package 104 owns:
+
+- runtime session contract shape
+- immutable runtime session creation from a runtime projection dict
+- valid runtime projection issue outcomes carried as valid issue_reported runtime session
+- malformed runtime projection payload handling as invalid runtime session
+- validation of the runtime session wrapper and operator handoff projection derived from projection
+- summary projection containing only outcome, runtime session summary, and session structural validity
+- separation of runtime session structural validity from business outcome
+- documented runtime session field purposes: contract identifies the schema, outcome exposes the projection result to a future Runtime, runtime_session carries minimal Runtime-facing session intent, valid records session contract structural validity, and errors records structural validation failures
+
+Package 104 must not:
+
+- allocate session ids
+- allocate runtime identity
+- create runtime objects
+- construct runtime instances
+- perform dependency injection
+- resolve services
+- bind workspaces
+- bind repositories
+- bind filesystems
+- load configuration
+- load environment state
+- load plugins
+- run runtime initialization callbacks
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- execute runtime work
+- dispatch runtime work
+- perform retries
+- write checkpoints
+- resume execution
+- select execution strategy
+- select schedules
+- select queues
+- select workers
+- select executors
+- describe priority
+- negotiate capabilities
+- advertise supported features
+- import runtime context helpers
+- import runtime bootstrap helpers
+- import runtime intake helpers
+- expose runtime projection fields
+- expose runtime context fields
+- expose runtime bootstrap fields
+- expose runtime intake fields
+- preserve upstream wrapper shape
+- pass through unknown runtime projection fields
+- call Scheduler
+- call TaskRunner
+- call persistent operator surfaces
+- call runtime loop, scheduler loop, or operator loop files
+
+Future packages own:
+
+- runtime object creation, if any
+- real runtime session id allocation, if any
+- runtime identity allocation, if any
+- workspace, repository, filesystem, configuration, environment, and plugin binding, if any
+- authority, lease, lock, reservation, and permission models
+- execution strategy, queues, workers, executors, scheduling, priority, retry, checkpoint, and resume behavior
+- capability discovery, feature negotiation, and supported feature surfaces
+- scheduler, runtime loop, and operator loop integration
+
+## Non-mainline Issues Found
+
+- Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 104 does not modify them.
+
 
 
 ## Future Foundation Work
