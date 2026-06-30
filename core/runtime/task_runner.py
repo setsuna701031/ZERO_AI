@@ -1757,10 +1757,6 @@ class TaskRunner:
         return resolve_target_repo_root(task=task, state=state)
 
 
-    def _resolve_step_cwd(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> str:
-        return resolve_step_cwd(task=task, state=state, step=step)
-
-
     def _target_routed_context(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> Dict[str, Any]:
         return target_routed_context(
             task=task,
@@ -1891,10 +1887,6 @@ class TaskRunner:
         return extract_runtime_mode_from_mapping(value)
 
 
-    def _resolve_runtime_mode(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any = None) -> str:
-        return resolve_runtime_mode(task=task, state=state, step=step)
-
-
     def _apply_runtime_mode_to_step(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> tuple[Dict[str, Any], str]:
         return apply_runtime_mode_to_step(task=task, state=state, step=step)
 
@@ -1902,28 +1894,8 @@ class TaskRunner:
     # engineering execution action linkage
     # ============================================================
 
-    def _runtime_step_action_type(self, step: Any) -> str:
-        return runtime_step_action_type(step)
-
     def _runtime_step_target(self, step: Any) -> str:
         return runtime_step_target(step)
-
-    def _runtime_step_id(self, step: Any, step_index: int) -> str:
-        return runtime_step_id(step, step_index)
-
-    def _runtime_action_id(self, task: Dict[str, Any], step: Any, step_index: int) -> str:
-        return runtime_action_id(task=task, step=step, step_index=step_index)
-
-    def _runtime_linked_session_node(self, task: Dict[str, Any], step: Any, step_index: int) -> str:
-        return runtime_linked_session_node(task=task, step=step, step_index=step_index)
-
-    def _runtime_action_metadata(self, step: Any, step_index: int, current_tick: int, trace_tick: int) -> Dict[str, Any]:
-        return runtime_action_metadata(
-            step=step,
-            step_index=step_index,
-            current_tick=current_tick,
-            trace_tick=trace_tick,
-        )
 
     def _safe_update_current_engineering_action(self, *, task: Dict[str, Any], step: Any, step_index: int, current_tick: int, trace_tick: int) -> None:
         return safe_update_current_engineering_action(
