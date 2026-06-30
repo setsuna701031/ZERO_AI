@@ -21,8 +21,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 11. Package 88 - Checkpoint Store Read Index
 12. Package 89 - Audit Snapshot Composition
 13. Package 90 - Human Approval Boundary
-14. Package 91 - Stop Condition
-15. Package 92 - Issue Reporter
+14. Package 91 - Issue Reporter
+15. Package 92 - Stop Condition
 16. Package 93 - Long-running Operator Loop
 17. Package 94+ - Scheduler / Runtime integration
 
@@ -108,6 +108,46 @@ Package 90 must not:
 ## Non-mainline Issues Found
 
 - None for Package 90.
+
+## Package 91
+
+Package 91 adds the Issue Reporter contract for AER v2 without persistence, issue workflow, routing, event emission, operator loop behavior, scheduler integration, runtime execution, approval workflow, checkpoint mutation, resume, retry, or repair.
+
+Package 91 owns:
+
+- issue reporter contract shape
+- issue id, operator session id, package id, severity, status, title, description, and metadata
+- open, resolved, and dismissed issue statuses
+- info, warning, error, and critical issue severities
+- pure dict helpers for creating, closing, validating, and summarizing issue payloads
+
+Package 91 must not:
+
+- implement scheduler integration
+- implement operator loop behavior
+- execute runtime work
+- emit events
+- implement approval workflow
+- mutate checkpoints
+- own checkpoint state
+- own resume behavior
+- implement retry logic
+- implement repair logic
+- persist issues
+- route issues
+- implement issue workflow
+- import scheduler, task_runner, resume, checkpoint_store, event_log, audit_reader, approval, operator_loop, runtime_execution, or repair modules
+
+Future packages own:
+
+- issue persistence
+- issue workflow
+- issue routing
+- issue event emission
+
+## Non-mainline Issues Found
+
+- None for Package 91.
 
 ## Future Foundation Work
 
