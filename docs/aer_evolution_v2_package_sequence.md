@@ -23,8 +23,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 13. Package 90 - Human Approval Boundary
 14. Package 91 - Issue Reporter
 15. Package 92 - Stop Condition Contract
-16. Package 93 - Long-running Operator Loop
-17. Package 94+ - Scheduler / Runtime integration
+16. Package 93 - Operator Decision Contract
+17. Package 94+ - Long-running Operator Loop / Scheduler / Runtime integration
 
 ## Package Boundaries
 
@@ -189,6 +189,48 @@ Future packages own:
 ## Non-mainline Issues Found
 
 - None for Package 92.
+
+## Package 93
+
+Package 93 adds the Operator Decision contract for AER v2 without runtime integration, scheduler integration, operator loop behavior, event emission, checkpoint mutation, resume behavior, approval workflow, issue workflow, retry, repair, persistence, or execution dispatch.
+
+Package 93 owns:
+
+- operator decision contract shape
+- decision id, operator session id, package id, decision type, decision reason, status, metadata, and created_at
+- continue, stop, request_approval, report_issue, checkpoint, and resume decision types
+- proposed, accepted, and rejected decision statuses
+- pure dict helpers for creating, accepting, validating, and summarizing decision payloads
+
+Package 93 must not:
+
+- integrate with runtime execution
+- implement scheduler integration
+- implement operator loop behavior
+- emit events
+- mutate checkpoints
+- own resume behavior
+- implement approval workflow
+- implement issue workflow
+- implement retry logic
+- implement repair behavior
+- persist decisions
+- dispatch execution
+- interpret decisions at runtime
+- implement decision flow
+- import scheduler, task_runner, resume, checkpoint_store, event_log, audit_reader, approval, issue_reporter, stop_condition, operator_loop, runtime_execution, repair, or state_machine modules
+
+Future packages own:
+
+- decision flow
+- event emission
+- loop integration
+- runtime interpretation
+- retry and repair behavior
+
+## Non-mainline Issues Found
+
+- None for Package 93.
 
 ## Future Foundation Work
 
