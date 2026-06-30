@@ -13,7 +13,9 @@ from core.runtime.aer_operator_checkpoint_store import (
     checkpoint_path,
     checkpoint_store_dir,
     delete_checkpoint,
+    latest_checkpoint_for_identity,
     list_checkpoints,
+    load_checkpoints_for_identity,
     load_checkpoint,
     save_checkpoint,
 )
@@ -166,6 +168,96 @@ def test_list_checkpoints_returns_valid_payloads_and_reports_invalid_files(tmp_p
     assert len(invalid) == 1
     assert invalid[0]["checkpoint_id"] == "broken"
     assert invalid[0]["errors"][0].startswith("invalid checkpoint file:")
+
+
+def test_load_checkpoints_for_identity_filters_by_session_and_package_in_store_order(tmp_path) -> None:
+    checkpoint_a = build_operator_checkpoint(
+        checkpoint_id="checkpoint-a",
+        operator_session_id="operator-session-1",
+        package_id="package-83",
+    )
+    checkpoint_b = build_operator_checkpoint(
+        checkpoint_id="checkpoint-b",
+        operator_session_id="operator-session-2",
+        package_id="package-83",
+    )
+    checkpoint_c = build_operator_checkpoint(
+        checkpoint_id="checkpoint-c",
+        operator_session_id="operator-session-1",
+        package_id="package-84",
+    )
+    save_checkpoint(str(tmp_path), checkpoint_c)
+    save_checkpoint(str(tmp_path), checkpoint_b)
+    save_checkpoint(str(tmp_path), checkpoint_a)
+
+    by_session = load_checkpoints_for_identity(str(tmp_path), operator_session_id="operator-session-1")
+    by_package = load_checkpoints_for_identity(str(tmp_path), package_id="package-83")
+    by_both = load_checkpoints_for_identity(
+        str(tmp_path),
+        operator_session_id="operator-session-1",
+        package_id="package-83",
+    )
+
+    assert [checkpoint["checkpoint_id"] for checkpoint in by_session] == ["checkpoint-a", "checkpoint-c"]
+    assert [checkpoint["checkpoint_id"] for checkpoint in by_package] == ["checkpoint-a", "checkpoint-b"]
+    assert by_both == [checkpoint_a]
+
+
+def test_load_checkpoints_for_identity_ignores_invalid_files_without_crashing(tmp_path) -> None:
+    checkpoint = build_operator_checkpoint(
+        checkpoint_id="checkpoint-a",
+        operator_session_id="operator-session-1",
+        package_id="package-83",
+    )
+    save_checkpoint(str(tmp_path), checkpoint)
+    with open(checkpoint_path(str(tmp_path), "broken"), "w", encoding="utf-8") as handle:
+        handle.write("{")
+
+    records = load_checkpoints_for_identity(str(tmp_path), operator_session_id="operator-session-1")
+
+    assert records == [checkpoint]
+
+
+def test_latest_checkpoint_for_identity_uses_last_matching_store_order(tmp_path) -> None:
+    checkpoint_a = build_operator_checkpoint(
+        checkpoint_id="checkpoint-a",
+        operator_session_id="operator-session-1",
+        package_id="package-83",
+    )
+    checkpoint_b = build_operator_checkpoint(
+        checkpoint_id="checkpoint-b",
+        operator_session_id="operator-session-1",
+        package_id="package-84",
+    )
+    checkpoint_c = build_operator_checkpoint(
+        checkpoint_id="checkpoint-c",
+        operator_session_id="operator-session-1",
+        package_id="package-83",
+    )
+    save_checkpoint(str(tmp_path), checkpoint_c)
+    save_checkpoint(str(tmp_path), checkpoint_b)
+    save_checkpoint(str(tmp_path), checkpoint_a)
+
+    latest = latest_checkpoint_for_identity(
+        str(tmp_path),
+        operator_session_id="operator-session-1",
+        package_id="package-83",
+    )
+
+    assert latest["ok"] is True
+    assert latest["found"] is True
+    assert latest["checkpoint_id"] == "checkpoint-c"
+    assert latest["checkpoint"] == checkpoint_c
+
+
+def test_latest_checkpoint_for_identity_returns_structured_empty_result(tmp_path) -> None:
+    latest = latest_checkpoint_for_identity(str(tmp_path), operator_session_id="missing")
+
+    assert latest["ok"] is True
+    assert latest["found"] is False
+    assert latest["checkpoint_id"] == ""
+    assert "checkpoint" not in latest
+    assert latest["errors"] == []
 
 
 def test_checkpoint_exists_returns_false_for_invalid_ids(tmp_path) -> None:

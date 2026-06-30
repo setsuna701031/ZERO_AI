@@ -121,6 +121,46 @@ def list_checkpoints(workspace_root: str) -> List[dict]:
     return records
 
 
+def load_checkpoints_for_identity(
+    workspace_root: str,
+    operator_session_id: str | None = None,
+    package_id: str | None = None,
+) -> List[dict]:
+    records: List[dict] = []
+    for checkpoint in list_checkpoints(workspace_root):
+        if not _is_checkpoint_payload(checkpoint):
+            continue
+        if not _matches_identity(
+            checkpoint,
+            operator_session_id=operator_session_id,
+            package_id=package_id,
+        ):
+            continue
+        records.append(checkpoint)
+    return records
+
+
+def latest_checkpoint_for_identity(
+    workspace_root: str,
+    operator_session_id: str | None = None,
+    package_id: str | None = None,
+) -> dict:
+    records = load_checkpoints_for_identity(
+        workspace_root,
+        operator_session_id=operator_session_id,
+        package_id=package_id,
+    )
+    if not records:
+        return _result(True, "latest_checkpoint_for_identity", found=False)
+    return _result(
+        True,
+        "latest_checkpoint_for_identity",
+        checkpoint_id=str(records[-1].get("checkpoint_id") or ""),
+        checkpoint=records[-1],
+        found=True,
+    )
+
+
 def checkpoint_exists(workspace_root: str, checkpoint_id: str) -> bool:
     try:
         path = checkpoint_path(workspace_root, checkpoint_id)
@@ -154,6 +194,23 @@ def _ensure_inside_store(store_dir: str, path: str) -> None:
         raise ValueError("checkpoint path must stay inside checkpoint store")
 
 
+def _is_checkpoint_payload(record: dict) -> bool:
+    return isinstance(record, dict) and record.get("contract") and record.get("checkpoint_id")
+
+
+def _matches_identity(
+    checkpoint: dict,
+    *,
+    operator_session_id: str | None,
+    package_id: str | None,
+) -> bool:
+    if operator_session_id is not None and checkpoint.get("operator_session_id") != str(operator_session_id):
+        return False
+    if package_id is not None and checkpoint.get("package_id") != str(package_id):
+        return False
+    return True
+
+
 def _result(
     ok: bool,
     action: str,
@@ -163,6 +220,7 @@ def _result(
     checkpoint: Dict[str, Any] | None = None,
     errors: List[str] | None = None,
     deleted: bool | None = None,
+    found: bool | None = None,
 ) -> dict:
     result: Dict[str, Any] = {
         "ok": ok,
@@ -175,4 +233,6 @@ def _result(
         result["checkpoint"] = checkpoint
     if deleted is not None:
         result["deleted"] = deleted
+    if found is not None:
+        result["found"] = found
     return result
