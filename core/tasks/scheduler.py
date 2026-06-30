@@ -734,9 +734,6 @@ class Scheduler(RuntimeTaskScheduler):
             reason=reason,
         )
 
-    def _extract_execution_trace_from_payload(self, payload: Any) -> List[Dict[str, Any]]:
-        return extract_execution_trace_from_payload(payload)
-
     def _promote_execution_trace_in_executed_results(
         self,
         executed_results: List[Dict[str, Any]],
@@ -763,69 +760,6 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
     # runtime scheduler sync
     # ------------------------------------------------------------
-
-    def _resolve_agent_loop(self) -> Any:
-        agent_loop = getattr(self, "agent_loop", None)
-        if agent_loop is not None:
-            return agent_loop
-
-        task_manager = getattr(self, "task_manager", None)
-        if task_manager is not None:
-            manager_loop = getattr(task_manager, "agent_loop", None)
-            if manager_loop is not None:
-                return manager_loop
-
-        return None
-
-    def _run_task_via_agent_loop(
-        self,
-        task: Dict[str, Any],
-        current_tick: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
-        agent_loop = self._resolve_agent_loop()
-        if agent_loop is None:
-            return None
-
-        run_fn = getattr(agent_loop, "run_task_loop", None)
-        if not callable(run_fn):
-            run_fn = getattr(agent_loop, "run_task", None)
-        if not callable(run_fn):
-            return None
-
-        effective_task = self._hydrate_task_from_workspace(copy.deepcopy(task))
-        effective_user_input = str(effective_task.get("goal") or "").strip()
-        original_plan = effective_task.get("planner_result")
-        if not isinstance(original_plan, dict):
-            original_plan = None
-
-        try:
-            result = run_fn(
-                task=effective_task,
-                current_tick=current_tick,
-                user_input=effective_user_input,
-                original_plan=original_plan,
-            )
-        except TypeError:
-            try:
-                result = run_fn(
-                    task=effective_task,
-                    current_tick=current_tick,
-                )
-            except TypeError:
-                result = run_fn(effective_task)
-
-        if not isinstance(result, dict):
-            return {
-                "ok": bool(result),
-                "mode": "task_loop",
-                "action": "agent_loop_result",
-                "task_id": self._extract_task_id(effective_task),
-                "status": str(effective_task.get("status") or "running"),
-                "raw_result": result,
-            }
-
-        result.setdefault("mode", "task_loop")
-        return result
 
     # Runtime ownership boundary:
     # The scheduler loop owns task dispatch timing and the runtime handoff.
@@ -7767,10 +7701,6 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ZERO Runtime Aggregate Convergence v1.1
 # Scheduler Aggregate Adapter Payload
 # ============================================================
-
-def _zero_v11_scheduler_bool(value):
-    return bool(value)
-
 
 def _zero_v11_scheduler_str(value, default=""):
     if value is None:
