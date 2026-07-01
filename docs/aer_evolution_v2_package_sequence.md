@@ -36,7 +36,8 @@ The sequence protects RC1 behavior by building v2 foundation surfaces on the sep
 26. Package 103 - Runtime Projection Contract
 27. Package 104 - Runtime Session Contract
 28. Package 105 - Runtime Activation Contract
-29. Package 106+ - Long-running Operator Loop / Scheduler / Runtime integration
+29. Package 106 - Runtime Lifecycle Contract
+30. Package 107+ - Long-running Operator Loop / Scheduler / Runtime integration
 
 ## Package Boundaries
 
@@ -977,6 +978,96 @@ Future packages own:
 ## Non-mainline Issues Found
 
 - Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 105 does not modify them.
+
+
+
+## Package 106
+
+Package 106 adds the Runtime Lifecycle Contract for AER v2 as a passive data contract over Runtime Activation. The lifecycle payload describes minimal lifecycle intent for a future Runtime, but it does not activate, initialize, transition, allocate, bind, dispatch, execute, schedule, checkpoint, resume, retry, recover, repair, or call any runtime loop.
+
+Package 106 owns:
+
+- runtime lifecycle contract shape
+- immutable runtime lifecycle creation from a runtime activation dict
+- valid runtime activation issue outcomes carried as valid issue_reported runtime lifecycle
+- malformed runtime activation payload handling as invalid runtime lifecycle
+- validation of the runtime lifecycle wrapper and runtime activation projection derived from activation
+- summary projection containing only outcome, runtime lifecycle summary, and lifecycle structural validity
+- separation of runtime lifecycle structural validity from business outcome
+- documented runtime lifecycle field purposes: contract identifies the schema, outcome exposes the activation result to a future Runtime, runtime_lifecycle carries minimal Runtime-facing lifecycle intent, valid records lifecycle contract structural validity, and errors records structural validation failures
+
+Package 106 must not:
+
+- activate runtime work
+- initialize runtime work
+- implement lifecycle transitions
+- allocate session ids
+- allocate runtime identity
+- create runtime objects
+- construct runtime instances
+- perform dependency injection
+- resolve services
+- bind workspaces
+- bind repositories
+- bind filesystems
+- load configuration
+- load environment state
+- load plugins
+- run runtime initialization callbacks
+- introduce ownership
+- introduce authority
+- introduce leases
+- introduce locks
+- introduce reservations
+- introduce execution permissions
+- execute runtime work
+- dispatch runtime work
+- perform retries
+- write checkpoints
+- resume execution
+- perform recovery
+- repair code
+- select execution strategy
+- select schedules
+- select queues
+- select workers
+- select executors
+- describe priority
+- negotiate capabilities
+- advertise supported features
+- import runtime session helpers
+- import runtime projection helpers
+- import runtime context helpers
+- import runtime bootstrap helpers
+- import runtime intake helpers
+- expose runtime session fields
+- expose runtime projection fields
+- expose runtime context fields
+- expose runtime bootstrap fields
+- expose runtime intake fields
+- preserve upstream wrapper shape
+- pass through unknown runtime activation fields
+- call Scheduler
+- call TaskRunner
+- call persistent operator surfaces
+- call runtime loop, scheduler loop, or operator loop files
+
+Future packages own:
+
+- real runtime lifecycle transitions, if any
+- real runtime activation behavior, if any
+- runtime object creation, if any
+- real runtime session id allocation, if any
+- runtime identity allocation, if any
+- workspace, repository, filesystem, configuration, environment, and plugin binding, if any
+- authority, lease, lock, reservation, and permission models
+- execution strategy, queues, workers, executors, scheduling, priority, retry, checkpoint, resume, recovery, and repair behavior
+- capability discovery, feature negotiation, and supported feature surfaces
+- scheduler, runtime loop, and operator loop integration
+
+## Non-mainline Issues Found
+
+- Existing Package 100 inventory remains: core/runtime/aer_operator_decision.py and core/runtime/aer_operator_plan.py do not currently declare __all__; Package 106 does not modify them.
 
 
 
