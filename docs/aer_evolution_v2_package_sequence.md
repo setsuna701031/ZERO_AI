@@ -6772,3 +6772,215 @@ Final decision: GO. Next package: Package 243.
 
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 242 preserves those files and confirms Package 239 establishes `runtime_recovery_canonical_surface` as the canonical future Runtime Recovery entry surface without modifying, removing, importing, or wiring historical modules.
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 242 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 243
+
+Package 243: Canonical Runtime Recovery Request Contract
+
+Package 243 defines the first canonical request layer that flows into the Canonical Runtime Recovery Surface only after a future GO review. This layer remains disabled, plain-data, non-executing, and not wired into any runtime caller.
+
+This request layer is owned by the Canonical Surface family, but Packages 243 through 246 must not connect the request helper to the surface helper yet. Connection happens only after a future GO review.
+
+The Canonical Runtime Recovery Request is part of the public compatibility boundary. The public request schema is append-only, and existing public fields must never be renamed or removed. Future packages may only add optional fields unless a major-version contract, such as `canonical_runtime_recovery_request_v2`, is introduced. Exactly one canonical public request schema is allowed, and future packages must not introduce competing public Runtime Recovery request formats. Future Runtime Recovery implementations, beginning with Package 247 and later, must consume this public request object instead of inventing additional request schemas.
+
+The request object represents intent only. It is not an execution request. The helper must normalize and validate request data only. It must never decide recovery policy, schedule recovery, execute recovery, invoke runtime, mutate runtime state, call canonical surface, call binding endpoint, or call activation gate.
+
+Package 243 owns:
+
+- `docs/contracts/runtime/canonical_runtime_recovery_request_v1.md`
+- `tests/test_runtime_recovery_canonical_request_contract.py`
+- schema `aer.runtime.recovery.canonical_request.v1`
+- canonical request required fields
+- disabled request boundary
+- no Canonical Surface wiring rule
+- Canonical Surface family ownership rule
+- no request-helper to surface-helper connection rule
+- append-only public request schema rule
+- exactly one canonical public request schema rule
+- intent-only request rule
+- helper normalization and validation only rule
+- no runtime caller modification rule
+
+Package 243 must not:
+
+- Do not wire into Canonical Surface yet
+- Do not modify existing runtime callers
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply binding
+- Do not invoke endpoints
+- Do not mutate runtime state
+- No Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog changes
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 244.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 243 preserves those files and does not wire the new canonical request layer into them.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 243 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 244
+
+Package 244: Canonical Runtime Recovery Request Helper
+
+Package 244 implements the disabled Canonical Runtime Recovery Request Helper as standalone plain-data normalization. It returns deterministic plain dict request data with stable fields: schema, request_id, surface_id, runtime_identity, recovery_reason, recovery_mode, recovery_context, disabled, execution_allowed: false, recovery_enabled: false, and runtime_state_mutated: false.
+
+The helper is not wired into the Canonical Runtime Recovery Surface yet. No existing runtime caller may import or call it in this package.
+
+The request helper is owned by the Canonical Surface family, but it is not connected to the surface helper in Packages 243 through 246. Connection happens only after a future GO review.
+
+The helper normalizes and validates request data only. It never decides recovery policy, schedules recovery, executes recovery, invokes runtime, mutates runtime state, calls canonical surface, calls binding endpoint, or calls activation gate.
+
+The helper exposes exactly one public API: `prepare_canonical_runtime_recovery_request(...)`. Everything else remains private. The module must not expose alternate request builders, legacy compatibility builders, convenience wrappers, or alias APIs. Future packages must extend this API instead of creating additional public request entry points.
+
+Package 244 owns:
+
+- `core/runtime/aer_runtime_recovery_canonical_request.py`
+- `tests/test_aer_runtime_recovery_canonical_request.py`
+- public API `prepare_canonical_runtime_recovery_request(...)`
+- strict `__all__`
+- exactly one exported public request API
+- no additional public `prepare_*` Runtime Recovery request functions
+- no alternate request builders, legacy compatibility builders, convenience wrappers, or alias APIs
+- deterministic plain dict request data
+- disabled request defaults
+- Canonical Surface family ownership fields
+- request helper not connected to surface helper
+- append-only public schema fields
+- exactly one canonical request schema
+- intent-only request data
+- denied runtime attempt reporting as data only
+- no imports from runtime execution modules
+
+Package 244 must not:
+
+- Do not wire into Canonical Surface yet
+- Do not modify existing runtime callers
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply binding
+- Do not invoke endpoints
+- Do not mutate runtime state
+- No Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog changes
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 245.
+
+## Non-mainline Issues Found
+
+- Package 243 reported existing historical Runtime Recovery bridge, executor, adapter, and integration filenames. Package 244 preserves that issue and does not modify, remove, import, call, or wire those historical modules.
+- Package 243 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 244 preserves that issue and does not modify unrelated files.
+
+## Package 245
+
+Package 245: Canonical Runtime Recovery Request Report
+
+Package 245 defines the Canonical Runtime Recovery Request Report semantics over the disabled helper. The report confirms the canonical request remains disabled, plain-data only, not wired into the Canonical Runtime Recovery Surface, and not imported or called by runtime callers.
+
+The report confirms the request layer is owned by the Canonical Surface family, but the request helper is not connected to the surface helper yet. Connection happens only after a future GO review.
+
+The report confirms the public request schema is append-only, exactly one canonical public request schema is allowed, future packages must not introduce competing public Runtime Recovery request formats, and future Runtime Recovery implementations must consume this public request object instead of inventing additional request schemas.
+
+Package 245 owns:
+
+- canonical request report shape
+- stable request field confirmation
+- disabled request status
+- no Canonical Surface call confirmation
+- Canonical Surface family ownership confirmation
+- no request-helper to surface-helper connection confirmation
+- append-only public request schema confirmation
+- exactly one canonical public request schema confirmation
+- no competing public Runtime Recovery request formats confirmation
+- intent-only request confirmation
+- no runtime caller modification confirmation
+- no runtime side effects rule
+
+Package 245 must not:
+
+- Do not wire into Canonical Surface yet
+- Do not modify existing runtime callers
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply binding
+- Do not invoke endpoints
+- Do not mutate runtime state
+- No Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog changes
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 246.
+
+## Non-mainline Issues Found
+
+- Package 243 reported existing historical Runtime Recovery bridge, executor, adapter, and integration filenames. Package 245 preserves that issue and does not modify, remove, import, call, or wire those historical modules.
+- Package 243 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 245 preserves that issue and does not modify unrelated files.
+
+## Package 246
+
+Package 246: Canonical Runtime Recovery Request Readiness Review
+
+Package 246 reviews Packages 243 through 245 and confirms the canonical request layer remains disabled, plain-data, non-executing, not wired into the Canonical Runtime Recovery Surface, and not wired into any runtime caller.
+
+Package 246 confirms the request layer is owned by the Canonical Surface family, but Packages 243 through 246 do not connect the request helper to the surface helper yet. Connection happens only after a future GO review.
+
+Package 246 confirms the Canonical Runtime Recovery Request is part of the public compatibility boundary. The public request schema is append-only, existing public fields must never be renamed or removed, and future packages may only add optional fields unless a major-version contract, such as `canonical_runtime_recovery_request_v2`, is introduced. Exactly one canonical public request schema is allowed. Future packages must not introduce competing public Runtime Recovery request formats. Future Runtime Recovery implementations, beginning with Package 247 and later, must consume this public request object instead of inventing additional request schemas.
+
+Package 246 confirms the request object represents intent only, is not an execution request, and the helper normalizes and validates request data only. It must never decide recovery policy, schedule recovery, execute recovery, invoke runtime, mutate runtime state, call canonical surface, call binding endpoint, or call activation gate.
+
+Package 246 confirms the helper exposes exactly one public API, `prepare_canonical_runtime_recovery_request(...)`, under strict `__all__`. Everything else remains private. Future packages must extend this API instead of creating additional public request entry points.
+
+Package 246 owns:
+
+- `docs/runtime_recovery_canonical_request_readiness_review.md`
+- `tests/test_runtime_recovery_canonical_request_readiness_review.py`
+- readiness review over Packages 243 through 245
+- stable request field preservation
+- no Canonical Surface wiring confirmation
+- Canonical Surface family ownership confirmation
+- no request-helper to surface-helper connection confirmation
+- append-only public request schema confirmation
+- exactly one canonical public request schema confirmation
+- no competing public Runtime Recovery request formats confirmation
+- intent-only request confirmation
+- helper normalization and validation only confirmation
+- exactly one exported public request API
+- strict `__all__`
+- no additional public `prepare_*` Runtime Recovery request functions
+- no runtime caller modification confirmation
+- next package recommendation
+
+Package 246 must not:
+
+- Do not wire into Canonical Surface yet
+- Do not modify existing runtime callers
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply binding
+- Do not invoke endpoints
+- Do not mutate runtime state
+- No Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog changes
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 247.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 246 preserves those files and confirms the canonical request layer is not wired into them.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 246 preserves that unrelated numbering drift and does not modify those files.
