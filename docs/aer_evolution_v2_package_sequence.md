@@ -5974,3 +5974,282 @@ Final decision: GO. Next package: Package 223.
 ## Non-mainline Issues Found
 
 - None for Package 222.
+
+## Package 223
+
+Package 223: Runtime Recovery Controlled Wiring Phase Plan
+
+Package 223 defines the Runtime Recovery Controlled Wiring Phase Plan. This is the first phase that prepares Runtime mainline wiring to Recovery, but preparation remains disabled, gated, non-executing, non-mutating, and documentation + seal only.
+
+Packages 223 through 230 are planning/contract/governance only. They define the roadmap toward controlled wiring and do not implement Runtime wiring yet. Actual runtime wiring begins in a future package only after Package 230 receives GO.
+
+Package 223 owns:
+
+- `docs/runtime_recovery_controlled_wiring_phase_plan.md`
+- `tests/test_runtime_recovery_controlled_wiring_phase_plan.py`
+- Packages 223 through 230 controlled wiring phase order
+- controlled wiring phase hard rules
+- confirmation that Runtime mainline wiring preparation remains disabled
+- next package recommendation
+
+Package 223 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Required phase guarantees:
+
+- Recovery is not executed
+- Recovery is not enabled
+- Runtime state is not mutated
+- Runtime hooks are not registered
+- Runtime binding is not applied
+- Endpoints are not invoked
+- Scheduler is not called
+- TaskRunner is not called
+- Operator is not called
+- Dispatcher is not called
+- Supervisor is not called
+- Native Runtime is not called
+- Watchdog is not called
+- Audit is not called
+- Journal is not called
+- Persistence is not called
+- Subprocess paths are not called
+- Filesystem mutation paths are not called
+- documentation + seal only
+- planning/contract/governance only
+- Actual runtime wiring begins only after Package 230 receives GO
+
+Final decision: GO. Next package: Package 224.
+
+## Non-mainline Issues Found
+
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 223 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 224
+
+Package 224: Runtime Recovery Controlled Wiring Contract
+
+Package 224 defines the disabled Runtime Recovery Controlled Wiring Contract. The contract may name future Runtime-to-Recovery wiring vocabulary, but it remains gated, non-executing, non-mutating, and documentation + seal only.
+
+Package 224 owns:
+
+- controlled wiring contract vocabulary
+- disabled wiring state
+- closed gate requirement
+- no hook registration rule
+- no binding application rule
+- no endpoint invocation rule
+- no Recovery execution rule
+
+Package 224 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 225.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 224 preserves that issue and does not modify unrelated files.
+
+## Package 225
+
+Package 225: Runtime Recovery Controlled Wiring Helper
+
+Package 225 defines the future controlled wiring helper shape as deterministic data preparation only. The helper remains disabled and cannot register hooks, apply binding, invoke endpoints, mutate Runtime state, or execute Recovery.
+
+Package 225 owns:
+
+- controlled wiring helper surface plan
+- deterministic plain dict output requirement
+- disabled helper default
+- no runtime side effects rule
+- no filesystem mutation rule
+
+Package 225 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 226.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 225 preserves that issue and does not modify unrelated files.
+
+## Package 226
+
+Package 226: Runtime Recovery Controlled Wiring Report
+
+Package 226 defines the controlled wiring report shape. The report records disabled wiring preparation data only and does not emit events, call Audit or Journal, persist state, mutate Runtime state, invoke endpoints, apply binding, register hooks, or execute Recovery.
+
+Package 226 owns:
+
+- controlled wiring report vocabulary
+- disabled wiring report status
+- explicit no event emission rule
+- explicit no audit, journal, or persistence call rule
+- no runtime side effects rule
+
+Package 226 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 227.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 226 preserves that issue and does not modify unrelated files.
+
+## Package 227
+
+Package 227: Runtime Recovery Controlled Wiring Admission
+
+Package 227 defines admission rules for controlled wiring preparation. Admission remains closed by default and cannot grant Runtime mainline wiring, enable Recovery, register hooks, apply binding, invoke endpoints, mutate state, or execute Recovery.
+
+Package 227 owns:
+
+- controlled wiring admission vocabulary
+- closed admission default
+- explicit admission denial for active wiring
+- no Recovery enablement rule
+- no runtime side effects rule
+
+Package 227 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 228.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 227 preserves that issue and does not modify unrelated files.
+
+## Package 228
+
+Package 228: Runtime Recovery Controlled Wiring Verification
+
+Package 228 defines verification rules for controlled wiring preparation. Verification is seal-only and checks that controlled wiring remains disabled, gated, non-executing, non-mutating, and detached from Runtime execution systems.
+
+Package 228 owns:
+
+- controlled wiring verification vocabulary
+- disabled wiring verification criteria
+- hard-rule preservation checks
+- no runtime system call rule
+- no filesystem mutation rule
+
+Package 228 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 229.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 228 preserves that issue and does not modify unrelated files.
+
+## Package 229
+
+Package 229: Runtime Recovery Controlled Wiring Dry Run
+
+Package 229 defines a dry-run vocabulary for controlled wiring preparation. The dry run remains data-only and cannot execute Recovery, enable Recovery, register hooks, apply binding, invoke endpoints, emit events, call Runtime systems, mutate state, or touch filesystem mutation paths.
+
+Package 229 owns:
+
+- controlled wiring dry-run vocabulary
+- non-executing dry-run status
+- non-binding dry-run result
+- no endpoint invocation rule
+- no runtime side effects rule
+
+Package 229 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 230.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 229 preserves that issue and does not modify unrelated files.
+
+## Package 230
+
+Package 230: Runtime Recovery Controlled Wiring GO Review
+
+Package 230 reviews Packages 223 through 229 and decides whether a future disabled planning package may be defined. The review cannot authorize active Runtime mainline wiring, Recovery execution, Recovery enablement, runtime hook registration, runtime binding application, endpoint invocation, runtime mutation, or filesystem mutation.
+
+Actual runtime wiring begins in a future package only after Package 230 receives GO. Package 230 does not implement Runtime wiring.
+
+Package 230 owns:
+
+- controlled wiring phase GO / NO-GO review
+- review over Packages 223 through 229
+- hard-rule preservation decision
+- confirmation that Recovery execution remains unauthorized
+- next package recommendation for disabled planning only
+
+Package 230 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not mutate runtime state
+- Do not register runtime hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, or filesystem mutation paths
+- This package is documentation + seal only
+
+Final decision: GO. Next package: Package 231.
+
+## Non-mainline Issues Found
+
+- Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 230 preserves that issue and does not modify unrelated files.
