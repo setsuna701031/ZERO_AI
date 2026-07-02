@@ -7302,3 +7302,120 @@ Final decision: GO. Next package: Package 253.
 
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 252 preserves those files and does not modify, remove, import, call, or wire those historical modules.
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 252 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 253
+
+Package 253: Runtime Recovery Gateway Kill Switch Disabled Integration
+
+Package 253 adds kill-switch gating to the existing Package 252 Runtime Recovery Gateway while preserving disabled, data-only, non-executing, and non-mutating behavior.
+
+The gateway accepts optional `kill_switch_enabled` input. The default is `True`. When the kill switch is enabled, the gateway reports `gateway_status: "kill_switch_blocked"` and denies admission. When the kill switch is disabled, the gateway reports disabled admission and still denies admission. Both paths preserve `surface_integration_result`, preserve Request, Surface, and Response sub-results, and keep execution, recovery enablement, and runtime mutation false.
+
+The kill switch has priority over disabled admission. Admission evaluation order is deterministic:
+
+1. Kill Switch
+2. Disabled Gate
+3. Future Admission Policy (reserved)
+4. Future Runtime Authorization (reserved)
+5. Future Recovery Execution (reserved)
+
+Future packages must extend this chain rather than reorder it. The gateway always denies admission while disabled. No Recovery execution is authorized and no Runtime caller is wired.
+
+Package 253 owns:
+
+- `core/runtime/aer_runtime_recovery_gateway.py`
+- `tests/test_aer_runtime_recovery_gateway.py`
+- `docs/runtime_recovery_gateway_disabled_admission_review.md`
+- optional `kill_switch_enabled` input on `prepare_runtime_recovery_gateway(...)`
+- default `kill_switch_enabled: true`
+- deterministic admission evaluation order
+- `gateway_status: "kill_switch_blocked"` when kill switch is enabled
+- disabled admission fallback when kill switch is disabled
+- admission denial in both kill-switch and disabled-admission paths
+- preservation of `surface_integration_result`
+- unchanged strict `__all__`
+- no new public API
+
+Package 253 must not:
+
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not modify Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not register hooks
+- Do not apply binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- Do not add persistence, audit, journal, subprocess, or filesystem mutation
+- Do not create new public APIs
+- Keep strict `__all__` unchanged
+- Long validation must not be run by Codex
+- Run focused gateway tests only
+
+Final decision: GO. Next package: Package 254.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 253 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 253 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 254
+
+Package 254: Runtime Recovery Admission Policy Stub
+
+Package 254 extends the existing disabled Runtime Recovery Gateway with a reserved Admission Policy stage without creating a new public entry point. The only public API remains `prepare_runtime_recovery_gateway(...)`.
+
+The gateway now returns `policy_result` as deterministic plain data only. The policy stage is reserved for a future package, disabled, and does not decide, authorize, execute, grant admission, enable recovery, mutate runtime state, or call any runtime infrastructure.
+
+Admission order remains exactly:
+
+1. kill_switch
+2. disabled_gate
+3. future_admission_policy_reserved
+4. future_runtime_authorization_reserved
+5. future_recovery_execution_reserved
+
+Gateway denial still happens before any future policy may act. Runtime remains disabled, non-executing, non-mutating, and unwired.
+
+Package 254 owns:
+
+- `core/runtime/aer_runtime_recovery_gateway.py`
+- `tests/test_aer_runtime_recovery_gateway.py`
+- `docs/runtime_recovery_gateway_disabled_admission_review.md`
+- reserved `policy_result` gateway output
+- deterministic disabled policy data
+- unchanged `prepare_runtime_recovery_gateway(...)` public API
+- unchanged strict `__all__`
+- unchanged admission evaluation order
+
+Package 254 `policy_result` fields:
+
+- `enabled: false`
+- `policy_status: "reserved"`
+- `policy_version: "v1_reserved"`
+- `reason: "future_package"`
+- `admission_granted: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+
+Package 254 must not:
+
+- Do not execute Recovery
+- Do not wire Runtime
+- Do not add planner, scheduler, TaskRunner, operator, dispatcher, supervisor, native runtime, or watchdog behavior
+- Do not add persistence, audit, journal, endpoint invocation, hook registration, bridge calls, filesystem mutation, or subprocess behavior
+- Do not modify Runtime callers
+- Do not create new public APIs
+- Do not add extra exports
+- Do not rename existing fields
+- Do not reorder `admission_evaluation_order`
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Long validation must not be run by Codex
+- Run focused gateway tests only
+
+Final decision: GO. Next package: Package 255.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 254 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 254 preserves that unrelated numbering drift and does not modify those files.

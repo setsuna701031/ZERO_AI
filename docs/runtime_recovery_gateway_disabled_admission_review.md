@@ -4,6 +4,20 @@ Package 252 confirms the first disabled Runtime Recovery Gateway / Admission lay
 
 The gateway is disabled admission data only. It calls Surface Integration only as data orchestration and returns denial metadata without executing Recovery, enabling Recovery, registering hooks, applying runtime binding, invoking endpoints, emitting events, mutating runtime state, or wiring runtime callers.
 
+Package 253 adds disabled kill-switch gating to the same gateway. The kill switch defaults to enabled and has priority over disabled admission: when enabled, the gateway reports `gateway_status: "kill_switch_blocked"` and still denies admission; when disabled, the gateway falls back to disabled admission and still denies admission. Neither path authorizes Recovery execution or Runtime wiring.
+
+Package 254 adds a reserved Admission Policy stage. Admission policy stage is reserved. Policy result is disabled data only. Policy does not decide, authorize, execute, or mutate. Gateway still denies admission before any future policy may act.
+
+Admission evaluation order is deterministic:
+
+1. Kill Switch
+2. Disabled Gate
+3. Future Admission Policy (reserved)
+4. Future Runtime Authorization (reserved)
+5. Future Recovery Execution (reserved)
+
+Future packages must extend this chain rather than reorder it.
+
 Confirmations:
 
 - Gateway is disabled admission data only.
@@ -11,6 +25,12 @@ Confirmations:
 - No runtime caller is wired.
 - No Recovery execution is authorized.
 - No second execution path was created.
+- The kill switch has priority over disabled admission.
+- Admission policy stage is reserved.
+- Policy result is disabled data only.
+- Policy does not decide, authorize, execute, or mutate.
+- Gateway still denies admission before any future policy may act.
+- Future packages must extend the admission chain rather than reorder it.
 - Future Package 253 may add kill-switch integration, still disabled.
 
 Non-mainline Issues Found:
