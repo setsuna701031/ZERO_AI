@@ -6984,3 +6984,219 @@ Final decision: GO. Next package: Package 247.
 
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 246 preserves those files and confirms the canonical request layer is not wired into them.
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 246 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 247
+
+Package 247: Canonical Runtime Recovery Response Contract
+
+Package 247 defines the canonical response layer for the Canonical Runtime Recovery family. This package remains completely disabled, deterministic, non-executing, non-mutating, and not connected to Runtime execution.
+
+The response represents observation only. It must not execute, authorize, schedule, dispatch, mutate, or recover.
+
+Exactly one public response API is allowed. Exactly one canonical response schema is allowed.
+
+The Canonical Runtime Recovery Response is the ONLY public Runtime Recovery response object. Future packages, beginning with Package 251 and later, must return this response shape instead of introducing new public response DTOs. Only the Canonical Runtime Recovery Surface may publicly return Canonical Runtime Recovery Response objects. Future Runtime Recovery implementations must return this canonical response through the Canonical Runtime Recovery Surface. No future package may construct or expose public Runtime Recovery responses directly. No additional public response APIs may ever be introduced. No public API may bypass the Canonical Surface and expose responses directly.
+
+The Canonical Runtime Recovery Surface owns public Runtime Recovery entry, request admission, request normalization, and response return. It does not own recovery execution, recovery planning, recovery scheduling, recovery supervision, recovery state machine, recovery persistence, recovery audit, or recovery journal.
+
+The Response helper is an internal compatibility artifact of the Canonical Surface family. It is not a standalone Runtime entry point and is never a public Runtime entry point. The response helper owns only response normalization, response validation, and response compatibility.
+
+Package 247 owns:
+
+- `docs/contracts/runtime/canonical_runtime_recovery_response_v1.md`
+- `tests/test_runtime_recovery_canonical_response_contract.py`
+- schema `aer.runtime.recovery.canonical_response.v1`
+- append-only response schema
+- backward compatible response boundary
+- exactly one public response API rule
+- exactly one canonical response schema rule
+- only public Runtime Recovery response object rule
+- no direct public response exposure rule
+- response helper internal compatibility artifact rule
+- Canonical Surface ownership split
+- observation-only response semantics
+
+Package 247 must not:
+
+- No Runtime wiring
+- No Scheduler changes
+- No TaskRunner changes
+- No Operator changes
+- No Dispatcher changes
+- No Supervisor changes
+- No Native Runtime changes
+- No Watchdog changes
+- No Binding Endpoint calls
+- No Activation Gate calls
+- No Canonical Surface calls
+- No Request helper calls
+- No Recovery execution
+- No runtime mutation
+- No filesystem, subprocess, audit, journal, or persistence behavior
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 248.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 247 preserves those files and does not wire the new canonical response layer into them.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 247 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 248
+
+Package 248: Canonical Runtime Recovery Response Helper
+
+Package 248 implements the disabled Canonical Runtime Recovery Response Helper as standalone observation data. It returns deterministic plain dict response data with stable fields: schema, response_id, request_id, surface_id, runtime_identity, accepted, execution_allowed, recovery_enabled, status, reason, diagnostics, and timestamp.
+
+The helper exposes exactly one public response API: `prepare_canonical_runtime_recovery_response(...)`. It uses strict `__all__`.
+
+Everything else remains private. The Response helper is an internal compatibility artifact of the Canonical Surface family. It is not a standalone Runtime entry point and is never a public Runtime entry point.
+
+Package 248 owns:
+
+- `core/runtime/aer_runtime_recovery_canonical_response.py`
+- `tests/test_aer_runtime_recovery_canonical_response.py`
+- public API `prepare_canonical_runtime_recovery_response(...)`
+- strict `__all__`
+- exactly one public response API
+- no additional public response APIs
+- deterministic plain dict response data
+- observation-only response defaults
+- only public Runtime Recovery response object fields
+- response helper internal compatibility artifact fields
+- append-only compatibility fields
+- no Request helper calls
+- no Canonical Surface calls
+- no Binding Endpoint or Activation Gate calls
+
+Package 248 must not:
+
+- No Runtime wiring
+- No Scheduler changes
+- No TaskRunner changes
+- No Operator changes
+- No Dispatcher changes
+- No Supervisor changes
+- No Native Runtime changes
+- No Watchdog changes
+- No Binding Endpoint calls
+- No Activation Gate calls
+- No Canonical Surface calls
+- No Request helper calls
+- No Recovery execution
+- No runtime mutation
+- No filesystem, subprocess, audit, journal, or persistence behavior
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 249.
+
+## Non-mainline Issues Found
+
+- Package 247 reported existing historical Runtime Recovery bridge, executor, adapter, and integration filenames. Package 248 preserves that issue and does not modify, remove, import, call, or wire those historical modules.
+- Package 247 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 248 preserves that issue and does not modify unrelated files.
+
+## Package 249
+
+Package 249: Canonical Runtime Recovery Response Report
+
+Package 249 defines Canonical Runtime Recovery Response Report semantics over the disabled helper. The report confirms response data remains observation-only, append-only, backward compatible, non-executing, non-mutating, and disconnected from Runtime execution.
+
+The report confirms only the Canonical Runtime Recovery Surface may publicly return Canonical Runtime Recovery Response objects. No public API may bypass the Canonical Surface and expose responses directly.
+
+Package 249 owns:
+
+- canonical response report shape
+- observation-only response confirmation
+- append-only schema confirmation
+- exactly one public response API confirmation
+- exactly one canonical response schema confirmation
+- only public Runtime Recovery response object confirmation
+- no direct public response exposure confirmation
+- response helper ownership boundary confirmation
+- no runtime side effects rule
+
+Package 249 must not:
+
+- No Runtime wiring
+- No Scheduler changes
+- No TaskRunner changes
+- No Operator changes
+- No Dispatcher changes
+- No Supervisor changes
+- No Native Runtime changes
+- No Watchdog changes
+- No Binding Endpoint calls
+- No Activation Gate calls
+- No Canonical Surface calls
+- No Request helper calls
+- No Recovery execution
+- No runtime mutation
+- No filesystem, subprocess, audit, journal, or persistence behavior
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 250.
+
+## Non-mainline Issues Found
+
+- Package 247 reported existing historical Runtime Recovery bridge, executor, adapter, and integration filenames. Package 249 preserves that issue and does not modify, remove, import, call, or wire those historical modules.
+- Package 247 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 249 preserves that issue and does not modify unrelated files.
+
+## Package 250
+
+Package 250: Canonical Runtime Recovery Response Readiness Review
+
+Package 250 reviews Packages 247 through 249 and confirms the canonical response layer remains completely disabled, deterministic, non-executing, non-mutating, observation-only, and not connected to Runtime execution.
+
+Package 250 confirms the Canonical Runtime Recovery Response is the ONLY public Runtime Recovery response object. Future packages, beginning with Package 251 and later, must return this response shape instead of introducing new public response DTOs. Only the Canonical Runtime Recovery Surface may publicly return Canonical Runtime Recovery Response objects. Future Runtime Recovery implementations must return this canonical response through the Canonical Runtime Recovery Surface. No future package may construct or expose public Runtime Recovery responses directly. No additional public response APIs may ever be introduced. No public API may bypass the Canonical Surface and expose responses directly.
+
+Package 250 confirms the Canonical Runtime Recovery Surface owns public Runtime Recovery entry, request admission, request normalization, and response return. It does not own recovery execution, recovery planning, recovery scheduling, recovery supervision, recovery state machine, recovery persistence, recovery audit, or recovery journal.
+
+Package 250 confirms the Request helper is never a Runtime entry point, the Response helper is never a Runtime entry point, the Surface is the only public Runtime Recovery entry, and the Surface is the only public component allowed to accept Request and return Response.
+
+Exactly one public response API is allowed. Exactly one canonical response schema is allowed.
+
+Package 250 owns:
+
+- `docs/runtime_recovery_canonical_response_readiness_review.md`
+- `tests/test_runtime_recovery_canonical_response_readiness_review.py`
+- readiness review over Packages 247 through 249
+- response compatibility boundary confirmation
+- only public Runtime Recovery response object confirmation
+- no direct public response exposure confirmation
+- no additional public response APIs confirmation
+- response helper internal compatibility artifact confirmation
+- Canonical Surface ownership split confirmation
+- observation-only response confirmation
+- no Runtime wiring confirmation
+- no Runtime side effects confirmation
+- next package recommendation
+
+Package 250 must not:
+
+- No Runtime wiring
+- No Scheduler changes
+- No TaskRunner changes
+- No Operator changes
+- No Dispatcher changes
+- No Supervisor changes
+- No Native Runtime changes
+- No Watchdog changes
+- No Binding Endpoint calls
+- No Activation Gate calls
+- No Canonical Surface calls
+- No Request helper calls
+- No Recovery execution
+- No runtime mutation
+- No filesystem, subprocess, audit, journal, or persistence behavior
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 251.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 250 preserves those files and confirms the canonical response layer is not wired into them.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 250 preserves that unrelated numbering drift and does not modify those files.
