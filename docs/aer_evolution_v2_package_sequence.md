@@ -6253,3 +6253,315 @@ Final decision: GO. Next package: Package 231.
 ## Non-mainline Issues Found
 
 - Package 223 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 230 preserves that issue and does not modify unrelated files.
+
+## Package 231
+
+Package 231: Runtime Recovery Disabled Controlled Wiring Implementation Plan
+
+Package 231 defines the Runtime Recovery Disabled Controlled Wiring Implementation Plan. Packages 231 through 238 are the final documentation/governance phase before Runtime implementation. No Runtime behavior may change.
+
+Runtime wiring surfaces may be introduced only after Package 238, beginning with Package 239 as a disabled plain-data helper. Package 239 begins the first disabled Runtime implementation surface, still non-executing and fully gated. This phase must not change `core/runtime/runtime_supervisor_bridge.py`, Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog.
+
+Package 239 must introduce exactly one canonical Runtime implementation surface. It must not create multiple parallel Runtime entry points. All future Runtime Recovery execution, when eventually enabled, must flow through this single canonical surface. Future packages may extend or verify that surface, but must not introduce competing Runtime entry paths.
+
+Package 231 owns:
+
+- `docs/runtime_recovery_disabled_controlled_wiring_implementation_plan.md`
+- `tests/test_runtime_recovery_disabled_controlled_wiring_implementation_plan.py`
+- Packages 231 through 238 disabled controlled wiring implementation order
+- disabled plain-data helper boundary
+- no Runtime behavior change rule
+- focused seal only
+
+Package 231 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Required phase guarantees:
+
+- Packages 231 through 238 are the final documentation/governance phase before Runtime implementation
+- Runtime wiring surfaces may be introduced only after Package 238, beginning with Package 239 as disabled plain-data helpers
+- Package 239 begins the first disabled Runtime implementation surface, still non-executing and fully gated
+- Package 239 must introduce exactly one canonical Runtime implementation surface
+- Package 239 must not create multiple parallel Runtime entry points
+- All future Runtime Recovery execution, when eventually enabled, must flow through this single canonical surface
+- Future packages may extend or verify that surface, but must not introduce competing Runtime entry paths
+- No change to `core/runtime/runtime_supervisor_bridge.py` yet
+- Scheduler is not changed
+- TaskRunner is not changed
+- Operator is not changed
+- Dispatcher is not changed
+- Supervisor is not changed
+- Native Runtime is not changed
+- Watchdog is not changed
+- Recovery is not executed
+- Recovery is not enabled
+- Runtime hooks are not registered
+- Runtime binding is not applied
+- Endpoints are not invoked
+- Events are not emitted
+- Runtime state is not mutated
+- Persistence paths are not called
+- Audit paths are not called
+- Journal paths are not called
+- Subprocess paths are not called
+- Filesystem mutation paths are not called
+- Long validation must not be run by Codex
+- Focused seal only
+
+Final decision: GO. Next package: Package 232.
+
+## Non-mainline Issues Found
+
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 231 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 232
+
+Package 232: Disabled Controlled Wiring Contract
+
+Package 232 defines the Disabled Controlled Wiring Contract as a documentation/governance surface for future disabled plain-data implementation. It may define contract vocabulary for future wiring data, but it must not change Runtime behavior or introduce implementation surfaces.
+
+Package 232 owns:
+
+- disabled controlled wiring contract vocabulary
+- disabled surface state
+- no hook registration rule
+- no runtime binding application rule
+- no endpoint invocation rule
+- no Recovery execution rule
+
+Package 232 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 233.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 232 preserves that issue and does not modify unrelated files.
+
+## Package 233
+
+Package 233: Disabled Controlled Wiring Helper
+
+Package 233 defines the future Disabled Controlled Wiring Helper shape as documentation/governance only. The future helper may prepare deterministic wiring data, but Package 233 must not introduce the helper implementation, register hooks, apply bindings, invoke endpoints, emit events, mutate Runtime state, or execute Recovery.
+
+Package 233 owns:
+
+- disabled controlled wiring helper
+- deterministic plain-data helper output
+- disabled helper default
+- no runtime side effects rule
+- focused helper seal
+
+Package 233 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 234.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 233 preserves that issue and does not modify unrelated files.
+
+## Package 234
+
+Package 234: Disabled Controlled Wiring Report
+
+Package 234 defines the future Disabled Controlled Wiring Report shape as documentation/governance only. The future report may describe helper output, but Package 234 must not introduce the report implementation, emit runtime events, call Audit or Journal, persist state, mutate Runtime state, invoke endpoints, apply binding, register hooks, or execute Recovery.
+
+Package 234 owns:
+
+- disabled controlled wiring report
+- disabled report status
+- explicit no event emission rule
+- explicit no audit, journal, or persistence call rule
+- focused report seal
+
+Package 234 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 235.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 234 preserves that issue and does not modify unrelated files.
+
+## Package 235
+
+Package 235: Disabled Controlled Wiring Admission Helper
+
+Package 235 defines the future Disabled Controlled Wiring Admission Helper shape as documentation/governance only. Future admission may evaluate preparation data, but Package 235 must not introduce admission implementation, grant active wiring, enable Recovery, register hooks, apply binding, invoke endpoints, emit events, mutate state, or call Runtime systems.
+
+Package 235 owns:
+
+- disabled controlled wiring admission helper
+- admission denied default
+- no active wiring grant rule
+- no Recovery enablement rule
+- focused admission seal
+
+Package 235 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 236.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 235 preserves that issue and does not modify unrelated files.
+
+## Package 236
+
+Package 236: Disabled Controlled Wiring Verification Helper
+
+Package 236 defines the future Disabled Controlled Wiring Verification Helper shape as documentation/governance only. Future verification may check disabled helper/report/admission data, but Package 236 must not introduce verification implementation, call runtime systems, mutate state, register hooks, apply binding, invoke endpoints, emit events, or execute Recovery.
+
+Package 236 owns:
+
+- disabled controlled wiring verification helper
+- disabled verification criteria
+- no runtime system call rule
+- no filesystem mutation rule
+- focused verification seal
+
+Package 236 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 237.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 236 preserves that issue and does not modify unrelated files.
+
+## Package 237
+
+Package 237: Disabled Controlled Wiring Dry Run Helper
+
+Package 237 defines the future Disabled Controlled Wiring Dry Run Helper shape as documentation/governance only. Future dry run data may summarize hypothetical wiring preparation, but Package 237 must not introduce dry-run implementation, execute, bind, invoke endpoints, emit events, persist, mutate state, call Runtime systems, or enable Recovery.
+
+Package 237 owns:
+
+- disabled controlled wiring dry-run helper
+- non-executing dry-run output
+- non-binding dry-run result
+- no endpoint invocation rule
+- focused dry-run seal
+
+Package 237 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 238.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 237 preserves that issue and does not modify unrelated files.
+
+## Package 238
+
+Package 238: Disabled Controlled Wiring Readiness Review
+
+Package 238 reviews Packages 231 through 237 and confirms that this final documentation/governance phase is complete before Runtime implementation. The review cannot authorize active Runtime wiring, Recovery execution, Recovery enablement, hook registration, runtime binding application, endpoint invocation, event emission, persistence, audit, journal, subprocess, or filesystem mutation.
+
+Package 239 begins the first disabled Runtime implementation surface, still non-executing and fully gated. Package 239 must introduce exactly one canonical Runtime implementation surface, must not create multiple parallel Runtime entry points, and must preserve the rule that all future Runtime Recovery execution, when eventually enabled, flows through this single canonical surface. Future packages may extend or verify that surface, but must not introduce competing Runtime entry paths. The roadmap must not be extended beyond Package 238 in this phase.
+
+Package 238 owns:
+
+- disabled controlled wiring readiness review
+- review over Packages 231 through 237
+- disabled plain-data helper preservation decision
+- no Runtime behavior change confirmation
+- next package recommendation
+
+Package 238 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not run long validation
+
+Final decision: GO. Next package: Package 239.
+
+## Non-mainline Issues Found
+
+- Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 238 preserves that issue and does not modify unrelated files.
