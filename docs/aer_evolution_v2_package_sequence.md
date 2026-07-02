@@ -6565,3 +6565,210 @@ Final decision: GO. Next package: Package 239.
 ## Non-mainline Issues Found
 
 - Package 231 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 238 preserves that issue and does not modify unrelated files.
+
+## Package 239
+
+Package 239: Canonical Runtime Recovery Surface Contract
+
+Package 239 defines the first disabled Runtime implementation surface for Runtime Recovery. The surface remains disabled, non-executing, gated, non-mutating, and detached from existing runtime flow.
+
+Exactly ONE canonical Runtime Recovery surface is allowed: `runtime_recovery_canonical_surface`. Do not create multiple Runtime Recovery entry points. All future Runtime Recovery execution, when eventually enabled, must flow through this single canonical surface. Future packages may extend or verify that surface, but must not introduce competing Runtime entry paths.
+
+The Canonical Runtime Recovery Surface introduced in Package 239 is the ONLY public Runtime Recovery entry surface. All future Runtime Recovery implementations, beginning with Packages 243 and later, must enter through this surface. No future package may expose another public Runtime Recovery entry API.
+
+Bridge modules, adapters, supervisors, schedulers, operators, dispatchers, watchdogs, and native runtime components may only connect to this canonical surface in future packages after the required GO reviews.
+
+The Canonical Runtime Recovery Surface owns the public Runtime Recovery interface only. It does not own recovery policy, recovery planning, recovery scheduling, recovery execution, recovery supervision, recovery state machine, recovery persistence, recovery audit, recovery journaling, recovery hook registration, recovery binding, or recovery endpoint invocation. Those capabilities remain owned by their future dedicated packages. The canonical surface may only validate, normalize, and forward canonical Runtime Recovery requests after future GO approval.
+
+The Canonical Runtime Recovery Surface is a stable compatibility boundary. Future packages may extend its internal implementation, but must preserve its public API and ownership boundary. Backward compatibility of the public Runtime Recovery surface must be maintained unless an explicit major-version contract, such as `canonical_runtime_recovery_surface_v2`, is introduced. No future package may silently replace, bypass, or deprecate this canonical surface. All Runtime Recovery callers must remain compatible with it.
+
+No existing runtime module may import or call it in this package.
+
+Package 239 owns:
+
+- `docs/contracts/runtime/canonical_runtime_recovery_surface_v1.md`
+- `tests/test_runtime_recovery_canonical_surface_contract.py`
+- contract id `aer.runtime.recovery.canonical_surface.v1`
+- canonical surface name `runtime_recovery_canonical_surface`
+- single canonical surface rule
+- only public Runtime Recovery entry surface rule
+- exactly one public entry API rule
+- no competing public Runtime Recovery surfaces rule
+- public Runtime Recovery interface ownership boundary
+- stable compatibility boundary
+- disabled Runtime implementation surface contract
+- no existing runtime flow wiring rule
+
+Package 239 must not:
+
+- Do not create multiple Runtime Recovery entry points
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- No changes to `core/runtime/runtime_supervisor_bridge.py` yet
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not wire the canonical surface into existing runtime flow
+- Do not allow existing runtime modules to import or call the canonical surface
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 240.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 239 establishes `runtime_recovery_canonical_surface` as the canonical future Runtime Recovery entry surface and does not modify, remove, import, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 239 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 240
+
+Package 240: Canonical Runtime Recovery Surface Helper
+
+Package 240 implements the disabled Canonical Runtime Recovery Surface Helper as a standalone plain-dict helper. It returns deterministic disabled/no-op surface reports and denies activation or execution attempts as data only.
+
+The helper exposes exactly one public entry API: `prepare_canonical_runtime_recovery_surface(...)`. It confirms there are no competing public Runtime Recovery surfaces, that the surface owns only the public Runtime Recovery interface, and that the public API and ownership boundary are stable compatibility boundaries.
+
+The helper is not wired into existing runtime flow. No existing runtime module may import or call it in this package.
+
+Package 240 owns:
+
+- `core/runtime/aer_runtime_recovery_canonical_surface.py`
+- `tests/test_aer_runtime_recovery_canonical_surface.py`
+- public API `prepare_canonical_runtime_recovery_surface(...)`
+- strict `__all__`
+- deterministic disabled/no-op plain dict surface report
+- exactly one public entry API
+- no competing public Runtime Recovery surfaces
+- public Runtime Recovery interface ownership boundary
+- stable compatibility boundary fields
+- activation and execution attempt denial as data only
+- single canonical surface preservation
+
+Package 240 must not:
+
+- Do not create multiple Runtime Recovery entry points
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- No changes to `core/runtime/runtime_supervisor_bridge.py` yet
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not wire the canonical surface into existing runtime flow
+- Do not allow existing runtime modules to import or call the canonical surface
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 241.
+
+## Non-mainline Issues Found
+
+- Package 239 reported existing historical Runtime Recovery bridge, executor, adapter, and integration filenames. Package 240 preserves that issue and does not modify, remove, import, or wire those historical modules.
+- Package 239 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 240 preserves that issue and does not modify unrelated files.
+
+## Package 241
+
+Package 241: Canonical Runtime Recovery Surface Report
+
+Package 241 defines the Canonical Runtime Recovery Surface Report semantics over the disabled helper. The report names the canonical surface, confirms all future Runtime Recovery entry must flow through it, and records that activation and execution attempts are denied as data only.
+
+The report confirms that the canonical surface is the ONLY public Runtime Recovery entry surface, owns only the public Runtime Recovery interface, and must remain backward compatible unless an explicit major-version contract such as `canonical_runtime_recovery_surface_v2` is introduced.
+
+Package 241 owns:
+
+- canonical surface report shape
+- disabled/no-op report semantics
+- single canonical surface confirmation
+- future entry must flow through canonical surface confirmation
+- only public Runtime Recovery entry surface confirmation
+- public Runtime Recovery interface ownership boundary confirmation
+- stable compatibility boundary confirmation
+- activation and execution denial reporting
+- no runtime side effects rule
+
+Package 241 must not:
+
+- Do not create multiple Runtime Recovery entry points
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- No changes to `core/runtime/runtime_supervisor_bridge.py` yet
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not wire the canonical surface into existing runtime flow
+- Do not allow existing runtime modules to import or call the canonical surface
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 242.
+
+## Non-mainline Issues Found
+
+- Package 239 reported existing historical Runtime Recovery bridge, executor, adapter, and integration filenames. Package 241 preserves that issue and does not modify, remove, import, or wire those historical modules.
+- Package 239 reported unrelated Package 210/Package 222 readiness-review numbering drift. Package 241 preserves that issue and does not modify unrelated files.
+
+## Package 242
+
+Package 242: Canonical Runtime Recovery Surface Readiness Review
+
+Package 242 reviews Packages 239 through 241 and confirms that the canonical Runtime Recovery surface remains exactly one disabled Runtime implementation surface, non-executing, fully gated, non-mutating, and not wired into existing runtime flow.
+
+Package 242 confirms the Canonical Runtime Recovery Surface introduced in Package 239 is the ONLY public Runtime Recovery entry surface. All future Runtime Recovery implementations, beginning with Packages 243 and later, must enter through this surface. No future package may expose another public Runtime Recovery entry API. Bridge modules, adapters, supervisors, schedulers, operators, dispatchers, watchdogs, and native runtime components may only connect to this canonical surface in future packages after the required GO reviews.
+
+Package 242 confirms the Canonical Runtime Recovery Surface owns the public Runtime Recovery interface only. It does not own recovery policy, recovery planning, recovery scheduling, recovery execution, recovery supervision, recovery state machine, recovery persistence, recovery audit, recovery journaling, recovery hook registration, recovery binding, or recovery endpoint invocation. Those capabilities remain owned by their future dedicated packages.
+
+Package 242 confirms the Canonical Runtime Recovery Surface is a stable compatibility boundary. Future packages may extend its internal implementation, but must preserve its public API and ownership boundary. Backward compatibility of the public Runtime Recovery surface must be maintained unless an explicit major-version contract, such as `canonical_runtime_recovery_surface_v2`, is introduced. No future package may silently replace, bypass, or deprecate this canonical surface. All Runtime Recovery callers must remain compatible with it.
+
+Package 242 owns:
+
+- `docs/runtime_recovery_canonical_surface_readiness_review.md`
+- `tests/test_runtime_recovery_canonical_surface_readiness_review.py`
+- readiness review over Packages 239 through 241
+- single canonical surface preservation
+- exactly one public canonical surface module
+- exactly one public entry API
+- no competing public Runtime Recovery surfaces
+- public Runtime Recovery interface ownership boundary
+- stable compatibility boundary
+- confirmation that existing runtime modules do not import or call the canonical surface
+- next package recommendation
+
+Package 242 must not:
+
+- Do not create multiple Runtime Recovery entry points
+- Do not change `core/runtime/runtime_supervisor_bridge.py`
+- No changes to `core/runtime/runtime_supervisor_bridge.py` yet
+- Do not change Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, or Watchdog
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- No persistence, audit, journal, subprocess, or filesystem mutation paths
+- Do not wire the canonical surface into existing runtime flow
+- Do not allow existing runtime modules to import or call the canonical surface
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 243.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 242 preserves those files and confirms Package 239 establishes `runtime_recovery_canonical_surface` as the canonical future Runtime Recovery entry surface without modifying, removing, importing, or wiring historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 242 preserves that unrelated numbering drift and does not modify those files.
