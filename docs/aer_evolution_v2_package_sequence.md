@@ -7249,3 +7249,56 @@ Final decision: GO. Next package: Package 252.
 
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 251 preserves those files and does not modify, remove, import, call, or wire those historical modules.
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 251 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 252
+
+Package 252: Runtime Recovery Gateway Disabled Admission
+
+Package 252 creates the first disabled Runtime Recovery Gateway / Admission layer above the existing Package 251 surface integration.
+
+The gateway accepts plain input data, calls `prepare_runtime_recovery_surface_integration(...)` as data orchestration only, and returns one deterministic plain dict gateway result. The gateway result includes disabled admission status, false execution and enablement flags, false runtime mutation and wiring flags, and the nested surface integration result preserving Request, Surface, and Response sub-results.
+
+The gateway is disabled admission data only. It does not execute Recovery, enable Recovery, register hooks, apply runtime binding, invoke endpoints, emit events, mutate runtime state, wire runtime callers, or create a second execution path.
+
+The gateway may sit above Surface Integration, but it must not become a second execution path. The gateway owns admission denial only. It does not own policy, planning, scheduling, execution, supervision, state machine, persistence, audit, journal, hook registration, binding application, endpoint invocation, or recovery execution. All future runtime automation must remain gated through this disabled gateway until a later GO review.
+
+Package 252 owns:
+
+- `core/runtime/aer_runtime_recovery_gateway.py`
+- `tests/test_aer_runtime_recovery_gateway.py`
+- `docs/runtime_recovery_gateway_disabled_admission_review.md`
+- public API `prepare_runtime_recovery_gateway(...)`
+- strict `__all__` with exactly one public API
+- disabled gateway admission data
+- deterministic plain dict gateway result
+- `gateway_status: "disabled"`
+- `admission_granted: false`
+- `surface_integration_result`
+- preservation of Request, Surface, and Response sub-results inside `surface_integration_result`
+- no runtime caller wiring confirmation
+- no second execution path confirmation
+
+Package 252 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke endpoints
+- Do not emit events
+- Do not mutate runtime state
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not modify existing Runtime callers
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, filesystem mutation paths, or real executor
+- Do not introduce another public Runtime Recovery entry point that bypasses the Canonical Surface family
+- Do not become a second execution path
+- Do not claim ownership of policy, planning, scheduling, execution, supervision, state machine, persistence, audit, journal, hook registration, binding application, endpoint invocation, or recovery execution
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 253.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 252 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 252 preserves that unrelated numbering drift and does not modify those files.
