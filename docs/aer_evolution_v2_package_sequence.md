@@ -7200,3 +7200,52 @@ Final decision: GO. Next package: Package 251.
 
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 250 preserves those files and confirms the canonical response layer is not wired into them.
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 250 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 251
+
+Package 251: Canonical Runtime Recovery Surface Integration Disabled
+
+Package 251 creates the first integrated disabled data path across the existing Canonical Runtime Recovery Request, Surface, and Response layers.
+
+The integration accepts plain input data, prepares a canonical runtime recovery request, prepares the disabled canonical runtime recovery surface result, prepares a canonical runtime recovery response, and returns one deterministic plain dict integration result with request, surface, and response sub-results.
+
+The integration is disabled data orchestration only. It does not execute Recovery, enable Recovery, register hooks, apply runtime binding, invoke binding endpoints, emit events, mutate runtime state, or wire any runtime caller.
+
+Canonical Surface remains the only public Runtime Recovery boundary. Request and Response remain compatibility artifacts. The integration does not claim ownership of policy, planning, scheduling, execution, supervision, state machine, persistence, audit, journal, binding, endpoint invocation, or hook registration.
+
+Package 251 owns:
+
+- `core/runtime/aer_runtime_recovery_surface_integration.py`
+- `tests/test_aer_runtime_recovery_surface_integration.py`
+- `docs/runtime_recovery_surface_integration_disabled_review.md`
+- public API `prepare_runtime_recovery_surface_integration(...)`
+- strict `__all__` with exactly one public API
+- disabled Request -> Surface -> Response data orchestration
+- deterministic plain dict integration result
+- request_result, surface_result, and response_result sub-results
+- no runtime caller wiring confirmation
+- no second public Runtime Recovery entry point confirmation
+
+Package 251 must not:
+
+- Do not execute Recovery
+- Do not enable Recovery
+- Do not register hooks
+- Do not apply runtime binding
+- Do not invoke binding endpoints
+- Do not emit events
+- Do not mutate runtime state
+- Do not call Scheduler, TaskRunner, Operator, Dispatcher, Supervisor, Native Runtime, Watchdog, Audit, Journal, Persistence, subprocess, filesystem mutation paths, or real executor
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Do not modify existing Runtime callers
+- Do not introduce another public Runtime Recovery entry point
+- Do not claim ownership of policy, planning, scheduling, execution, supervision, state machine, persistence, audit, journal, binding, endpoint invocation, or hook registration
+- Long validation must not be run by Codex
+- Run focused seal tests only
+
+Final decision: GO. Next package: Package 252.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 251 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 251 preserves that unrelated numbering drift and does not modify those files.
