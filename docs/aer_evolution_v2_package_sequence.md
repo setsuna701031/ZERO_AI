@@ -13823,3 +13823,603 @@ Final decision: GO for disabled admission preparation implementation bundle defi
 ## Non-mainline Issues Found
 
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 385-392 definitions must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
+## Package 393
+
+Package 393: Recovery Controlled Activation Admission Decision Contract Definition
+
+Package 393 defines the future Recovery Controlled Activation Admission Decision v1 contract package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- define the next disabled boundary after Admission Preparation
+- reserve the Admission Decision contract surface for a later implementation bundle
+- keep admission decision separate from authorization, activation execution, recovery execution, runtime wiring, gateway mutation, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+- preserve the disabled deterministic data-only posture
+
+Future implementation expected files:
+
+- `docs/contracts/runtime/recovery_controlled_activation_admission_decision_v1.md`
+
+Future contract must define:
+
+- schema name: `aer.runtime.recovery.controlled_activation_admission_decision.v1`
+- disabled-by-default admission decision shape
+- fixed required decision/status/eligibility fields
+- deterministic default result
+- explicit non-authorization boundary
+- explicit non-execution boundary
+- explicit runtime mutation boundary
+- compatibility boundary for future admission decision packages
+
+Disabled deterministic data-only requirement:
+
+- disabled by default
+- deterministic
+- data-only
+- decision/status/eligibility information only
+- no authorization effect
+- no activation effect
+- no execution effect
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement admission decision behavior in this package
+- do not create contract files in this package
+- do not make real decisions
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not mutate runtime state
+- do not modify scheduler
+- do not modify dispatcher
+- do not modify executor
+- do not modify gateway
+- do not connect runtime wiring
+- do not call historical recovery bridge, executor, adapter, integration, scheduler, dispatcher, or gateway modules
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must include focused validation for the contract
+- no full pytest, regression runner, or long validation is authorized
+
+Final decision: GO for admission decision contract definition only. No decision implementation is complete. Next package: Package 394.
+
+## Package 394
+
+Package 394: Recovery Controlled Activation Admission Decision Policy Stub Definition
+
+Package 394 defines the future Recovery Controlled Activation Admission Decision Policy stub package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve a disabled policy API for future admission decision
+- require future policy results to expose decision/status/eligibility information only
+- require all future policy output to be fixed dictionaries
+- preserve separation between admission decision policy and runtime action
+
+Future implementation expected files:
+
+- `core/runtime/recovery_controlled_activation_admission_decision_policy.py`
+
+Future policy result must remain:
+
+- disabled
+- reserved
+- deterministic
+- data-only
+- fixed-shape
+- no-op
+- side-effect free
+- non-authorizing
+- non-executing
+
+Disabled deterministic data-only requirement:
+
+- fixed dictionary output only
+- no authorization effect
+- no activation effect
+- no execution effect
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement the policy stub in this package
+- do not create runtime files in this package
+- do not call admission preparation modules
+- do not call activation apply, commit, grant, or permit modules
+- do not call authorization modules
+- do not call activation gates
+- do not call recovery executor
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not mutate runtime state
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify the policy returns only fixed disabled dictionaries
+- later implementation bundle must verify no forbidden imports or runtime wiring exist
+
+Final decision: GO for admission decision policy stub definition only. No decision implementation is complete. Next package: Package 395.
+
+## Package 395
+
+Package 395: Recovery Controlled Activation Admission Decision Projection Stub Definition
+
+Package 395 defines the future Recovery Controlled Activation Admission Decision Projection stub package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve a disabled projection API for future admission decision status
+- require future projections to expose fixed decision/status/eligibility fields only
+- require projections to avoid passthrough of unknown upstream fields
+- preserve separation between projection and runtime action
+
+Future implementation expected files:
+
+- `core/runtime/recovery_controlled_activation_admission_decision_projection.py`
+
+Future projection result must remain:
+
+- disabled
+- reserved
+- deterministic
+- data-only
+- fixed-shape
+- no-op
+- side-effect free
+- no runtime objects exposed
+
+Disabled deterministic data-only requirement:
+
+- fixed dictionary output only
+- decision/status/eligibility information only
+- no authorization effect
+- no activation effect
+- no execution effect
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement the projection stub in this package
+- do not create runtime files in this package
+- do not pass through unknown upstream fields
+- do not expose runtime execution objects
+- do not approve admission
+- do not authorize activation
+- do not execute recovery
+- do not mutate runtime state
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify projection output has only fixed public fields
+- later implementation bundle must verify projection remains disabled and non-mutating
+
+Final decision: GO for admission decision projection stub definition only. No decision implementation is complete. Next package: Package 396.
+
+## Package 396
+
+Package 396: Recovery Controlled Activation Admission Decision Audit Stub Definition
+
+Package 396 defines the future Recovery Controlled Activation Admission Decision Audit stub package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve a data-only audit summary for future admission decision
+- require future audit output to state that no admission decision occurred
+- require future audit output to state that no authorization, activation, execution, recovery enablement, or runtime mutation occurred
+- preserve separation between audit summary and audit-log persistence
+
+Future implementation expected files:
+
+- `core/runtime/recovery_controlled_activation_admission_decision_audit.py`
+
+Future audit result must remain:
+
+- disabled
+- reserved or stubbed
+- deterministic
+- data-only
+- fixed-shape
+- no-op
+- side-effect free
+- non-persistent
+
+Disabled deterministic data-only requirement:
+
+- fixed dictionary output only
+- audit/status information only
+- no authorization effect
+- no activation effect
+- no execution effect
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement the audit stub in this package
+- do not create runtime files in this package
+- do not write audit logs
+- do not write files
+- do not write checkpoints
+- do not restore checkpoints
+- do not make real admission decisions
+- do not approve admission
+- do not authorize activation
+- do not execute recovery
+- do not mutate runtime state
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify audit output is data-only and confirms no decision/action occurred
+- later implementation bundle must verify no audit-log writes or persistence are introduced
+
+Final decision: GO for admission decision audit stub definition only. No decision implementation is complete. Next package: Package 397.
+
+## Package 397
+
+Package 397: Recovery Controlled Activation Admission Decision Boundary Seal Definition
+
+Package 397 defines the future Recovery Controlled Activation Admission Decision Boundary Seal package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve a boundary seal document for the future admission decision layer
+- require explicit rules that admission decision is not authorization, activation execution, recovery execution, gateway mutation, scheduler wiring, dispatcher wiring, executor wiring, or runtime state mutation
+- require GO / NO-GO criteria for admission decision isolation
+
+Future implementation expected files:
+
+- `docs/runtime_recovery_controlled_activation_admission_decision_boundary_seal.md`
+
+Future boundary seal must state:
+
+- admission decision cannot authorize activation
+- admission decision cannot activate recovery
+- admission decision cannot execute recovery
+- admission decision cannot mutate runtime state
+- admission decision cannot wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- admission decision remains disabled deterministic data-only
+
+Disabled deterministic data-only requirement:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+- no decision implementation
+
+Forbidden scope:
+
+- do not create the boundary seal document in this package
+- do not modify runtime code
+- do not add runtime behavior
+- do not approve real admission decision
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not weaken previous disabled guards
+- do not modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify boundary seal text exists and preserves disabled isolation
+- later implementation bundle must verify no runtime code was modified by the seal package
+
+Final decision: GO for admission decision boundary seal definition only. No decision implementation is complete. Next package: Package 398.
+
+## Package 398
+
+Package 398: Recovery Controlled Activation Admission Decision Readiness Review Definition
+
+Package 398 defines the future Recovery Controlled Activation Admission Decision Readiness Review package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve a readiness review document for the future admission decision layer
+- require review of contract, policy, projection, audit, disabled-by-default posture, and forbidden runtime wiring
+- require an authorization blocker list and future admission decision prerequisites
+- require a GO / NO-GO decision for disabled admission decision layer only
+
+Future implementation expected files:
+
+- `docs/runtime_recovery_controlled_activation_admission_decision_readiness_review.md`
+
+Future readiness review must state:
+
+- admission decision layer is ready only as a disabled surface
+- real admission decision is not approved
+- real admission is not approved
+- real authorization is not approved
+- real activation is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Disabled deterministic data-only requirement:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+- no decision implementation
+
+Forbidden scope:
+
+- do not create the readiness review document in this package
+- do not modify runtime code
+- do not add runtime behavior
+- do not approve real admission decision
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not weaken previous disabled guards
+- do not modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify readiness review text exists and rejects real admission decision, authorization, activation, and execution
+- later implementation bundle must verify no runtime behavior was introduced
+
+Final decision: GO for admission decision readiness review definition only. No decision implementation is complete. Next package: Package 399.
+
+## Package 399
+
+Package 399: Recovery Controlled Activation Admission Decision GO Review Definition
+
+Package 399 defines the future Recovery Controlled Activation Admission Decision GO Review package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve a GO review document for Packages 393-400 readiness
+- require explicit approval only for a disabled admission decision layer
+- require explicit rejection of real admission decision, admission, authorization, activation, recovery execution, runtime wiring, and runtime state mutation
+- require explicit statement that Recovery Runtime remains disabled
+
+Future implementation expected files:
+
+- `docs/runtime_recovery_controlled_activation_admission_decision_go_review.md`
+
+Future GO review must state:
+
+- GO means disabled admission decision layer may exist
+- GO means deterministic data-only APIs may exist
+- GO means package sequence may proceed to Package 400 milestone seal
+- GO does not mean admission decision may occur
+- GO does not mean admission may occur
+- GO does not mean authorization may take effect
+- GO does not mean activation may run
+- GO does not mean recovery may execute
+- GO does not mean scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or runtime wiring may be connected
+- GO does not mean runtime state may mutate
+
+Disabled deterministic data-only requirement:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+- no decision implementation
+
+Forbidden scope:
+
+- do not create the GO review document in this package
+- do not modify runtime code
+- do not add runtime behavior
+- do not approve real admission decision
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not weaken previous disabled guards
+- do not modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify GO review text exists and approves only disabled data-only surfaces
+- later implementation bundle must verify Recovery Runtime remains disabled
+
+Final decision: GO for admission decision GO review definition only. No decision implementation is complete. Next package: Package 400.
+
+## Package 400
+
+Package 400: Recovery Controlled Activation Admission Decision Milestone Seal Definition
+
+Package 400 defines the future Recovery Controlled Activation Admission Decision Milestone Seal package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines Admission Decision planning. It does not implement decision behavior.
+
+Purpose:
+
+- reserve the milestone seal for Packages 393-400
+- define the completion map expected after a future implementation bundle
+- require confirmation that all future APIs are disabled/data-only
+- require confirmation that no admission decision, authorization, activation, recovery execution, runtime mutation, or runtime wiring exists
+- require explicit instruction that the next package may proceed only with explicit package definition
+
+Future implementation expected files:
+
+- `docs/recovery_controlled_activation_admission_decision_milestone_seal.md`
+- `tests/test_recovery_runtime_controlled_activation_admission_decision_bundle.py`
+- `docs/contracts/runtime/inventory.md` update for the future implemented surface
+
+Future milestone seal must confirm:
+
+- all new APIs are disabled/data-only
+- admission decision cannot occur
+- admission cannot occur
+- authorization cannot take effect
+- activation cannot occur
+- recovery execution does not exist
+- runtime mutation does not exist
+- scheduler wiring does not exist
+- dispatcher wiring does not exist
+- executor wiring does not exist
+- gateway mutation does not exist
+- historical recovery bridge, executor, adapter, and integration modules remain unconnected
+
+Disabled deterministic data-only requirement:
+
+- documentation and future focused test only
+- disabled
+- deterministic
+- data-only
+- fixed dictionary runtime-facing outputs only in future implementation
+- no authorization effect
+- no execution effect
+- no recovery enablement
+- no runtime mutation
+- no decision implementation in this package
+
+Forbidden scope:
+
+- do not create milestone, test, contract, runtime, or inventory files in this package
+- do not modify runtime behavior
+- do not approve real admission decision
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not mutate runtime state
+- do not wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- do not start workers
+- do not create threads
+- do not create timers
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not invoke endpoints
+- do not register hooks
+- do not enable feature flags
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must run only the focused admission decision bundle test
+- no full pytest, regression runner, or long validation is authorized
+
+Future packages own:
+
+- Package 401 only after explicit package definition exists
+- any real admission decision behavior only after a dedicated future package authorizes it
+- any real authorization behavior only after a dedicated future package authorizes it
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled admission decision roadmap definition only. Packages 393-400 are defined but not implemented. Next package: Package 401 only after explicit package definition exists.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 393-400 definitions must preserve those files and must not modify, remove, import, call, or wire those historical modules.
