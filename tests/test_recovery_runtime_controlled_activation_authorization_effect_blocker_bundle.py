@@ -4,6 +4,9 @@ from pathlib import Path
 CONTRACT_SOURCE = Path(
     "core/runtime/recovery_controlled_activation_authorization_effect_blocker_contract.py"
 )
+CONTRACT_SPEC = Path(
+    "docs/contracts/runtime/recovery_controlled_activation_authorization_effect_blocker_v1.md"
+)
 POLICY_SOURCE = Path(
     "core/runtime/recovery_controlled_activation_authorization_effect_blocker_policy.py"
 )
@@ -107,8 +110,9 @@ def test_packages_425_to_432_are_explicitly_defined_and_authorized():
     assert "Package 425-432 definitions intentionally allow only a future implementation bundle" in text
 
 
-def test_expected_files_exist_without_unlisted_contract_spec():
+def test_expected_files_exist_with_contract_spec_closure():
     for path in (
+        CONTRACT_SPEC,
         CONTRACT_SOURCE,
         POLICY_SOURCE,
         PROJECTION_SOURCE,
@@ -120,9 +124,18 @@ def test_expected_files_exist_without_unlisted_contract_spec():
     ):
         assert path.exists()
 
-    assert not Path(
-        "docs/contracts/runtime/recovery_controlled_activation_authorization_effect_blocker_v1.md"
-    ).exists()
+    text = _text(CONTRACT_SPEC)
+    for field in EXPECTED_CONTRACT:
+        assert field in text
+    assert "disabled by default" in text
+    assert "No Authorization Grants" in text
+    assert "No Runtime Mutation" in text
+    assert "No Recovery Execution" in text
+    assert "No Activation Side Effects" in text
+    assert "Policy is observational only." in text
+    assert "Projection is observational only." in text
+    assert "Audit is observational only." in text
+    assert "Future activation requires a separate GO package." in text
 
 
 def test_runtime_modules_import_and_expose_exact_all():
@@ -228,7 +241,14 @@ def test_inventory_and_docs_contain_disabled_authorization_effect_blocker_milest
     milestone = _text(MILESTONE)
 
     assert "Runtime Recovery Controlled Activation Authorization Effect Blocker" in inventory
-    assert "TBD" in inventory
+    assert "recovery_controlled_activation_authorization_effect_blocker_v1" in inventory
+    blocker_row = next(
+        line
+        for line in inventory.splitlines()
+        if "Runtime Recovery Controlled Activation Authorization Effect Blocker" in line
+    )
+    assert "TBD" not in blocker_row
+    assert "Missing Spec" not in blocker_row
     assert "Authorization effect blocker cannot make authorization effective." in boundary
     assert "Authorization effect blocker cannot mutate runtime state." in boundary
     assert (
