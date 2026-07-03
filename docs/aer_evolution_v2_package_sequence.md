@@ -10008,3 +10008,451 @@ Final decision: GO for disabled controlled activation decision milestone. Next p
 - Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 329-336 scope unless a future explicit package defines it.
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 329-336 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
 
+## Package 337
+
+Package 337: Recovery Controlled Activation Authorization Contract
+
+Package 337 defines the contract for a disabled Recovery Controlled Activation Authorization layer after the controlled activation decision milestone.
+
+Contract/specification only.
+
+Package 337 owns:
+
+- `docs/contracts/runtime/recovery_controlled_activation_authorization_v1.md`
+- schema name `aer.runtime.recovery.controlled_activation.authorization.v1`
+- authorization contract shape for a future controlled activation authorization result
+- required fields:
+  - `enabled`
+  - `authorization_status`
+  - `authorization_version`
+  - `authorization_allowed`
+  - `activation_allowed`
+  - `execution_allowed`
+  - `recovery_enabled`
+  - `runtime_state_mutated`
+  - `reason`
+  - `metadata`
+- disabled-by-default authorization values:
+  - `enabled: false`
+  - `authorization_status: reserved`
+  - `authorization_version: v1_reserved`
+  - `authorization_allowed: false`
+  - `activation_allowed: false`
+  - `execution_allowed: false`
+  - `recovery_enabled: false`
+  - `runtime_state_mutated: false`
+  - `reason: future_package`
+- explicit boundary that authorization is not activation, execution, scheduling, dispatch, gateway mutation, recovery execution, or runtime mutation
+- compatibility with Packages 329-336 decision outputs without importing or calling their runtime modules
+
+Package 337 must not:
+
+- add runtime implementation beyond the contract spec
+- modify existing runtime modules
+- approve real activation
+- execute recovery
+- mutate runtime state
+- import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 338 authorization policy stub
+- Package 339 authorization projection stub
+- Package 340 authorization audit stub
+- Package 341 authorization boundary seal
+- Package 342 authorization readiness review
+- Package 343 authorization GO review
+- Package 344 authorization milestone seal
+- any real authorization behavior only after a dedicated future package explicitly authorizes it
+
+Final decision: GO for contract-only disabled authorization surface. Next package: Package 338.
+
+## Package 338
+
+Package 338: Recovery Controlled Activation Authorization Policy Stub
+
+Package 338 adds a deterministic disabled policy stub for the Recovery Controlled Activation Authorization layer.
+
+Implementation is stub/data-only.
+
+Package 338 owns:
+
+- `core/runtime/recovery_controlled_activation_authorization_policy.py`
+- public disabled authorization policy API
+- deterministic authorization metadata matching `recovery_controlled_activation_authorization_v1.md`
+- no imports from recovery executor, scheduler, dispatcher, gateway, bridge, adapter, integration, or historical recovery modules
+- no runtime mutation
+- no activation
+- no execution
+
+Expected disabled result shape:
+
+```python
+{
+    "enabled": False,
+    "authorization_status": "reserved",
+    "authorization_version": "v1_reserved",
+    "authorization_allowed": False,
+    "activation_allowed": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+    "reason": "future_package",
+    "metadata": {},
+}
+```
+
+Package 338 must not:
+
+- authorize real activation
+- execute recovery
+- mutate runtime state
+- call or import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- write files
+- write checkpoints
+- create threads
+- create timers
+- start background workers
+- register hooks
+- enable feature flags
+- modify previous packages
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 339 authorization projection stub
+- Package 340 authorization audit stub
+- any real authorization behavior only after a dedicated future package explicitly authorizes it
+
+Final decision: GO for disabled authorization policy stub only. Next package: Package 339.
+
+## Package 339
+
+Package 339: Recovery Controlled Activation Authorization Projection Stub
+
+Package 339 adds a deterministic projection surface for the disabled Recovery Controlled Activation Authorization layer.
+
+Implementation is projection/data-only.
+
+Package 339 owns:
+
+- `core/runtime/recovery_controlled_activation_authorization_projection.py`
+- projection of authorization status into a stable public summary
+- disabled authorization summary fields:
+  - `enabled`
+  - `authorization_status`
+  - `authorization_allowed`
+  - `activation_allowed`
+  - `execution_allowed`
+  - `recovery_enabled`
+  - `runtime_state_mutated`
+  - `reason`
+- deterministic behavior for malformed or missing policy data
+- no runtime wiring
+- no execution path
+
+Package 339 must not:
+
+- authorize real activation
+- execute recovery
+- mutate runtime state
+- call or import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- expose scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring vocabulary as public authorization behavior
+- write files
+- write checkpoints
+- create threads
+- create timers
+- start background workers
+- register hooks
+- enable feature flags
+- modify previous packages
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 340 authorization audit stub
+- Package 341 authorization boundary seal
+- any real authorization behavior only after a dedicated future package explicitly authorizes it
+
+Final decision: GO for disabled authorization projection stub only. Next package: Package 340.
+
+## Package 340
+
+Package 340: Recovery Controlled Activation Authorization Audit Stub
+
+Package 340 adds a deterministic data-only audit surface for reviewing the disabled Recovery Controlled Activation Authorization layer.
+
+Implementation is audit/data-only.
+
+Package 340 owns:
+
+- `core/runtime/recovery_controlled_activation_authorization_audit.py`
+- deterministic audit metadata for authorization review
+- explicit audit statements that:
+  - authorization did not occur
+  - activation did not occur
+  - recovery execution did not occur
+  - runtime state was not mutated
+  - scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and historical recovery modules were not wired
+- no filesystem writes
+- no audit log writes
+
+Package 340 must not:
+
+- authorize real activation
+- execute recovery
+- mutate runtime state
+- write audit files
+- append event logs
+- write checkpoints
+- call or import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- create threads
+- create timers
+- start background workers
+- register hooks
+- enable feature flags
+- modify previous packages
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 341 authorization boundary seal
+- Package 342 authorization readiness review
+- any real authorization behavior only after a dedicated future package explicitly authorizes it
+
+Final decision: GO for disabled authorization audit stub only. Next package: Package 341.
+
+## Package 341
+
+Package 341: Recovery Controlled Activation Authorization Boundary Seal
+
+Package 341 documents and seals the boundary of the disabled Recovery Controlled Activation Authorization layer.
+
+Seal/documentation only.
+
+Package 341 owns:
+
+- `docs/runtime_recovery_controlled_activation_authorization_boundary_seal.md`
+- boundary statement that authorization is not activation
+- boundary statement that authorization is not execution
+- boundary statement that authorization is not recovery runtime enablement
+- boundary statement that authorization is not scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring behavior
+- boundary statement that authorization cannot mutate runtime state
+- boundary statement that authorization cannot connect historical recovery modules
+- GO / NO-GO rule for the authorization layer
+
+GO means:
+
+- disabled authorization contract exists
+- disabled authorization policy, projection, and audit stubs may exist
+- all outputs remain deterministic and data-only
+- package sequence may proceed to Package 342 readiness review
+
+NO-GO means:
+
+- any real activation path exists
+- any recovery execution path exists
+- any runtime state mutation exists
+- any scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring path is introduced
+- any historical recovery module is imported, called, connected, or mutated by this milestone
+
+Package 341 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 342 authorization readiness review
+- Package 343 authorization GO review
+- any real authorization behavior only after a dedicated future package explicitly authorizes it
+
+Final decision: GO for disabled authorization boundary seal only. Next package: Package 342.
+
+## Package 342
+
+Package 342: Recovery Controlled Activation Authorization Readiness Review
+
+Package 342 reviews whether the disabled Recovery Controlled Activation Authorization layer is ready to exist as an isolated data-only surface.
+
+Review/documentation only.
+
+Package 342 owns:
+
+- `docs/runtime_recovery_controlled_activation_authorization_readiness_review.md`
+- contract readiness review
+- policy stub readiness review
+- projection stub readiness review
+- audit stub readiness review
+- disabled-by-default enforcement review
+- forbidden runtime wiring review
+- compatibility review with Packages 329-336 decision layer
+- explicit statement that real authorization is not approved
+- explicit statement that real activation is not approved
+- explicit statement that recovery runtime remains disabled
+
+Readiness checks:
+
+- authorization contract exists
+- policy stub returns disabled metadata
+- projection stub preserves disabled metadata
+- audit stub records that no authorization, activation, execution, or runtime mutation occurred
+- no scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules are imported or called
+- no feature flags are enabled
+- no runtime state is mutated
+
+Package 342 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real authorization
+- approve real activation
+- approve recovery execution
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 343 authorization GO review
+- Package 344 authorization milestone seal
+- any real authorization behavior only after a dedicated future package explicitly authorizes it
+
+Final decision: GO for disabled authorization readiness only. Next package: Package 343.
+
+## Package 343
+
+Package 343: Recovery Controlled Activation Authorization GO Review
+
+Package 343 records the GO / NO-GO result for the disabled Recovery Controlled Activation Authorization layer.
+
+GO review/documentation only.
+
+Package 343 owns:
+
+- `docs/runtime_recovery_controlled_activation_authorization_go_review.md`
+- final GO / NO-GO decision for Packages 337-344 readiness
+- explicit approval only for disabled authorization layer
+- explicit rejection of real authorization in this milestone
+- explicit rejection of real activation in this milestone
+- explicit rejection of scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring in this milestone
+- explicit statement that Recovery Runtime remains disabled
+
+GO means:
+
+- disabled authorization layer may exist
+- deterministic data-only APIs may exist
+- package sequence may proceed to Package 344 milestone seal
+
+GO does not mean:
+
+- authorization may allow activation
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 343 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real authorization
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 344 authorization milestone seal
+- any future activation package only after explicit package definition
+
+Final decision: GO for disabled authorization layer only. Next package: Package 344.
+
+## Package 344
+
+Package 344: Recovery Controlled Activation Authorization Milestone Seal
+
+Package 344 seals Packages 337-344 as the Recovery Controlled Activation Authorization milestone.
+
+Seal/documentation only.
+
+Package 344 owns:
+
+- `docs/recovery_controlled_activation_authorization_milestone_seal.md`
+- Packages 337-344 completion map
+- confirmation that all new APIs are disabled/data-only
+- confirmation that authorization cannot allow activation
+- confirmation that no recovery execution exists
+- confirmation that no runtime mutation exists
+- confirmation that no scheduler wiring exists
+- confirmation that no dispatcher wiring exists
+- confirmation that no executor wiring exists
+- confirmation that no gateway mutation exists
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- explicit instruction that the next package may proceed only with explicit package definition
+
+Milestone test:
+
+- `tests/test_recovery_runtime_controlled_activation_authorization_bundle.py`
+
+Package 344 must not:
+
+- modify runtime behavior
+- approve real authorization
+- approve real activation
+- execute recovery
+- mutate runtime state
+- wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 345 only after explicit package definition exists
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled controlled activation authorization milestone. Next package: Package 345.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/test changes remain outside Packages 337-344 scope and must not be modified by this milestone.
+- Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 337-344 scope unless a future explicit package defines it.
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 337-344 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
