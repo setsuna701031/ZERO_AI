@@ -22946,3 +22946,33 @@ Final decision: GO for Runtime Launch Contract Boundary documentation and focuse
 ## Non-mainline Issues Found
 
 - None for Packages 577-584. Existing core/runtime code, scheduler behavior, executor behavior, executable launchers, main.py files, start scripts, CLI execution commands, service connections, runtime loops, recovery activation, mutation authority, wiring, and runtime behavior paths remain outside this documentation/test package and must not be modified here.
+
+## Packages 585-592 — Runtime Activation Gate Boundary
+
+Package 585: Runtime Activation Gate Boundary Start
+
+Package 592: Runtime Activation Gate Boundary Seal
+
+Scope: Documentation + focused tests only.
+
+Purpose: Define the future activation gate boundary before any runtime can wake. This package does not add runtime activation, scheduler control, executor control, recovery activation, launcher behavior, service behavior, CLI execution, or runtime mutation.
+
+Added:
+- `docs/runtime_activation_gate_boundary.md`
+- `docs/runtime_activation_gate_gap_inventory.md`
+- `docs/runtime_activation_gate_readiness_review.md`
+- `tests/test_runtime_activation_gate_boundary.py`
+
+Validation:
+- `py -m pytest tests/test_runtime_activation_gate_boundary.py -q`
+
+Expected environment note:
+- If Windows `py` launcher is unavailable, run only the same focused test with the available bundled Python.
+
+Result:
+- GO for boundary definition only.
+- Runtime activation remains disabled.
+- Recovery activation remains disabled.
+- Scheduler ownership remains unchanged.
+- Executor ownership remains unchanged.
+- Runtime mutation remains forbidden.
