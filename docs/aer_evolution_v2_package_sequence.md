@@ -18616,3 +18616,297 @@ Final decision: GO for runtime mainline resume anchor. Recovery phase is closed,
 ## Non-mainline Issues Found
 
 - None for Packages 465-472. Existing runtime modules, scheduler, executor, activation, recovery execution, and mutation behavior remain outside this resume anchor package and must not be modified here.
+
+## Package 473
+
+Package 473: Runtime Integration Inventory Refresh Definition
+
+Package 473 creates the updated inventory of runtime integration surfaces after recovery phase closure and runtime mainline resume.
+
+Analysis/report only.
+
+Purpose:
+
+- create `docs/runtime_mainline_integration_inventory.md`
+- document dispatcher, executor, scheduler, supervisor, operator, session, recovery, lifecycle, and observability surfaces
+- record owner, current status, integration state, allowed next actions, and forbidden ownership violations for each surface
+- mark recovery as closed/disabled
+
+Expected files:
+
+- `docs/runtime_mainline_integration_inventory.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no runtime behavior changes
+- no new runtime modules
+- no scheduler edits
+- no executor edits
+- no activation changes
+- no wiring changes
+
+Validation expectation:
+
+- run only the focused runtime mainline integration inventory test
+- do not run full suite, nightly, regression, or long validation
+
+Final decision: GO for runtime integration inventory refresh only. Next package: Package 474.
+
+## Package 474
+
+Package 474: Runtime Mainline Surface Map Definition
+
+Package 474 maps runtime mainline integration surfaces after recovery phase closure.
+
+Analysis/report only.
+
+Purpose:
+
+- create `docs/runtime_mainline_surface_map.md`
+- document ownership boundary and integration boundary for each required surface
+- preserve recovery as closed/disabled
+- document ownership boundary rules
+
+Expected files:
+
+- `docs/runtime_mainline_surface_map.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no runtime behavior changes
+- no new runtime modules
+- no scheduler edits
+- no executor edits
+- no activation changes
+- no wiring changes
+
+Validation expectation:
+
+- focused test must verify all required surfaces and ownership boundaries
+
+Final decision: GO for runtime mainline surface map only. Next package: Package 475.
+
+## Package 475
+
+Package 475: Runtime Mainline Next Phase Plan Definition
+
+Package 475 defines the next runtime mainline phase plan after inventory refresh.
+
+Analysis/report only.
+
+Purpose:
+
+- create `docs/runtime_mainline_next_phase_plan.md`
+- document next allowed areas: runtime integration cleanup, runtime lifecycle completion, runtime observability, runtime operator interface, and runtime deployment readiness
+- keep recovery closed/disabled
+- document forbidden runtime changes
+
+Expected files:
+
+- `docs/runtime_mainline_next_phase_plan.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no runtime behavior changes
+- no new runtime modules
+- no scheduler edits
+- no executor edits
+- no activation changes
+- no wiring changes
+
+Validation expectation:
+
+- focused test must verify next phase plan exists and lists allowed areas
+
+Final decision: GO for runtime mainline next phase planning only. Next package: Package 476.
+
+## Package 476
+
+Package 476: Runtime Integration Inventory Surface Coverage Definition
+
+Package 476 defines required surface coverage for the runtime integration inventory.
+
+Analysis/report only.
+
+Purpose:
+
+- require dispatcher surface entry
+- require executor surface entry
+- require scheduler surface entry
+- require supervisor surface entry
+- require operator surface entry
+- require session surface entry
+- require recovery closed/disabled surface entry
+- require lifecycle surface entry
+- require observability surface entry
+
+Expected files:
+
+- `docs/runtime_mainline_integration_inventory.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no runtime behavior changes
+- no scheduler edits
+- no executor edits
+- no activation changes
+- no wiring changes
+
+Validation expectation:
+
+- focused test must verify all required surfaces are listed
+
+Final decision: GO for runtime integration inventory surface coverage only. Next package: Package 477.
+
+## Package 477
+
+Package 477: Runtime Integration Ownership Boundary Definition
+
+Package 477 defines ownership boundary reporting for runtime integration surfaces.
+
+Analysis/report only.
+
+Purpose:
+
+- require owner field for each surface
+- require forbidden ownership violations for each surface
+- document ownership boundary rules
+- prevent cross-surface ownership violations from being implied by inventory refresh
+
+Expected files:
+
+- `docs/runtime_mainline_integration_inventory.md`
+- `docs/runtime_mainline_surface_map.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no runtime behavior changes
+- no scheduler ownership changes
+- no executor ownership changes
+- no activation ownership changes
+- no recovery ownership changes
+
+Validation expectation:
+
+- focused test must verify ownership boundaries are documented
+
+Final decision: GO for runtime integration ownership boundary reporting only. Next package: Package 478.
+
+## Package 478
+
+Package 478: Runtime Integration Closed Recovery Status Definition
+
+Package 478 defines closed/disabled recovery status reporting in the integration inventory.
+
+Analysis/report only.
+
+Purpose:
+
+- mark recovery as closed/disabled
+- state recovery execution remains disabled
+- state autonomous activation remains disabled
+- state scheduler behavior remains unchanged
+- state executor behavior remains unchanged
+- state runtime mutation paths remain unchanged
+
+Expected files:
+
+- `docs/runtime_mainline_integration_inventory.md`
+- `docs/runtime_mainline_surface_map.md`
+- `docs/runtime_mainline_next_phase_plan.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no recovery execution
+- no autonomous activation
+- no scheduler edits
+- no executor edits
+- no mutation path changes
+
+Validation expectation:
+
+- focused test must verify recovery is marked closed/disabled
+
+Final decision: GO for closed recovery status reporting only. Next package: Package 479.
+
+## Package 479
+
+Package 479: Runtime Integration Inventory Focused Test Definition
+
+Package 479 defines the focused test for the runtime integration inventory refresh.
+
+Analysis/report test only.
+
+Purpose:
+
+- add `tests/test_runtime_mainline_integration_inventory.py`
+- verify inventory exists
+- verify all required surfaces are listed
+- verify recovery is marked closed/disabled
+- verify ownership boundaries are documented
+- verify next phase plan exists
+
+Expected files:
+
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- do not add runtime behavior tests
+- do not execute scheduler, executor, activation, recovery, wiring, or mutation paths
+- do not run full suite, nightly, regression, or long validation
+
+Validation expectation:
+
+- run only `py -m pytest tests/test_runtime_mainline_integration_inventory.py -q`
+
+Final decision: GO for focused runtime integration inventory test only. Next package: Package 480.
+
+## Package 480
+
+Package 480: Runtime Integration Inventory Refresh Milestone Seal
+
+Package 480 seals Packages 473-480 as the Runtime Integration Inventory Refresh bundle.
+
+Analysis/report only.
+
+Purpose:
+
+- seal updated inventory of runtime integration surfaces
+- confirm dispatcher, executor, scheduler, supervisor, operator, session, recovery, lifecycle, and observability are documented
+- confirm recovery is marked closed/disabled
+- confirm ownership boundaries are documented
+- confirm next phase plan exists
+
+Expected files:
+
+- `docs/runtime_mainline_integration_inventory.md`
+- `docs/runtime_mainline_surface_map.md`
+- `docs/runtime_mainline_next_phase_plan.md`
+- `tests/test_runtime_mainline_integration_inventory.py`
+
+Forbidden scope:
+
+- no runtime behavior changes
+- no new runtime modules
+- no scheduler edits
+- no executor edits
+- no activation changes
+- no wiring changes
+
+Validation expectation:
+
+- run only `py -m pytest tests/test_runtime_mainline_integration_inventory.py -q`
+- do not run full suite, nightly, regression, or long validation
+
+Final decision: GO for runtime integration inventory refresh. Runtime mainline inventory is updated, recovery remains closed/disabled, and next phase planning may continue within runtime ownership boundaries. Next package requires explicit package definition.
+
+## Non-mainline Issues Found
+
+- None for Packages 473-480. Existing runtime modules, scheduler, executor, activation, recovery execution, and wiring behavior remain outside this analysis/report package and must not be modified here.
