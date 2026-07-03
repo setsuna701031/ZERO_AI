@@ -10456,3 +10456,529 @@ Final decision: GO for disabled controlled activation authorization milestone. N
 - Existing uncommitted gateway/test changes remain outside Packages 337-344 scope and must not be modified by this milestone.
 - Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 337-344 scope unless a future explicit package defines it.
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 337-344 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
+## Package 345
+
+Package 345: Recovery Controlled Activation Permit Contract
+
+Package 345 defines the Recovery Controlled Activation Permit v1 contract after the disabled authorization milestone.
+
+Contract/specification only.
+
+Package 345 owns:
+
+- `docs/contracts/runtime/recovery_controlled_activation_permit_v1.md`
+- controlled activation permit schema name: `aer.runtime.recovery.controlled_activation_permit.v1`
+- disabled-by-default permit shape
+- fixed required permit fields
+- permit status vocabulary
+- authorization source vocabulary
+- activation permission vocabulary
+- execution permission vocabulary
+- recovery enablement vocabulary
+- runtime mutation boundary vocabulary
+- deterministic default permit result
+- compatibility boundary for future controlled activation packages
+- explicit separation between activation permit, authorization, activation execution, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+
+Required permit fields:
+
+- `enabled`
+- `permit_status`
+- `permit_version`
+- `authorization_status`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+- `metadata`
+
+Default permit values:
+
+- `enabled: false`
+- `permit_status: reserved`
+- `permit_version: v1_reserved`
+- `authorization_status: disabled`
+- `activation_allowed: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+- `reason: future_package`
+- `metadata: {}`
+
+Package 345 must not:
+
+- add runtime behavior
+- add activation behavior
+- approve real authorization
+- approve real activation
+- issue a real permit
+- execute recovery
+- mutate runtime state
+- modify scheduler wiring
+- modify dispatcher wiring
+- modify executor wiring
+- modify gateway behavior
+- connect historical recovery bridge modules
+- connect historical recovery executor modules
+- connect historical recovery adapter modules
+- connect historical recovery integration modules
+- import runtime implementation modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 346 permit policy stub
+- any real permit grant behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled permit contract only. Next package: Package 346.
+
+## Package 346
+
+Package 346: Recovery Controlled Activation Permit Policy Stub
+
+Package 346 creates `core/runtime/recovery_controlled_activation_permit_policy.py`.
+
+Runtime stub/data-only helper only.
+
+Public function: `prepare_recovery_controlled_activation_permit_policy(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `permit_status: "reserved"`
+- `permit_version: "v1_reserved"`
+- `authorization_status: "disabled"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `reason: "future_package"`
+- `metadata: {}`
+
+Package 346 owns:
+
+- disabled permit policy preparation
+- deterministic reserved permit result
+- metadata preservation as copied data only
+- strict public API surface
+- import boundary that prevents scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery module imports
+
+Package 346 must not:
+
+- issue a real activation permit
+- approve authorization
+- allow activation
+- allow execution
+- enable recovery
+- mutate runtime state
+- call scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 347 permit projection stub
+- any real permit grant behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled permit policy stub only. Next package: Package 347.
+
+## Package 347
+
+Package 347: Recovery Controlled Activation Permit Projection Stub
+
+Package 347 creates `core/runtime/recovery_controlled_activation_permit_projection.py`.
+
+Runtime stub/data-only projection only.
+
+Public function: `prepare_recovery_controlled_activation_permit_projection(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `projection_status: "stub"`
+- `permit_status: "reserved"`
+- `authorization_status: "disabled"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `reason: "future_package"`
+- `metadata: {}`
+
+Package 347 owns:
+
+- disabled permit projection preparation
+- deterministic projection status
+- data-only summary of permit policy status
+- strict public API surface
+- import boundary that prevents scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery module imports
+
+Package 347 must not:
+
+- issue a real activation permit
+- approve authorization
+- allow activation
+- allow execution
+- enable recovery
+- mutate runtime state
+- call scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 348 permit audit stub
+- any real permit grant behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled permit projection stub only. Next package: Package 348.
+
+## Package 348
+
+Package 348: Recovery Controlled Activation Permit Audit Stub
+
+Package 348 creates `core/runtime/recovery_controlled_activation_permit_audit.py`.
+
+Runtime stub/data-only audit surface only.
+
+Public function: `prepare_recovery_controlled_activation_permit_audit(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `audit_status: "stub"`
+- `permit_status: "reserved"`
+- `authorization_status: "disabled"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `audit_log_written: False`
+- `reason: "future_package"`
+- `metadata: {}`
+
+Package 348 owns:
+
+- disabled permit audit preparation
+- deterministic audit status
+- explicit confirmation that no audit log is written
+- strict public API surface
+- import boundary that prevents scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery module imports
+
+Package 348 must not:
+
+- write audit logs
+- persist files
+- issue a real activation permit
+- approve authorization
+- allow activation
+- allow execution
+- enable recovery
+- mutate runtime state
+- call scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- import scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 349 permit boundary seal
+- any real permit grant behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled permit audit stub only. Next package: Package 349.
+
+## Package 349
+
+Package 349: Recovery Controlled Activation Permit Boundary Seal
+
+Package 349 creates `docs/runtime_recovery_controlled_activation_permit_boundary_seal.md`.
+
+Boundary seal/documentation only.
+
+Package 349 owns:
+
+- permit layer boundary statement
+- explicit separation between permit, authorization, decision, activation execution, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+- confirmation that permit layer is disabled/data-only
+- confirmation that permit layer cannot allow activation
+- confirmation that permit layer cannot allow execution
+- confirmation that permit layer cannot enable recovery
+- confirmation that permit layer cannot mutate runtime state
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- GO / NO-GO rule for disabled permit boundary
+
+GO means:
+
+- disabled permit contract may exist
+- deterministic data-only permit policy, projection, and audit stubs may exist
+- package sequence may proceed to readiness review
+
+GO does not mean:
+
+- permit may be granted
+- authorization may allow activation
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 349 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real permit grants
+- approve real authorization
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 350 permit readiness review
+- any real permit grant behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled permit boundary only. Next package: Package 350.
+
+## Package 350
+
+Package 350: Recovery Controlled Activation Permit Readiness Review
+
+Package 350 creates `docs/runtime_recovery_controlled_activation_permit_readiness_review.md`.
+
+Readiness review/documentation only.
+
+Package 350 owns:
+
+- readiness review for the disabled Recovery Controlled Activation Permit layer
+- contract readiness section
+- policy stub readiness section
+- projection stub readiness section
+- audit stub readiness section
+- disabled-by-default readiness section
+- boundary readiness section
+- blocker list for real permit grants
+- blocker list for real authorization
+- blocker list for real activation
+- blocker list for scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring
+- GO / NO-GO decision for disabled permit readiness only
+
+Readiness GO means:
+
+- disabled permit layer is structurally ready
+- deterministic data-only APIs are structurally ready
+- package sequence may proceed to GO review
+
+Readiness GO does not mean:
+
+- permit may be granted
+- authorization may allow activation
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 350 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real permit grants
+- approve real authorization
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 351 permit GO review
+- any real permit grant behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled permit readiness only. Next package: Package 351.
+
+## Package 351
+
+Package 351: Recovery Controlled Activation Permit GO Review
+
+Package 351 creates `docs/runtime_recovery_controlled_activation_permit_go_review.md`.
+
+GO review/documentation only.
+
+Package 351 owns:
+
+- final GO / NO-GO decision for Packages 345-352 readiness
+- explicit approval only for disabled permit layer
+- explicit rejection of real permit grants in this milestone
+- explicit rejection of real authorization in this milestone
+- explicit rejection of real activation in this milestone
+- explicit rejection of scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring in this milestone
+- explicit statement that Recovery Runtime remains disabled
+
+GO means:
+
+- disabled permit layer may exist
+- deterministic data-only APIs may exist
+- package sequence may proceed to Package 352 milestone seal
+
+GO does not mean:
+
+- permit may be granted
+- authorization may allow activation
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 351 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real permit grants
+- approve real authorization
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 352 permit milestone seal
+- any future activation package only after explicit package definition
+
+Final decision: GO for disabled permit layer only. Next package: Package 352.
+
+## Package 352
+
+Package 352: Recovery Controlled Activation Permit Milestone Seal
+
+Package 352 seals Packages 345-352 as the Recovery Controlled Activation Permit milestone.
+
+Seal/documentation only.
+
+Package 352 owns:
+
+- `docs/recovery_controlled_activation_permit_milestone_seal.md`
+- Packages 345-352 completion map
+- confirmation that all new APIs are disabled/data-only
+- confirmation that permit cannot be granted
+- confirmation that authorization cannot allow activation
+- confirmation that no recovery execution exists
+- confirmation that no runtime mutation exists
+- confirmation that no scheduler wiring exists
+- confirmation that no dispatcher wiring exists
+- confirmation that no executor wiring exists
+- confirmation that no gateway mutation exists
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- explicit instruction that the next package may proceed only with explicit package definition
+
+Milestone test:
+
+- `tests/test_recovery_runtime_controlled_activation_permit_bundle.py`
+
+Package 352 must not:
+
+- modify runtime behavior
+- approve real permit grants
+- approve real authorization
+- approve real activation
+- execute recovery
+- mutate runtime state
+- wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 353 only after explicit package definition exists
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled controlled activation permit milestone. Next package: Package 353.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/test changes remain outside Packages 345-352 scope and must not be modified by this milestone.
+- Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 345-352 scope unless a future explicit package defines it.
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 345-352 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
