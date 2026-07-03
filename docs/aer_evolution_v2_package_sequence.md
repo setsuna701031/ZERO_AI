@@ -15057,3 +15057,640 @@ Final decision: GO for disabled admission decision implementation bundle definit
 ## Non-mainline Issues Found
 
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 401-408 definitions must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
+## Package 409
+
+Package 409: Recovery Controlled Activation Authorization Boundary Contract Definition
+
+Package 409 defines the future Recovery Controlled Activation Authorization Boundary v1 contract package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- define the next disabled boundary after Admission Decision
+- reserve the Authorization Boundary contract surface for a later implementation bundle
+- keep authorization boundary separate from authorization effect, activation, recovery execution, runtime wiring, gateway mutation, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+- preserve the disabled deterministic data-only posture
+
+Future implementation expected files:
+
+- `docs/contracts/runtime/recovery_controlled_activation_authorization_boundary_v1.md`
+
+Future contract must define:
+
+- schema name: `aer.runtime.recovery.controlled_activation_authorization_boundary.v1`
+- disabled-by-default authorization boundary shape
+- fixed required boundary/status/eligibility fields
+- deterministic default result
+- explicit no-authorization-effect boundary
+- explicit no-execution boundary
+- explicit no-runtime-start boundary
+- explicit runtime mutation boundary
+- compatibility boundary for future authorization boundary packages
+
+Disabled deterministic data-only requirement:
+
+- disabled by default
+- deterministic
+- data-only
+- boundary/status/eligibility information only
+- no authorization effect
+- no activation effect
+- no execution permission
+- no runtime start
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement authorization boundary behavior in this package
+- do not create contract files in this package
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not enable recovery
+- do not execute recovery
+- do not start runtime
+- do not mutate runtime state
+- do not modify scheduler
+- do not modify dispatcher
+- do not modify executor
+- do not modify gateway
+- do not connect runtime wiring
+- do not call historical recovery bridge, executor, adapter, integration, scheduler, dispatcher, or gateway modules
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must include focused validation for the contract
+- no full pytest, regression runner, or long validation is authorized
+
+Final decision: GO for authorization boundary contract definition only. No authorization is effective and no runtime is started. Next package: Package 410.
+
+## Package 410
+
+Package 410: Recovery Controlled Activation Authorization Boundary Policy Stub Definition
+
+Package 410 defines the future Recovery Controlled Activation Authorization Boundary Policy stub package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve a disabled policy API for future authorization boundary checks
+- require future policy results to expose boundary/status/eligibility information only
+- require all future policy output to be fixed dictionaries
+- preserve separation between authorization boundary policy and authorization effect, activation, recovery execution, and runtime mutation
+
+Future implementation expected files:
+
+- `core/runtime/recovery_controlled_activation_authorization_boundary_policy.py`
+
+Future policy result must remain:
+
+- disabled
+- reserved
+- deterministic
+- data-only
+- fixed-shape
+- no-op
+- side-effect free
+- non-authorizing
+- non-executing
+- non-runtime-starting
+
+Disabled deterministic data-only requirement:
+
+- fixed dictionary output only
+- boundary/status/eligibility information only
+- no authorization effect
+- no activation effect
+- no execution permission
+- no runtime start
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement the policy stub in this package
+- do not create runtime files in this package
+- do not call admission decision modules
+- do not call admission preparation modules
+- do not call activation apply, commit, grant, or permit modules
+- do not call authorization-effect modules
+- do not call activation gates
+- do not call recovery executor
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not make authorization effective
+- do not activate recovery
+- do not execute recovery
+- do not start runtime
+- do not mutate runtime state
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify the policy returns only fixed disabled dictionaries
+- later implementation bundle must verify no forbidden imports or runtime wiring exist
+
+Final decision: GO for authorization boundary policy stub definition only. No authorization is effective and no runtime is started. Next package: Package 411.
+
+## Package 411
+
+Package 411: Recovery Controlled Activation Authorization Boundary Projection Stub Definition
+
+Package 411 defines the future Recovery Controlled Activation Authorization Boundary Projection stub package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve a disabled projection API for future authorization boundary status
+- require future projections to expose fixed boundary/status/eligibility fields only
+- require projections to avoid passthrough of unknown upstream fields
+- preserve separation between projection and runtime action
+
+Future implementation expected files:
+
+- `core/runtime/recovery_controlled_activation_authorization_boundary_projection.py`
+
+Future projection result must remain:
+
+- disabled
+- reserved
+- deterministic
+- data-only
+- fixed-shape
+- no-op
+- side-effect free
+- no runtime objects exposed
+
+Disabled deterministic data-only requirement:
+
+- fixed dictionary output only
+- boundary/status/eligibility information only
+- no authorization effect
+- no activation effect
+- no execution permission
+- no runtime start
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement the projection stub in this package
+- do not create runtime files in this package
+- do not pass through unknown upstream fields
+- do not expose runtime execution objects
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not execute recovery
+- do not start runtime
+- do not mutate runtime state
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify projection output has only fixed public fields
+- later implementation bundle must verify projection remains disabled and non-mutating
+
+Final decision: GO for authorization boundary projection stub definition only. No authorization is effective and no runtime is started. Next package: Package 412.
+
+## Package 412
+
+Package 412: Recovery Controlled Activation Authorization Boundary Audit Stub Definition
+
+Package 412 defines the future Recovery Controlled Activation Authorization Boundary Audit stub package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve a data-only audit summary for future authorization boundary checks
+- require future audit output to state that no authorization became effective
+- require future audit output to state that no activation, execution, recovery enablement, runtime start, or runtime mutation occurred
+- preserve separation between audit summary and audit-log persistence
+
+Future implementation expected files:
+
+- `core/runtime/recovery_controlled_activation_authorization_boundary_audit.py`
+
+Future audit result must remain:
+
+- disabled
+- reserved or stubbed
+- deterministic
+- data-only
+- fixed-shape
+- no-op
+- side-effect free
+- non-persistent
+
+Disabled deterministic data-only requirement:
+
+- fixed dictionary output only
+- audit/status information only
+- no authorization effect
+- no activation effect
+- no execution permission
+- no runtime start
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not implement the audit stub in this package
+- do not create runtime files in this package
+- do not write audit logs
+- do not write files
+- do not write checkpoints
+- do not restore checkpoints
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not execute recovery
+- do not start runtime
+- do not mutate runtime state
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify audit output is data-only and confirms no authorization/action occurred
+- later implementation bundle must verify no audit-log writes or persistence are introduced
+
+Final decision: GO for authorization boundary audit stub definition only. No authorization is effective and no runtime is started. Next package: Package 413.
+
+## Package 413
+
+Package 413: Recovery Controlled Activation Authorization Boundary Seal Definition
+
+Package 413 defines the future Recovery Controlled Activation Authorization Boundary Seal package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve a boundary seal document for the future authorization boundary layer
+- require explicit rules that authorization boundary is not authorization effect, activation, recovery execution, gateway mutation, scheduler wiring, dispatcher wiring, executor wiring, runtime wiring, or runtime state mutation
+- require GO / NO-GO criteria for authorization boundary isolation
+
+Future implementation expected files:
+
+- `docs/runtime_recovery_controlled_activation_authorization_boundary_seal.md`
+
+Future boundary seal must state:
+
+- authorization boundary cannot make authorization effective
+- authorization boundary cannot authorize activation
+- authorization boundary cannot start runtime
+- authorization boundary cannot activate recovery
+- authorization boundary cannot execute recovery
+- authorization boundary cannot mutate runtime state
+- authorization boundary cannot wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- authorization boundary remains disabled deterministic data-only
+
+Disabled deterministic data-only requirement:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+- no authorization effect
+- no runtime start
+
+Forbidden scope:
+
+- do not create the boundary seal document in this package
+- do not modify runtime code
+- do not add runtime behavior
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not enable recovery
+- do not execute recovery
+- do not start runtime
+- do not weaken previous disabled guards
+- do not modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- do not connect runtime wiring
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify boundary seal text exists and preserves disabled isolation
+- later implementation bundle must verify no runtime code was modified by the seal package
+
+Final decision: GO for authorization boundary seal definition only. No authorization is effective and no runtime is started. Next package: Package 414.
+
+## Package 414
+
+Package 414: Recovery Controlled Activation Authorization Boundary Readiness Review Definition
+
+Package 414 defines the future Recovery Controlled Activation Authorization Boundary Readiness Review package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve a readiness review document for the future authorization boundary layer
+- require review of contract, policy, projection, audit, disabled-by-default posture, and forbidden runtime wiring
+- require an authorization-effect blocker list and future authorization boundary prerequisites
+- require a GO / NO-GO decision for disabled authorization boundary layer only
+
+Future implementation expected files:
+
+- `docs/runtime_recovery_controlled_activation_authorization_boundary_readiness_review.md`
+
+Future readiness review must state:
+
+- authorization boundary layer is ready only as a disabled surface
+- real authorization effect is not approved
+- real admission is not approved
+- real activation is not approved
+- runtime start is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Disabled deterministic data-only requirement:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+- no authorization effect
+- no runtime start
+
+Forbidden scope:
+
+- do not create the readiness review document in this package
+- do not modify runtime code
+- do not add runtime behavior
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not enable recovery
+- do not execute recovery
+- do not start runtime
+- do not weaken previous disabled guards
+- do not modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- do not connect runtime wiring
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify readiness review text exists and rejects real authorization effect, runtime start, activation, and execution
+- later implementation bundle must verify no runtime behavior was introduced
+
+Final decision: GO for authorization boundary readiness review definition only. No authorization is effective and no runtime is started. Next package: Package 415.
+
+## Package 415
+
+Package 415: Recovery Controlled Activation Authorization Boundary GO Review Definition
+
+Package 415 defines the future Recovery Controlled Activation Authorization Boundary GO Review package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve a GO review document for Packages 409-416 readiness
+- require explicit approval only for a disabled authorization boundary layer
+- require explicit rejection of authorization effect, runtime start, admission, activation, recovery execution, runtime wiring, and runtime state mutation
+- require explicit statement that Recovery Runtime remains disabled
+
+Future implementation expected files:
+
+- `docs/runtime_recovery_controlled_activation_authorization_boundary_go_review.md`
+
+Future GO review must state:
+
+- GO means disabled authorization boundary layer may exist
+- GO means deterministic data-only APIs may exist
+- GO means package sequence may proceed to Package 416 milestone seal
+- GO does not mean authorization may take effect
+- GO does not mean runtime may start
+- GO does not mean admission may occur
+- GO does not mean activation may run
+- GO does not mean recovery may execute
+- GO does not mean scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or runtime wiring may be connected
+- GO does not mean runtime state may mutate
+
+Disabled deterministic data-only requirement:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+- no authorization effect
+- no runtime start
+
+Forbidden scope:
+
+- do not create the GO review document in this package
+- do not modify runtime code
+- do not add runtime behavior
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not enable recovery
+- do not execute recovery
+- do not start runtime
+- do not weaken previous disabled guards
+- do not modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- do not connect runtime wiring
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must verify GO review text exists and approves only disabled data-only authorization boundary surfaces
+- later implementation bundle must verify Recovery Runtime remains disabled
+
+Final decision: GO for authorization boundary GO review definition only. No authorization is effective and no runtime is started. Next package: Package 416.
+
+## Package 416
+
+Package 416: Recovery Controlled Activation Authorization Boundary Milestone Seal Definition
+
+Package 416 defines the future Recovery Controlled Activation Authorization Boundary Milestone Seal package.
+
+Definition / roadmap / milestone planning only.
+
+This package only defines the authorization boundary. It does not authorize execution and does not start runtime.
+
+Purpose:
+
+- reserve the milestone seal for Packages 409-416
+- define the completion map expected after a future implementation bundle
+- require confirmation that all future APIs are disabled/data-only
+- require confirmation that no authorization effect, runtime start, admission, activation, recovery execution, runtime mutation, or runtime wiring exists
+- require explicit instruction that the next package may proceed only with explicit package definition
+
+Future implementation expected files:
+
+- `docs/recovery_controlled_activation_authorization_boundary_milestone_seal.md`
+- `tests/test_recovery_runtime_controlled_activation_authorization_boundary_bundle.py`
+- `docs/contracts/runtime/inventory.md` update for the future implemented surface
+
+Future milestone seal must confirm:
+
+- all new APIs are disabled/data-only
+- authorization boundary cannot make authorization effective
+- authorization boundary cannot start runtime
+- admission cannot occur
+- activation cannot occur
+- recovery execution does not exist
+- runtime mutation does not exist
+- scheduler wiring does not exist
+- dispatcher wiring does not exist
+- executor wiring does not exist
+- gateway mutation does not exist
+- historical recovery bridge, executor, adapter, and integration modules remain unconnected
+
+Disabled deterministic data-only requirement:
+
+- documentation and future focused test only
+- disabled
+- deterministic
+- data-only
+- fixed dictionary runtime-facing outputs only in future implementation
+- no authorization effect
+- no runtime start
+- no activation effect
+- no execution permission
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not create milestone, test, contract, runtime, or inventory files in this package
+- do not modify runtime behavior
+- do not make authorization effective
+- do not approve admission
+- do not authorize activation
+- do not activate recovery
+- do not enable recovery
+- do not execute recovery
+- do not start runtime
+- do not mutate runtime state
+- do not wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- do not start workers
+- do not create threads
+- do not create timers
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not invoke endpoints
+- do not register hooks
+- do not enable feature flags
+- do not modify CI
+- do not install dependencies
+- do not modify PATH, venv, pip, bundled Python, or execution environment
+
+Validation expectation:
+
+- no pytest is required for this definition-only package
+- later implementation bundle must run only the focused authorization boundary bundle test
+- no full pytest, regression runner, or long validation is authorized
+
+Future packages own:
+
+- Package 417 only after explicit package definition exists
+- any real authorization behavior only after a dedicated future package authorizes it
+- any runtime start behavior only after a dedicated future package authorizes it
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled authorization boundary roadmap definition only. Packages 409-416 are defined but not implemented. Next package: Package 417 only after explicit package definition exists.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 409-416 definitions must preserve those files and must not modify, remove, import, call, or wire those historical modules.
