@@ -31,6 +31,28 @@ _RESERVED_POLICY_RESULT = {
     "runtime_state_mutated": False,
 }
 
+_RESERVED_AUTHORIZATION_RESULT = {
+    "enabled": False,
+    "authorization_status": "reserved",
+    "authorization_version": "v1_reserved",
+    "reason": "future_package",
+    "admission_granted": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+}
+
+_RESERVED_RECOVERY_EXECUTION_RESULT = {
+    "enabled": False,
+    "execution_status": "reserved",
+    "execution_version": "v1_reserved",
+    "reason": "future_package",
+    "admission_granted": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+}
+
 
 def prepare_runtime_recovery_gateway(
     *,
@@ -118,6 +140,8 @@ def prepare_runtime_recovery_gateway(
         "owns_recovery_binding_application": False,
         "owns_recovery_endpoint_invocation": False,
         "policy_result": dict(_RESERVED_POLICY_RESULT),
+        "authorization_result": dict(_RESERVED_AUTHORIZATION_RESULT),
+        "recovery_execution_result": dict(_RESERVED_RECOVERY_EXECUTION_RESULT),
         "surface_integration_result": surface_integration_result,
         "metadata": plain_metadata,
         "plain_dict_only": True,

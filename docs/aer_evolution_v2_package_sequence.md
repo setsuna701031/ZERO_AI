@@ -9496,3 +9496,515 @@ Final decision: GO. Next package: Package 329.
 
 - Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 321-328 preserve those files and do not modify them.
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 321-328 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+## Package 329
+
+Package 329: Recovery Controlled Activation Decision Contract
+
+Package 329 defines the Recovery Controlled Activation Decision v1 contract.
+
+Contract/specification only.
+
+Package 329 owns:
+
+- `docs/contracts/runtime/recovery_controlled_activation_decision_v1.md`
+- controlled activation decision schema name: `aer.runtime.recovery.controlled_activation_decision.v1`
+- disabled-by-default decision shape
+- fixed required decision fields
+- decision status vocabulary
+- activation permission vocabulary
+- execution permission vocabulary
+- recovery enablement vocabulary
+- runtime mutation boundary vocabulary
+- deterministic default result
+- compatibility boundary for future controlled activation packages
+- explicit separation between activation decision, activation execution, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+
+Required decision fields:
+
+- `enabled`
+- `decision_status`
+- `decision_version`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+- `metadata`
+
+Default decision values:
+
+- `enabled: false`
+- `decision_status: reserved`
+- `decision_version: v1_reserved`
+- `activation_allowed: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+- `reason: future_package`
+- `metadata: {}`
+
+Package 329 must not:
+
+- add runtime behavior
+- add activation behavior
+- approve real activation
+- execute recovery
+- mutate runtime state
+- modify scheduler wiring
+- modify dispatcher wiring
+- modify executor wiring
+- modify gateway behavior
+- connect historical recovery bridge modules
+- connect historical recovery executor modules
+- connect historical recovery adapter modules
+- connect historical recovery integration modules
+- import runtime implementation modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 330: Recovery Controlled Activation Decision Policy Stub
+- Package 331: Recovery Controlled Activation Decision Projection Stub
+- Package 332: Recovery Controlled Activation Decision Audit Stub
+- Package 333: Recovery Controlled Activation Decision Boundary Seal
+- Package 334: Recovery Controlled Activation Decision Readiness Review
+- Package 335: Recovery Controlled Activation Decision GO Review
+- Package 336: Recovery Controlled Activation Decision Milestone Seal
+- any real controlled activation behavior only after an explicit future package authorizes it
+
+Final decision: GO for disabled contract only. Next package: Package 330.
+
+## Package 330
+
+Package 330: Recovery Controlled Activation Decision Policy Stub
+
+Package 330 adds the Recovery Controlled Activation Decision Policy stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 330 owns:
+
+- `core/runtime/recovery_controlled_activation_decision_policy.py`
+- public disabled policy API for controlled activation decision
+- deterministic disabled policy result
+- no-op policy evaluation surface
+- fixed disabled metadata
+- no side effects
+
+Expected public result shape:
+
+```python
+{
+    "enabled": False,
+    "decision_status": "reserved",
+    "decision_version": "v1_reserved",
+    "activation_allowed": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+    "reason": "future_package",
+    "metadata": {},
+}
+```
+
+Package 330 must not:
+
+- approve controlled activation
+- execute recovery
+- call activation gates
+- call activation policy from prior packages
+- call recovery executor
+- call scheduler
+- call dispatcher
+- call gateway
+- call runtime wiring
+- mutate runtime state
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- import historical recovery bridge, executor, adapter, integration, scheduler, dispatcher, gateway, or wiring modules
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- projection of the disabled decision result
+- audit of the disabled decision result
+- boundary review and milestone seal
+- real activation policy only after explicit future package definition
+
+Final decision: GO for disabled policy stub only. Next package: Package 331.
+
+## Package 331
+
+Package 331: Recovery Controlled Activation Decision Projection Stub
+
+Package 331 adds the Recovery Controlled Activation Decision Projection stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 331 owns:
+
+- `core/runtime/recovery_controlled_activation_decision_projection.py`
+- projection of controlled activation decision metadata into a stable summary
+- fixed public summary fields
+- deterministic disabled projection
+- no side effects
+
+Projection summary fields:
+
+- `enabled`
+- `decision_status`
+- `decision_version`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+
+Package 331 must not:
+
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- pass through unknown upstream fields
+- expose runtime execution objects
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- audit projection of the disabled decision result
+- boundary review and milestone seal
+- real activation projection only after explicit future package definition
+
+Final decision: GO for disabled projection stub only. Next package: Package 332.
+
+## Package 332
+
+Package 332: Recovery Controlled Activation Decision Audit Stub
+
+Package 332 adds the Recovery Controlled Activation Decision Audit stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 332 owns:
+
+- `core/runtime/recovery_controlled_activation_decision_audit.py`
+- data-only audit summary for controlled activation decisions
+- deterministic audit result stating no activation occurred
+- deterministic audit result stating no execution occurred
+- deterministic audit result stating runtime state was not mutated
+- no audit-log writes
+- no side effects
+
+Audit result must confirm:
+
+- activation did not occur
+- execution did not occur
+- recovery was not enabled
+- runtime state was not mutated
+- reason remains `future_package`
+
+Package 332 must not:
+
+- write audit logs
+- write files
+- write checkpoints
+- restore checkpoints
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- boundary review over the disabled decision surfaces
+- readiness review over the disabled decision surfaces
+- real audit persistence only after explicit future package definition
+
+Final decision: GO for disabled audit stub only. Next package: Package 333.
+
+## Package 333
+
+Package 333: Recovery Controlled Activation Decision Boundary Seal
+
+Package 333 creates the Recovery Controlled Activation Decision Boundary Seal.
+
+Seal/documentation only.
+
+Package 333 owns:
+
+- `docs/runtime_recovery_controlled_activation_decision_boundary_seal.md`
+- boundary statement for controlled activation decision layer
+- explicit rule that decision is not activation execution
+- explicit rule that decision is not recovery execution
+- explicit rule that decision is not scheduler wiring
+- explicit rule that decision is not dispatcher wiring
+- explicit rule that decision is not executor wiring
+- explicit rule that decision is not gateway mutation
+- explicit rule that decision cannot enable recovery
+- explicit rule that decision cannot mutate runtime state
+- GO / NO-GO rule for decision-layer isolation
+
+GO conditions:
+
+- contract exists
+- policy stub remains disabled
+- projection stub remains disabled
+- audit stub remains disabled
+- no runtime execution path is introduced
+- no runtime state mutation is introduced
+- no scheduler, dispatcher, executor, gateway, or historical recovery module wiring is introduced
+
+NO-GO conditions:
+
+- any activation is approved
+- any recovery execution is introduced
+- any runtime state mutation is introduced
+- any scheduler, dispatcher, executor, gateway, bridge, adapter, or integration module is connected
+- any background worker, thread, timer, hook, subprocess, endpoint, checkpoint write, checkpoint restore, rollback, retry, or feature flag enabling behavior is introduced
+
+Package 333 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real activation
+- weaken previous Recovery Runtime disabled guards
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- readiness review
+- GO review
+- milestone seal
+- real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled boundary seal only. Next package: Package 334.
+
+## Package 334
+
+Package 334: Recovery Controlled Activation Decision Readiness Review
+
+Package 334 creates the Recovery Controlled Activation Decision Readiness Review.
+
+Readiness review/documentation only.
+
+Package 334 owns:
+
+- `docs/runtime_recovery_controlled_activation_decision_readiness_review.md`
+- contract readiness review
+- policy readiness review
+- projection readiness review
+- audit readiness review
+- disabled-by-default readiness review
+- forbidden runtime wiring review
+- activation blocker list
+- future activation prerequisites
+- GO / NO-GO decision for disabled decision layer only
+
+The readiness review must state:
+
+- controlled activation decision layer is ready only as a disabled surface
+- real activation is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Package 334 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- GO review
+- milestone seal
+- any real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled readiness only. Next package: Package 335.
+
+## Package 335
+
+Package 335: Recovery Controlled Activation Decision GO Review
+
+Package 335 creates the Recovery Controlled Activation Decision GO Review.
+
+GO review/documentation only.
+
+Package 335 owns:
+
+- `docs/runtime_recovery_controlled_activation_decision_go_review.md`
+- final GO / NO-GO decision for Packages 329-336 readiness
+- explicit approval only for disabled decision layer
+- explicit rejection of real activation in this milestone
+- explicit rejection of scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring in this milestone
+- explicit statement that Recovery Runtime remains disabled
+
+GO means:
+
+- disabled decision layer may exist
+- deterministic data-only APIs may exist
+- package sequence may proceed to Package 336 milestone seal
+
+GO does not mean:
+
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 335 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 336 milestone seal
+- any future activation package only after explicit package definition
+
+Final decision: GO for disabled decision layer only. Next package: Package 336.
+
+## Package 336
+
+Package 336: Recovery Controlled Activation Decision Milestone Seal
+
+Package 336 seals Packages 329-336 as the Recovery Controlled Activation Decision milestone.
+
+Seal/documentation only.
+
+Package 336 owns:
+
+- `docs/recovery_controlled_activation_decision_milestone_seal.md`
+- Packages 329-336 completion map
+- confirmation that all new APIs are disabled/data-only
+- confirmation that no recovery execution exists
+- confirmation that no runtime mutation exists
+- confirmation that no scheduler wiring exists
+- confirmation that no dispatcher wiring exists
+- confirmation that no executor wiring exists
+- confirmation that no gateway mutation exists
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- explicit instruction that the next package may proceed only with explicit package definition
+
+Milestone test:
+
+- `tests/test_recovery_runtime_controlled_activation_decision_bundle.py`
+
+Package 336 must not:
+
+- modify runtime behavior
+- approve real activation
+- execute recovery
+- mutate runtime state
+- wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 337 only after explicit package definition exists
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled controlled activation decision milestone. Next package: Package 337.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/test changes remain outside Packages 329-336 scope and must not be modified by this milestone.
+- Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 329-336 scope unless a future explicit package defines it.
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 329-336 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+

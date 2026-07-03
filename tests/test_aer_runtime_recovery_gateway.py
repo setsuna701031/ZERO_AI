@@ -24,6 +24,26 @@ RESERVED_POLICY_RESULT = {
     "recovery_enabled": False,
     "runtime_state_mutated": False,
 }
+RESERVED_AUTHORIZATION_RESULT = {
+    "enabled": False,
+    "authorization_status": "reserved",
+    "authorization_version": "v1_reserved",
+    "reason": "future_package",
+    "admission_granted": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+}
+RESERVED_RECOVERY_EXECUTION_RESULT = {
+    "enabled": False,
+    "execution_status": "reserved",
+    "execution_version": "v1_reserved",
+    "reason": "future_package",
+    "admission_granted": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+}
 
 
 def _gateway_result(**overrides):
@@ -107,6 +127,36 @@ def test_reserved_policy_result_is_disabled_data_only():
     assert result["execution_allowed"] is False
     assert result["recovery_enabled"] is False
     assert result["runtime_state_mutated"] is False
+
+
+def test_reserved_authorization_result_is_disabled_data_only():
+    result = _gateway_result()
+
+    assert result["authorization_result"] == RESERVED_AUTHORIZATION_RESULT
+    assert result["authorization_result"]["admission_granted"] is False
+    assert result["authorization_result"]["execution_allowed"] is False
+    assert result["authorization_result"]["recovery_enabled"] is False
+    assert result["authorization_result"]["runtime_state_mutated"] is False
+    assert result["admission_granted"] is False
+    assert result["execution_allowed"] is False
+    assert result["recovery_enabled"] is False
+    assert result["runtime_state_mutated"] is False
+    assert result["admission_evaluation_order"] == ADMISSION_EVALUATION_ORDER
+
+
+def test_reserved_recovery_execution_result_is_disabled_data_only():
+    result = _gateway_result()
+
+    assert result["recovery_execution_result"] == RESERVED_RECOVERY_EXECUTION_RESULT
+    assert result["recovery_execution_result"]["admission_granted"] is False
+    assert result["recovery_execution_result"]["execution_allowed"] is False
+    assert result["recovery_execution_result"]["recovery_enabled"] is False
+    assert result["recovery_execution_result"]["runtime_state_mutated"] is False
+    assert result["admission_granted"] is False
+    assert result["execution_allowed"] is False
+    assert result["recovery_enabled"] is False
+    assert result["runtime_state_mutated"] is False
+    assert result["admission_evaluation_order"] == ADMISSION_EVALUATION_ORDER
 
 
 def test_execution_enablement_and_mutation_are_false_everywhere():
@@ -209,3 +259,23 @@ def test_docs_record_package_254_and_next_package_255():
     assert "Final decision: GO. Next package: Package 255." in sequence
     assert "Admission policy stage is reserved." in review
     assert "Policy result is disabled data only." in review
+
+
+def test_docs_record_package_255_and_next_package_256():
+    sequence = DOC_PATH.read_text(encoding="utf-8")
+    review = REVIEW_PATH.read_text(encoding="utf-8")
+
+    assert "## Package 255" in sequence
+    assert "Final decision: GO. Next package: Package 256." in sequence
+    assert "Runtime authorization stage is reserved." in review
+    assert "Authorization result is disabled data only." in review
+
+
+def test_docs_record_package_256_and_next_package_257():
+    sequence = DOC_PATH.read_text(encoding="utf-8")
+    review = REVIEW_PATH.read_text(encoding="utf-8")
+
+    assert "## Package 256" in sequence
+    assert "Final decision: GO. Next package: Package 257." in sequence
+    assert "Recovery execution stage is reserved." in review
+    assert "Recovery execution result is disabled data only." in review
