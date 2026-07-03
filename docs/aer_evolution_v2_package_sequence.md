@@ -13241,3 +13241,585 @@ Final decision: GO for disabled admission preparation roadmap definition only. P
 ## Non-mainline Issues Found
 
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 377-384 definitions must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
+## Package 385
+
+Package 385: Recovery Controlled Activation Admission Preparation Implementation Contract
+
+Package 385 defines the contract package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No runtime implementation is performed by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the Admission Preparation v1 contract
+- convert the Package 377 roadmap into an explicit future implementation package
+- preserve disabled deterministic data-only boundaries
+- keep admission preparation separate from admission execution, recovery execution, runtime wiring, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+
+Later implementation is allowed to create:
+
+- `docs/contracts/runtime/recovery_controlled_activation_admission_preparation_v1.md`
+
+Later implementation contract must define:
+
+- schema name: `aer.runtime.recovery.controlled_activation_admission_preparation.v1`
+- disabled-by-default admission preparation shape
+- fixed required readiness/status/eligibility fields
+- deterministic default result
+- explicit non-authorization boundary
+- explicit non-execution boundary
+- explicit runtime mutation boundary
+- compatibility boundary for future admission packages
+
+Required posture:
+
+- disabled
+- deterministic
+- data-only
+- readiness/status/eligibility information only
+- no authorization
+- no execution
+- no runtime mutation
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not add runtime behavior
+- do not prepare real admission
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not mutate runtime state
+- do not modify scheduler
+- do not modify dispatcher
+- do not modify executor
+- do not modify gateway
+- do not connect runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- later implementation bundle must include focused validation for the contract
+- no pytest is required for this package sequence definition edit
+- no full pytest, regression runner, or long validation is authorized
+
+Final decision: GO to define Package 385 for a later disabled admission preparation contract implementation. No implementation is complete. Next package: Package 386.
+
+## Package 386
+
+Package 386: Recovery Controlled Activation Admission Preparation Implementation Policy Stub
+
+Package 386 defines the policy stub package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No runtime implementation is performed by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the disabled Admission Preparation policy stub
+- require the policy API to return fixed dictionaries only
+- require policy output to expose readiness/status/eligibility information only
+- keep policy evaluation separate from admission, authorization, activation, recovery execution, and runtime mutation
+
+Later implementation is allowed to create:
+
+- `core/runtime/recovery_controlled_activation_admission_preparation_policy.py`
+
+Later implementation policy must return:
+
+- disabled status
+- reserved status/version values
+- eligibility/readiness/status booleans only
+- no authorization approval
+- no execution approval
+- no recovery enablement
+- no runtime mutation
+- fixed metadata
+
+Required posture:
+
+- disabled
+- deterministic
+- data-only
+- fixed dictionary output
+- side-effect free
+- no imports from scheduler, dispatcher, executor, gateway, runtime wiring, or historical recovery modules
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not call activation apply
+- do not call activation commit
+- do not call activation grant
+- do not call activation permit
+- do not call authorization modules
+- do not call activation gates
+- do not call recovery executor
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not mutate runtime state
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- later implementation bundle must verify the policy returns only fixed disabled dictionaries
+- later implementation bundle must verify no forbidden imports or runtime wiring exist
+- no pytest is required for this package sequence definition edit
+
+Final decision: GO to define Package 386 for a later disabled admission preparation policy implementation. No implementation is complete. Next package: Package 387.
+
+## Package 387
+
+Package 387: Recovery Controlled Activation Admission Preparation Implementation Projection Stub
+
+Package 387 defines the projection stub package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No runtime implementation is performed by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the disabled Admission Preparation projection stub
+- require projection output to expose fixed readiness/status/eligibility fields only
+- prohibit passthrough of unknown upstream fields
+- keep projection separate from runtime action
+
+Later implementation is allowed to create:
+
+- `core/runtime/recovery_controlled_activation_admission_preparation_projection.py`
+
+Later implementation projection must return:
+
+- disabled status
+- reserved status/version values
+- eligibility/readiness/status fields only
+- no authorization approval
+- no execution approval
+- no recovery enablement
+- no runtime mutation
+
+Required posture:
+
+- disabled
+- deterministic
+- data-only
+- fixed dictionary output
+- side-effect free
+- no runtime objects exposed
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not pass through unknown upstream fields
+- do not expose runtime execution objects
+- do not prepare real admission
+- do not approve admission
+- do not authorize activation
+- do not execute recovery
+- do not mutate runtime state
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- later implementation bundle must verify projection output has only fixed public fields
+- later implementation bundle must verify projection remains disabled and non-mutating
+- no pytest is required for this package sequence definition edit
+
+Final decision: GO to define Package 387 for a later disabled admission preparation projection implementation. No implementation is complete. Next package: Package 388.
+
+## Package 388
+
+Package 388: Recovery Controlled Activation Admission Preparation Implementation Audit Stub
+
+Package 388 defines the audit stub package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No runtime implementation is performed by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the disabled Admission Preparation audit stub
+- require audit output to be data-only and non-persistent
+- require audit output to confirm no admission preparation, admission, activation, recovery execution, recovery enablement, or runtime mutation occurred
+- keep audit summary separate from audit-log writes
+
+Later implementation is allowed to create:
+
+- `core/runtime/recovery_controlled_activation_admission_preparation_audit.py`
+
+Later implementation audit must return:
+
+- disabled status
+- stub or reserved audit status
+- confirmation that admission preparation did not occur
+- confirmation that admission did not occur
+- confirmation that activation did not occur
+- confirmation that execution did not occur
+- confirmation that recovery was not enabled
+- confirmation that runtime state was not mutated
+- fixed metadata
+
+Required posture:
+
+- disabled
+- deterministic
+- data-only
+- fixed dictionary output
+- side-effect free
+- non-persistent
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not write audit logs
+- do not write files
+- do not write checkpoints
+- do not restore checkpoints
+- do not prepare real admission
+- do not approve admission
+- do not authorize activation
+- do not execute recovery
+- do not mutate runtime state
+- do not call scheduler
+- do not call dispatcher
+- do not call executor
+- do not call gateway
+- do not call runtime wiring
+- do not call historical recovery bridge, executor, adapter, or integration modules
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not start workers
+- do not create threads
+- do not create timers
+- do not register hooks
+
+Validation expectation:
+
+- later implementation bundle must verify audit output is data-only and confirms no action occurred
+- later implementation bundle must verify no audit-log writes or persistence are introduced
+- no pytest is required for this package sequence definition edit
+
+Final decision: GO to define Package 388 for a later disabled admission preparation audit implementation. No implementation is complete. Next package: Package 389.
+
+## Package 389
+
+Package 389: Recovery Controlled Activation Admission Preparation Implementation Boundary Seal
+
+Package 389 defines the boundary seal package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No boundary document is created by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the Admission Preparation boundary seal
+- require explicit separation between admission preparation and admission execution
+- require explicit separation from activation execution, recovery execution, runtime wiring, gateway mutation, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+- preserve disabled deterministic data-only boundaries
+
+Later implementation is allowed to create:
+
+- `docs/runtime_recovery_controlled_activation_admission_preparation_boundary_seal.md`
+
+Later implementation boundary seal must include:
+
+- GO conditions for disabled admission preparation isolation
+- NO-GO conditions for admission, activation, recovery execution, runtime mutation, and runtime wiring
+- explicit rule that admission preparation cannot enable recovery
+- explicit rule that admission preparation cannot mutate runtime state
+- explicit rule that admission preparation cannot wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+
+Required posture:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not modify runtime code
+- do not add runtime behavior
+- do not approve real admission preparation
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not weaken previous disabled guards
+- do not modify scheduler
+- do not modify dispatcher
+- do not modify executor
+- do not modify gateway
+- do not connect runtime wiring
+- do not modify CI
+
+Validation expectation:
+
+- later implementation bundle must verify boundary seal text exists and preserves disabled isolation
+- later implementation bundle must verify no runtime code was modified by the seal package
+- no pytest is required for this package sequence definition edit
+
+Final decision: GO to define Package 389 for a later disabled admission preparation boundary seal implementation. No implementation is complete. Next package: Package 390.
+
+## Package 390
+
+Package 390: Recovery Controlled Activation Admission Preparation Implementation Readiness Review
+
+Package 390 defines the readiness review package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No readiness document is created by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the Admission Preparation readiness review
+- require review of contract, policy, projection, audit, boundary seal, disabled-by-default posture, and forbidden runtime wiring
+- require activation/admission blockers and future prerequisites
+- require GO / NO-GO decision for disabled admission preparation layer only
+
+Later implementation is allowed to create:
+
+- `docs/runtime_recovery_controlled_activation_admission_preparation_readiness_review.md`
+
+Later implementation readiness review must state:
+
+- admission preparation layer is ready only as a disabled surface
+- real admission preparation is not approved
+- real admission is not approved
+- real authorization is not approved
+- real activation is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Required posture:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not modify runtime code
+- do not add runtime behavior
+- do not approve real admission preparation
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not weaken previous disabled guards
+- do not modify scheduler
+- do not modify dispatcher
+- do not modify executor
+- do not modify gateway
+- do not connect runtime wiring
+- do not modify CI
+
+Validation expectation:
+
+- later implementation bundle must verify readiness review text exists and rejects real admission, authorization, activation, and execution
+- later implementation bundle must verify no runtime behavior was introduced
+- no pytest is required for this package sequence definition edit
+
+Final decision: GO to define Package 390 for a later disabled admission preparation readiness review implementation. No implementation is complete. Next package: Package 391.
+
+## Package 391
+
+Package 391: Recovery Controlled Activation Admission Preparation Implementation GO Review
+
+Package 391 defines the GO review package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No GO review document is created by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the Admission Preparation GO review
+- require final GO / NO-GO decision for Packages 385-392 readiness
+- require explicit approval only for disabled admission preparation surfaces
+- require explicit rejection of real admission preparation, admission, authorization, activation, recovery execution, runtime wiring, and runtime state mutation
+- require explicit statement that Recovery Runtime remains disabled
+
+Later implementation is allowed to create:
+
+- `docs/runtime_recovery_controlled_activation_admission_preparation_go_review.md`
+
+Later implementation GO review must state:
+
+- GO means disabled admission preparation layer may exist
+- GO means deterministic data-only APIs may exist
+- GO means package sequence may proceed to Package 392 milestone seal
+- GO does not mean admission preparation may occur
+- GO does not mean admission may occur
+- GO does not mean authorization may be confirmed
+- GO does not mean activation may run
+- GO does not mean recovery may execute
+- GO does not mean scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or runtime wiring may be connected
+- GO does not mean runtime state may mutate
+
+Required posture:
+
+- documentation only
+- disabled
+- deterministic
+- data-only
+- no runtime behavior
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not modify runtime code
+- do not add runtime behavior
+- do not approve real admission preparation
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not weaken previous disabled guards
+- do not modify scheduler
+- do not modify dispatcher
+- do not modify executor
+- do not modify gateway
+- do not connect runtime wiring
+- do not modify CI
+
+Validation expectation:
+
+- later implementation bundle must verify GO review text exists and approves only disabled data-only surfaces
+- later implementation bundle must verify Recovery Runtime remains disabled
+- no pytest is required for this package sequence definition edit
+
+Final decision: GO to define Package 391 for a later disabled admission preparation GO review implementation. No implementation is complete. Next package: Package 392.
+
+## Package 392
+
+Package 392: Recovery Controlled Activation Admission Preparation Implementation Milestone Seal
+
+Package 392 defines the milestone seal and focused test package for the future Recovery Controlled Activation Admission Preparation Implementation Bundle.
+
+Package definition only. No milestone, test, runtime, contract, or inventory file is created by this sequence edit.
+
+Purpose:
+
+- authorize a later implementation bundle to create the Admission Preparation milestone seal
+- authorize a later implementation bundle to create the focused admission preparation bundle test
+- authorize a later implementation bundle to update the runtime contract inventory with one Admission Preparation row
+- seal Packages 385-392 only after the later implementation bundle creates the explicitly allowed files
+- preserve disabled deterministic data-only boundaries
+
+Later implementation is allowed to create or modify:
+
+- `docs/recovery_controlled_activation_admission_preparation_milestone_seal.md`
+- `tests/test_recovery_runtime_controlled_activation_admission_preparation_bundle.py`
+- `docs/contracts/runtime/inventory.md`
+
+Later implementation focused test must verify:
+
+- Packages 385-392 are explicitly defined
+- contract document exists
+- policy, projection, and audit modules expose exact public APIs
+- policy, projection, and audit return fixed disabled dictionaries
+- outputs contain readiness/status/eligibility information only
+- no authorization is granted
+- no execution is allowed
+- recovery remains disabled
+- runtime state is not mutated
+- forbidden imports and runtime wiring are absent
+- inventory contains the Admission Preparation row
+- boundary, readiness, GO review, and milestone seal documents exist
+
+Required posture:
+
+- disabled
+- deterministic
+- data-only
+- fixed dictionary runtime-facing outputs only
+- no authorization
+- no execution
+- no recovery enablement
+- no runtime mutation
+
+Forbidden scope:
+
+- do not create files during this package sequence definition edit
+- do not modify runtime behavior
+- do not approve real admission preparation
+- do not approve admission
+- do not authorize activation
+- do not enable recovery
+- do not execute recovery
+- do not mutate runtime state
+- do not wire scheduler
+- do not wire dispatcher
+- do not wire executor
+- do not wire gateway
+- do not connect bridge, adapter, integration, or historical recovery modules
+- do not start workers
+- do not create threads
+- do not create timers
+- do not write checkpoints
+- do not restore checkpoints
+- do not perform rollback
+- do not perform retry
+- do not perform subprocess calls
+- do not register hooks
+- do not modify CI
+
+Validation expectation:
+
+- later implementation bundle must run only `py -m pytest tests/test_recovery_runtime_controlled_activation_admission_preparation_bundle.py -q`
+- if `py` is unavailable, later implementation bundle must report the blocked reason and must not run long validation
+- this package sequence definition edit requires no pytest
+
+Future packages own:
+
+- Package 393 only after explicit package definition exists
+- any real admission behavior only after a dedicated future package authorizes it
+- any real authorization behavior only after a dedicated future package authorizes it
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled admission preparation implementation bundle definition only. Packages 385-392 are defined for later implementation but not implemented. Next package: Package 393 only after explicit package definition exists.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 385-392 definitions must preserve those files and must not modify, remove, import, call, or wire those historical modules.
