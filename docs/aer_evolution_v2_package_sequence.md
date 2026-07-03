@@ -12121,3 +12121,620 @@ Final decision: GO for disabled controlled activation commit milestone. Next pac
 - Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 361-368 scope unless a future explicit package defines it.
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 361-368 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
 
+## Package 369
+
+Package 369: Recovery Controlled Activation Apply Contract
+
+Package 369 defines the Recovery Controlled Activation Apply v1 contract.
+
+Contract/specification only.
+
+Package 369 owns:
+
+- `docs/contracts/runtime/recovery_controlled_activation_apply_v1.md`
+- controlled activation apply schema name: `aer.runtime.recovery.controlled_activation_apply.v1`
+- disabled-by-default apply shape
+- fixed required apply fields
+- apply status vocabulary
+- commit consumption vocabulary
+- grant consumption vocabulary
+- permit consumption vocabulary
+- authorization boundary vocabulary
+- activation permission vocabulary
+- execution permission vocabulary
+- recovery enablement vocabulary
+- runtime mutation boundary vocabulary
+- deterministic default result
+- compatibility boundary for future controlled activation packages
+- explicit separation between activation apply, activation execution, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+
+Required apply fields:
+
+- `enabled`
+- `apply_status`
+- `apply_version`
+- `commit_consumed`
+- `grant_consumed`
+- `permit_consumed`
+- `authorization_confirmed`
+- `activation_applied`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+- `metadata`
+
+Default apply values:
+
+- `enabled: false`
+- `apply_status: reserved`
+- `apply_version: v1_reserved`
+- `commit_consumed: false`
+- `grant_consumed: false`
+- `permit_consumed: false`
+- `authorization_confirmed: false`
+- `activation_applied: false`
+- `activation_allowed: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+- `reason: future_package`
+- `metadata: {}`
+
+Package 369 must not:
+
+- add runtime behavior
+- add activation behavior
+- approve real apply
+- consume commit
+- consume grant
+- consume permit
+- confirm real authorization
+- approve real activation
+- execute recovery
+- mutate runtime state
+- modify scheduler wiring
+- modify dispatcher wiring
+- modify executor wiring
+- modify gateway behavior
+- connect historical recovery bridge modules
+- connect historical recovery executor modules
+- connect historical recovery adapter modules
+- connect historical recovery integration modules
+- import runtime implementation modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 370: Recovery Controlled Activation Apply Policy Stub
+- Package 371: Recovery Controlled Activation Apply Projection Stub
+- Package 372: Recovery Controlled Activation Apply Audit Stub
+- Package 373: Recovery Controlled Activation Apply Boundary Seal
+- Package 374: Recovery Controlled Activation Apply Readiness Review
+- Package 375: Recovery Controlled Activation Apply GO Review
+- Package 376: Recovery Controlled Activation Apply Milestone Seal
+- any real controlled activation behavior only after an explicit future package authorizes it
+
+Final decision: GO for disabled contract only. Next package: Package 370.
+
+## Package 370
+
+Package 370: Recovery Controlled Activation Apply Policy Stub
+
+Package 370 adds the Recovery Controlled Activation Apply Policy stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 370 owns:
+
+- `core/runtime/recovery_controlled_activation_apply_policy.py`
+- public disabled policy API for controlled activation apply
+- deterministic disabled apply policy result
+- no-op apply evaluation surface
+- fixed disabled metadata
+- no side effects
+
+Expected public result shape:
+
+```python
+{
+    "enabled": False,
+    "apply_status": "reserved",
+    "apply_version": "v1_reserved",
+    "commit_consumed": False,
+    "grant_consumed": False,
+    "permit_consumed": False,
+    "authorization_confirmed": False,
+    "activation_applied": False,
+    "activation_allowed": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+    "reason": "future_package",
+    "metadata": {},
+}
+```
+
+Package 370 must not:
+
+- apply activation
+- consume commit
+- consume grant
+- consume permit
+- confirm authorization
+- approve controlled activation
+- execute recovery
+- call activation gates
+- call activation commit from prior packages
+- call activation grant from prior packages
+- call activation permit from prior packages
+- call recovery executor
+- call scheduler
+- call dispatcher
+- call gateway
+- call runtime wiring
+- mutate runtime state
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- import historical recovery bridge, executor, adapter, integration, scheduler, dispatcher, gateway, or wiring modules
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- projection of the disabled apply result
+- audit of the disabled apply result
+- boundary review and milestone seal
+- real activation apply only after explicit future package definition
+
+Final decision: GO for disabled policy stub only. Next package: Package 371.
+
+## Package 371
+
+Package 371: Recovery Controlled Activation Apply Projection Stub
+
+Package 371 adds the Recovery Controlled Activation Apply Projection stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 371 owns:
+
+- `core/runtime/recovery_controlled_activation_apply_projection.py`
+- projection of disabled apply status
+- deterministic disabled projection result
+- fixed public projection fields
+- no side effects
+
+Projection summary fields:
+
+- `enabled`
+- `apply_status`
+- `apply_version`
+- `commit_consumed`
+- `grant_consumed`
+- `permit_consumed`
+- `authorization_confirmed`
+- `activation_applied`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+
+Package 371 must not:
+
+- apply activation
+- consume commit
+- consume grant
+- consume permit
+- confirm authorization
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- pass through unknown upstream fields
+- expose runtime execution objects
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- audit projection of the disabled apply result
+- boundary review and milestone seal
+- real activation projection only after explicit future package definition
+
+Final decision: GO for disabled projection stub only. Next package: Package 372.
+
+## Package 372
+
+Package 372: Recovery Controlled Activation Apply Audit Stub
+
+Package 372 adds the Recovery Controlled Activation Apply Audit stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 372 owns:
+
+- `core/runtime/recovery_controlled_activation_apply_audit.py`
+- data-only audit summary for controlled activation apply
+- deterministic audit result stating no apply occurred
+- deterministic audit result stating no commit was consumed
+- deterministic audit result stating no grant was consumed
+- deterministic audit result stating no permit was consumed
+- deterministic audit result stating no authorization was confirmed
+- deterministic audit result stating no activation occurred
+- deterministic audit result stating no execution occurred
+- deterministic audit result stating runtime state was not mutated
+- no audit-log writes
+- no side effects
+
+Audit result must confirm:
+
+- activation apply did not occur
+- commit was not consumed
+- grant was not consumed
+- permit was not consumed
+- authorization was not confirmed
+- activation did not occur
+- execution did not occur
+- recovery was not enabled
+- runtime state was not mutated
+- reason remains `future_package`
+
+Package 372 must not:
+
+- write audit logs
+- write files
+- write checkpoints
+- restore checkpoints
+- apply activation
+- consume commit
+- consume grant
+- consume permit
+- confirm authorization
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- boundary review over the disabled apply surfaces
+- readiness review over the disabled apply surfaces
+- real audit persistence only after explicit future package definition
+
+Final decision: GO for disabled audit stub only. Next package: Package 373.
+
+## Package 373
+
+Package 373: Recovery Controlled Activation Apply Boundary Seal
+
+Package 373 creates the Recovery Controlled Activation Apply Boundary Seal.
+
+Seal/documentation only.
+
+Package 373 owns:
+
+- `docs/runtime_recovery_controlled_activation_apply_boundary_seal.md`
+- boundary statement for controlled activation apply layer
+- explicit rule that apply is not activation execution
+- explicit rule that apply is not recovery execution
+- explicit rule that apply is not commit consumption
+- explicit rule that apply is not grant consumption
+- explicit rule that apply is not permit consumption
+- explicit rule that apply is not authorization confirmation
+- explicit rule that apply is not scheduler wiring
+- explicit rule that apply is not dispatcher wiring
+- explicit rule that apply is not executor wiring
+- explicit rule that apply is not gateway mutation
+- explicit rule that apply cannot enable recovery
+- explicit rule that apply cannot mutate runtime state
+- GO / NO-GO rule for apply-layer isolation
+
+GO conditions:
+
+- contract exists
+- policy stub remains disabled
+- projection stub remains disabled
+- audit stub remains disabled
+- no runtime execution path is introduced
+- no runtime state mutation is introduced
+- no commit, grant, permit, authorization, activation, scheduler, dispatcher, executor, gateway, or historical recovery module wiring is introduced
+
+NO-GO conditions:
+
+- any apply is approved
+- any commit is consumed
+- any grant is consumed
+- any permit is consumed
+- any authorization is confirmed
+- any activation is approved
+- any recovery execution is introduced
+- any runtime state mutation is introduced
+- any scheduler, dispatcher, executor, gateway, bridge, adapter, or integration module is connected
+- any background worker, thread, timer, hook, subprocess, endpoint, checkpoint write, checkpoint restore, rollback, retry, or feature flag enabling behavior is introduced
+
+Package 373 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real activation apply
+- approve real commit consumption
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization
+- approve real activation
+- weaken previous Recovery Runtime disabled guards
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- readiness review
+- GO review
+- milestone seal
+- real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled boundary seal only. Next package: Package 374.
+
+## Package 374
+
+Package 374: Recovery Controlled Activation Apply Readiness Review
+
+Package 374 creates the Recovery Controlled Activation Apply Readiness Review.
+
+Readiness review/documentation only.
+
+Package 374 owns:
+
+- `docs/runtime_recovery_controlled_activation_apply_readiness_review.md`
+- contract readiness review
+- policy readiness review
+- projection readiness review
+- audit readiness review
+- disabled-by-default readiness review
+- forbidden runtime wiring review
+- activation blocker list
+- future activation prerequisites
+- GO / NO-GO decision for disabled apply layer only
+
+The readiness review must state:
+
+- controlled activation apply layer is ready only as a disabled surface
+- real apply is not approved
+- real commit consumption is not approved
+- real grant consumption is not approved
+- real permit consumption is not approved
+- real authorization confirmation is not approved
+- real activation is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Package 374 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real apply
+- approve real commit consumption
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization confirmation
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- GO review
+- milestone seal
+- any real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled readiness only. Next package: Package 375.
+
+## Package 375
+
+Package 375: Recovery Controlled Activation Apply GO Review
+
+Package 375 creates the Recovery Controlled Activation Apply GO Review.
+
+GO review/documentation only.
+
+Package 375 owns:
+
+- `docs/runtime_recovery_controlled_activation_apply_go_review.md`
+- final GO / NO-GO decision for Packages 369-376 readiness
+- explicit approval only for disabled apply layer
+- explicit rejection of real apply in this milestone
+- explicit rejection of real commit consumption in this milestone
+- explicit rejection of real grant consumption in this milestone
+- explicit rejection of real permit consumption in this milestone
+- explicit rejection of real authorization confirmation in this milestone
+- explicit rejection of real activation in this milestone
+- explicit rejection of scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring in this milestone
+- explicit statement that Recovery Runtime remains disabled
+
+GO means:
+
+- disabled apply layer may exist
+- deterministic data-only APIs may exist
+- package sequence may proceed to Package 376 milestone seal
+
+GO does not mean:
+
+- apply may occur
+- commit may be consumed
+- grant may be consumed
+- permit may be consumed
+- authorization may be confirmed
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 375 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real apply
+- approve real commit consumption
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization confirmation
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 376 apply milestone seal
+- any future activation package only after explicit package definition
+
+Final decision: GO for disabled apply layer only. Next package: Package 376.
+
+## Package 376
+
+Package 376: Recovery Controlled Activation Apply Milestone Seal
+
+Package 376 seals Packages 369-376 as the Recovery Controlled Activation Apply milestone.
+
+Seal/documentation only.
+
+Package 376 owns:
+
+- `docs/recovery_controlled_activation_apply_milestone_seal.md`
+- Packages 369-376 completion map
+- confirmation that all new APIs are disabled/data-only
+- confirmation that apply cannot occur
+- confirmation that commit cannot be consumed
+- confirmation that grant cannot be consumed
+- confirmation that permit cannot be consumed
+- confirmation that authorization cannot be confirmed
+- confirmation that no recovery execution exists
+- confirmation that no runtime mutation exists
+- confirmation that no scheduler wiring exists
+- confirmation that no dispatcher wiring exists
+- confirmation that no executor wiring exists
+- confirmation that no gateway mutation exists
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- explicit instruction that the next package may proceed only with explicit package definition
+
+Milestone test:
+
+- `tests/test_recovery_runtime_controlled_activation_apply_bundle.py`
+
+Package 376 must not:
+
+- modify runtime behavior
+- approve real apply
+- approve real commit consumption
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization confirmation
+- approve real activation
+- execute recovery
+- mutate runtime state
+- wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 377 only after explicit package definition exists
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled controlled activation apply milestone. Next package: Package 377.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/test changes remain outside Packages 369-376 scope and must not be modified by this milestone.
+- Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 369-376 scope unless a future explicit package defines it.
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 369-376 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
