@@ -19209,3 +19209,314 @@ Final decision: GO for runtime lifecycle completion planning. Lifecycle areas ar
 ## Non-mainline Issues Found
 
 - None for Packages 481-488. Existing runtime modules, scheduler, executor, activation, recovery execution, and wiring behavior remain outside this documentation/test package and must not be modified here.
+
+## Package 489
+
+Package 489: Runtime Observability Completion Plan Definition
+
+Package 489 defines the runtime observability completion path after lifecycle inventory.
+
+Documentation/test only.
+
+Purpose:
+
+- create `docs/runtime_observability_completion_plan.md`
+- document observability surfaces: runtime status, execution evidence, audit trail, lifecycle events, operator visibility, failure reporting, and recovery disabled state reporting
+- record current owner, current state, existing integration, missing visibility gap, and allowed future action for each surface
+- preserve read-only observability boundaries
+
+Expected files:
+
+- `docs/runtime_observability_completion_plan.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Observability may:
+
+- read state
+- summarize state
+- expose status
+- report issues
+
+Observability must not:
+
+- change state
+- retry execution
+- dispatch tasks
+- trigger recovery
+- modify runtime flow
+
+Forbidden scope:
+
+- no new core/runtime files
+- no scheduler edits
+- no executor edits
+- no activation edits
+- no wiring changes
+- no behavior changes
+
+Validation expectation:
+
+- run only the focused runtime observability completion plan test
+- do not run full suite, nightly, regression, or long validation
+
+Final decision: GO for runtime observability completion planning only. Next package: Package 490.
+
+## Package 490
+
+Package 490: Runtime Observability Gap Inventory Definition
+
+Package 490 creates the runtime observability gap inventory.
+
+Documentation/test only.
+
+Purpose:
+
+- create `docs/runtime_observability_gap_inventory.md`
+- inventory missing visibility gaps for required observability surfaces
+- preserve no execution control, scheduler control, executor control, mutation authority, or recovery activation
+
+Expected files:
+
+- `docs/runtime_observability_gap_inventory.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- no new core/runtime files
+- no scheduler edits
+- no executor edits
+- no activation edits
+- no wiring changes
+- no behavior changes
+
+Validation expectation:
+
+- focused test must verify gap inventory exists and required surfaces are documented
+
+Final decision: GO for runtime observability gap inventory only. Next package: Package 491.
+
+## Package 491
+
+Package 491: Runtime Observability Boundary Seal Definition
+
+Package 491 creates the runtime observability boundary seal.
+
+Documentation/test only.
+
+Purpose:
+
+- create `docs/runtime_observability_boundary_seal.md`
+- document that observability may read, summarize, expose status, and report issues
+- document that observability must not change state, retry execution, dispatch tasks, trigger recovery, or modify runtime flow
+- preserve no execution control, scheduler control, executor control, mutation authority, or recovery activation
+
+Expected files:
+
+- `docs/runtime_observability_boundary_seal.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- no new core/runtime files
+- no scheduler edits
+- no executor edits
+- no activation edits
+- no wiring changes
+- no behavior changes
+
+Validation expectation:
+
+- focused test must verify boundary seal exists and read-only guarantees exist
+
+Final decision: GO for runtime observability boundary seal only. Next package: Package 492.
+
+## Package 492
+
+Package 492: Runtime Observability Focused Test Definition
+
+Package 492 defines the focused runtime observability completion test.
+
+Documentation/test only.
+
+Purpose:
+
+- add `tests/test_runtime_observability_completion_plan.py`
+- verify observability plan exists
+- verify gap inventory exists
+- verify boundary seal exists
+- verify required surfaces are documented
+- verify read-only guarantees exist
+- verify package sequence updated
+
+Expected files:
+
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- do not add runtime behavior tests
+- do not execute scheduler, executor, activation, recovery, wiring, mutation, retry, dispatch, or runtime flow paths
+- do not run full suite, nightly, regression, or long validation
+
+Validation expectation:
+
+- run only `py -m pytest tests/test_runtime_observability_completion_plan.py -q`
+
+Final decision: GO for focused runtime observability completion test only. Next package: Package 493.
+
+## Package 493
+
+Package 493: Runtime Observability Surface Coverage Definition
+
+Package 493 defines required observability surface coverage.
+
+Documentation/test only.
+
+Purpose:
+
+- require runtime status coverage
+- require execution evidence coverage
+- require audit trail coverage
+- require lifecycle events coverage
+- require operator visibility coverage
+- require failure reporting coverage
+- require recovery disabled state reporting coverage
+
+Expected files:
+
+- `docs/runtime_observability_completion_plan.md`
+- `docs/runtime_observability_gap_inventory.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- no new core/runtime files
+- no scheduler edits
+- no executor edits
+- no activation edits
+- no wiring changes
+- no behavior changes
+
+Validation expectation:
+
+- focused test must verify required observability surfaces are documented
+
+Final decision: GO for runtime observability surface coverage only. Next package: Package 494.
+
+## Package 494
+
+Package 494: Runtime Observability Read-only Guarantees Definition
+
+Package 494 defines read-only guarantees for runtime observability.
+
+Documentation/test only.
+
+Purpose:
+
+- explicitly preserve no execution control
+- explicitly preserve no scheduler control
+- explicitly preserve no executor control
+- explicitly preserve no mutation authority
+- explicitly preserve no recovery activation
+
+Expected files:
+
+- `docs/runtime_observability_completion_plan.md`
+- `docs/runtime_observability_gap_inventory.md`
+- `docs/runtime_observability_boundary_seal.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- no state change
+- no retry execution
+- no task dispatch
+- no recovery trigger
+- no runtime flow modification
+
+Validation expectation:
+
+- focused test must verify read-only guarantees exist
+
+Final decision: GO for runtime observability read-only guarantees only. Next package: Package 495.
+
+## Package 495
+
+Package 495: Runtime Observability Allowed Reporting Actions Definition
+
+Package 495 defines allowed observability reporting actions.
+
+Documentation/test only.
+
+Purpose:
+
+- allow observability to read state
+- allow observability to summarize state
+- allow observability to expose status
+- allow observability to report issues
+- forbid observability from control, mutation, retry, dispatch, recovery trigger, or runtime flow modification
+
+Expected files:
+
+- `docs/runtime_observability_completion_plan.md`
+- `docs/runtime_observability_boundary_seal.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- no new core/runtime files
+- no scheduler edits
+- no executor edits
+- no activation edits
+- no wiring changes
+- no behavior changes
+
+Validation expectation:
+
+- focused test must verify may/must-not observability rules exist
+
+Final decision: GO for runtime observability allowed reporting actions only. Next package: Package 496.
+
+## Package 496
+
+Package 496: Runtime Observability Completion Plan Milestone Seal
+
+Package 496 seals Packages 489-496 as the Runtime Observability Completion Plan bundle.
+
+Documentation/test only.
+
+Purpose:
+
+- seal observability completion plan
+- seal observability gap inventory
+- seal observability boundary
+- confirm required surfaces are documented
+- confirm read-only guarantees exist
+- confirm no runtime behavior changes
+
+Expected files:
+
+- `docs/runtime_observability_completion_plan.md`
+- `docs/runtime_observability_gap_inventory.md`
+- `docs/runtime_observability_boundary_seal.md`
+- `tests/test_runtime_observability_completion_plan.py`
+
+Forbidden scope:
+
+- no new core/runtime files
+- no scheduler edits
+- no executor edits
+- no activation edits
+- no wiring changes
+- no behavior changes
+
+Validation expectation:
+
+- run only `py -m pytest tests/test_runtime_observability_completion_plan.py -q`
+- do not run full suite, nightly, regression, or long validation
+
+Final decision: GO for runtime observability completion planning. Observability remains read-only: it may read, summarize, expose status, and report issues, but must not control execution, scheduler, executor, mutation, recovery activation, retry, dispatch, or runtime flow. Next package requires explicit package definition.
+
+## Non-mainline Issues Found
+
+- None for Packages 489-496. Existing runtime modules, scheduler, executor, activation, recovery execution, wiring, mutation, retry, dispatch, and runtime flow behavior remain outside this documentation/test package and must not be modified here.
