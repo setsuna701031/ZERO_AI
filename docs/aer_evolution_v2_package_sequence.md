@@ -7419,3 +7419,2080 @@ Final decision: GO. Next package: Package 255.
 
 - Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 254 preserves those files and does not modify, remove, import, call, or wire those historical modules.
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 254 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 255
+
+Package 255: Runtime Recovery Gateway Runtime Authorization Stub
+
+Package 255 extends the existing disabled Runtime Recovery Gateway with a reserved Runtime Authorization stage without creating a new public entry point. The only public API remains `prepare_runtime_recovery_gateway(...)`.
+
+The gateway now returns `authorization_result` as deterministic plain data only. The authorization stage is reserved for a future package, disabled, and does not decide, authorize, execute, grant admission, enable recovery, mutate runtime state, or call any runtime infrastructure.
+
+Admission order remains exactly:
+
+1. kill_switch
+2. disabled_gate
+3. future_admission_policy_reserved
+4. future_runtime_authorization_reserved
+5. future_recovery_execution_reserved
+
+Gateway denial still happens before any future authorization may act. Runtime remains disabled, non-executing, non-mutating, and unwired.
+
+Package 255 owns:
+
+- `core/runtime/aer_runtime_recovery_gateway.py`
+- `tests/test_aer_runtime_recovery_gateway.py`
+- `docs/runtime_recovery_gateway_disabled_admission_review.md`
+- reserved `authorization_result` gateway output
+- deterministic disabled authorization data
+- unchanged `prepare_runtime_recovery_gateway(...)` public API
+- unchanged strict `__all__`
+- unchanged admission evaluation order
+
+Package 255 `authorization_result` fields:
+
+- `enabled: false`
+- `authorization_status: "reserved"`
+- `authorization_version: "v1_reserved"`
+- `reason: "future_package"`
+- `admission_granted: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+
+Package 255 must not:
+
+- Do not execute Recovery
+- Do not wire Runtime
+- Do not add planner, scheduler, TaskRunner, operator, dispatcher, supervisor, native runtime, or watchdog behavior
+- Do not add persistence, audit, journal, endpoint invocation, hook registration, bridge calls, filesystem mutation, or subprocess behavior
+- Do not modify Runtime callers
+- Do not create new public APIs
+- Do not add extra exports
+- Do not rename existing fields
+- Do not reorder `admission_evaluation_order`
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Long validation must not be run by Codex
+- Run focused gateway tests only
+
+Final decision: GO. Next package: Package 256.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 255 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 255 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 256
+
+Package 256: Runtime Recovery Gateway Recovery Execution Stub
+
+Package 256 extends the existing disabled Runtime Recovery Gateway with a reserved Recovery Execution stage without creating a new public entry point. The only public API remains `prepare_runtime_recovery_gateway(...)`.
+
+The gateway now returns `recovery_execution_result` as deterministic plain data only. The recovery execution stage is reserved for a future package, disabled, and does not decide, authorize, execute, grant admission, enable recovery, mutate runtime state, wire runtime recovery execution, or call any runtime infrastructure.
+
+Admission order remains exactly:
+
+1. kill_switch
+2. disabled_gate
+3. future_admission_policy_reserved
+4. future_runtime_authorization_reserved
+5. future_recovery_execution_reserved
+
+Gateway denial still happens before any future recovery execution may act. Runtime remains disabled, non-executing, non-mutating, and unwired.
+
+Package 256 owns:
+
+- `core/runtime/aer_runtime_recovery_gateway.py`
+- `tests/test_aer_runtime_recovery_gateway.py`
+- `docs/runtime_recovery_gateway_disabled_admission_review.md`
+- reserved `recovery_execution_result` gateway output
+- deterministic disabled recovery execution data
+- unchanged `prepare_runtime_recovery_gateway(...)` public API
+- unchanged strict `__all__`
+- unchanged admission evaluation order
+
+Package 256 `recovery_execution_result` fields:
+
+- `enabled: false`
+- `execution_status: "reserved"`
+- `execution_version: "v1_reserved"`
+- `reason: "future_package"`
+- `admission_granted: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+
+Package 256 must not:
+
+- Do not wire, call, import, or execute recovery runtime modules
+- Do not create new public APIs
+- Do not add extra exports
+- Do not execute Recovery
+- Do not wire Runtime
+- Do not add planner, scheduler, TaskRunner, operator, dispatcher, supervisor, native runtime, or watchdog behavior
+- Do not add persistence, audit, journal, endpoint invocation, hook registration, bridge calls, filesystem mutation, or subprocess behavior
+- Do not modify Runtime callers
+- Do not rename existing fields
+- Do not reorder `admission_evaluation_order`
+- Do not modify `core/runtime/runtime_supervisor_bridge.py`
+- Long validation must not be run by Codex
+- Run focused gateway tests only
+
+Final decision: GO. Next package: Package 257.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 256 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 256 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 257
+
+Package 257: Runtime Recovery Execution Contract v1
+
+Package 257 creates the first Runtime Recovery Execution Contract v1 as contract/documentation only.
+
+No runtime behavior is added. No gateway behavior changes are made. No new public APIs are created. No imports or runtime wiring are introduced.
+
+Package 257 defines:
+
+- RecoveryExecutionRequest
+- RecoveryExecutionResult
+- RecoveryExecutionFailure
+- ownership
+- lifecycle
+- failure taxonomy
+- compatibility policy
+- boundary rules
+- dependency graph
+- public contract names only
+- future implementation ownership
+
+Package 257 rules:
+
+- no runtime execution yet
+- contract only
+- implementation forbidden in this package
+- no planner wiring
+- no scheduler wiring
+- no TaskRunner wiring
+- no operator wiring
+- no dispatcher wiring
+- no supervisor wiring
+- no native runtime wiring
+- no watchdog wiring
+- no persistence
+- no audit
+- no journal
+- no endpoint invocation
+- no hook registration
+- no bridge wiring
+- no subprocess
+- no filesystem mutation
+- no runtime mutation
+- Long validation must not be run by Codex
+- Run contract seal tests only
+
+Package 257 owns:
+
+- `docs/contracts/runtime/recovery_execution_v1.md`
+- `tests/test_runtime_recovery_execution_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO.
+
+Next package: Package 258.
+
+## Non-mainline Issues Found
+
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 257 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 257 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 258
+
+Package 258: Runtime Recovery Execution Plan Contract
+
+Package 258 creates Runtime Recovery Execution Plan Contract v1 as contract/documentation only.
+
+Contract/documentation only.
+
+No runtime implementation is added. No gateway changes are made. No executor changes are made. No supervisor, operator, planner, scheduler, TaskRunner, dispatcher, native runtime, or watchdog wiring is introduced. No persistence, subprocess, filesystem mutation, or runtime mutation is introduced.
+
+Package 258 defines public contract names only:
+
+- RecoveryExecutionPlan
+- RecoveryExecutionStage
+- RecoveryExecutionUnit
+- RecoveryExecutionCheckpoint
+- RecoveryExecutionRollbackPolicy
+- RecoveryExecutionRetryPolicy
+- RecoveryExecutionPlanFailure
+
+Package 258 defines:
+
+- purpose
+- ownership
+- lifecycle
+- plan input and output boundaries
+- stage ordering
+- execution unit rules
+- checkpoint rules
+- rollback semantics
+- retry policy
+- failure taxonomy
+- compatibility policy
+- dependency graph
+- future executor ownership
+- forbidden implementation behaviors
+
+Package 258 rules:
+
+- Package 258 must not execute recovery
+- Package 258 must not create runtime modules
+- Package 258 must not modify gateway code
+- Package 258 must not modify executor code
+- Package 258 must not call or import existing recovery bridge, executor, adapter, or integration modules
+- Package 258 must not add public runtime APIs
+- Package 258 must not mutate runtime state
+- Package 258 must not write files except the allowed docs/tests
+- Package 258 must not add persistence, subprocess, filesystem mutation, endpoint invocation, hooks, or bridge calls
+- Long validation must not be run by Codex
+- Run contract seal tests only
+
+Package 258 owns:
+
+- `docs/contracts/runtime/recovery_execution_plan_v1.md`
+- `tests/test_runtime_recovery_execution_plan_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 259.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 258 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 258 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 258 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 259
+
+Package 259: Runtime Recovery Executor Contract
+
+Package 259 creates Runtime Recovery Executor Contract v1.
+
+Contract/documentation only.
+
+No runtime implementation is added. No gateway changes are made. No recovery execution implementation is added. No planner, scheduler, operator, supervisor, TaskRunner, dispatcher, native runtime, or watchdog wiring is introduced. No persistence, subprocess, filesystem mutation, endpoint invocation, or runtime mutation is introduced.
+
+Package 259 defines public contract names only:
+
+- RecoveryExecutor
+- RecoveryExecutorRequest
+- RecoveryExecutorResult
+- RecoveryExecutorFailure
+- RecoveryExecutorOwnership
+- RecoveryExecutorLifecycle
+
+Package 259 defines:
+
+- executor responsibility
+- ownership boundaries
+- execution input and output
+- interaction with RecoveryExecutionPlan
+- execution lifecycle
+- state ownership
+- failure taxonomy
+- compatibility policy
+- dependency graph
+- future implementation ownership
+- forbidden implementation behaviors
+
+Package 259 rules:
+
+- Package 259 is Contract/documentation only
+- No runtime modules
+- No executor implementation
+- No gateway modification
+- No recovery runtime wiring
+- No imports from existing recovery bridge, executor, adapter, or integration modules
+- No public runtime APIs
+- No persistence
+- No subprocess
+- No filesystem mutation
+- No endpoint invocation
+- No hook registration
+- No runtime state mutation
+- Long validation must not be run by Codex
+- Run contract seal tests only
+
+Package 259 owns:
+
+- `docs/contracts/runtime/recovery_executor_v1.md`
+- `tests/test_runtime_recovery_executor_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 260.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 259 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 259 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 259 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 260
+
+Package 260: Runtime Recovery State Transition Contract
+
+Package 260 creates Runtime Recovery State Transition Contract v1.
+
+Contract/documentation only.
+
+No runtime implementation is added. No gateway changes are made. No executor changes are made. No planner, scheduler, operator, supervisor, TaskRunner, dispatcher, native runtime, or watchdog wiring is introduced. No persistence, subprocess, filesystem mutation, endpoint invocation, hook registration, or runtime state mutation is introduced.
+
+Package 260 defines public contract names only:
+
+- RecoveryStateTransition
+- RecoveryStateTransitionRequest
+- RecoveryStateTransitionResult
+- RecoveryStateTransitionFailure
+- RecoveryStateTransitionPolicy
+- RecoveryStateTransitionOwnership
+- RecoveryStateTransitionLifecycle
+
+Package 260 defines:
+
+- transition responsibility
+- ownership boundaries
+- allowed recovery states
+- forbidden state transitions
+- transition input and output
+- interaction with RecoveryExecutionPlan
+- interaction with RecoveryExecutor
+- transition lifecycle
+- failure taxonomy
+- compatibility policy
+- dependency graph
+- future implementation ownership
+- forbidden implementation behaviors
+
+Package 260 rules:
+
+- Package 260 is Contract/documentation only.
+- No runtime modules.
+- No state transition implementation.
+- No gateway modification.
+- No executor modification.
+- No recovery runtime wiring.
+- No imports from existing recovery bridge, executor, adapter, or integration modules.
+- No public runtime APIs.
+- No persistence.
+- No subprocess.
+- No filesystem mutation.
+- No endpoint invocation.
+- No hook registration.
+- No runtime state mutation.
+- Long validation must not be run by Codex.
+- Run contract seal tests only.
+
+Package 260 owns:
+
+- `docs/contracts/runtime/recovery_state_transition_v1.md`
+- `tests/test_runtime_recovery_state_transition_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 261.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 260 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 260 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 260 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 261
+
+Package 261: Runtime Recovery Checkpoint Contract
+
+Package 261 creates Runtime Recovery Checkpoint Contract v1.
+
+Contract/documentation only.
+
+No runtime implementation is added. No gateway changes are made. No executor changes are made. No state-transition implementation is added. No planner, scheduler, operator, supervisor, TaskRunner, dispatcher, native runtime, or watchdog wiring is introduced. No persistence, subprocess, filesystem mutation, endpoint invocation, hook registration, or runtime state mutation is introduced.
+
+Package 261 defines public contract names only:
+
+- RecoveryCheckpoint
+- RecoveryCheckpointRequest
+- RecoveryCheckpointResult
+- RecoveryCheckpointFailure
+- RecoveryCheckpointPolicy
+- RecoveryCheckpointOwnership
+- RecoveryCheckpointLifecycle
+
+Package 261 defines:
+
+- checkpoint responsibility
+- ownership boundaries
+- checkpoint creation rules
+- checkpoint validation rules
+- checkpoint identity fields
+- checkpoint lineage rules
+- checkpoint restore boundaries
+- interaction with RecoveryExecutionPlan
+- interaction with RecoveryExecutor
+- interaction with RecoveryStateTransition
+- lifecycle
+- failure taxonomy
+- compatibility policy
+- dependency graph
+- future implementation ownership
+- forbidden implementation behaviors
+
+Package 261 rules:
+
+- Package 261 is Contract/documentation only.
+- No runtime modules.
+- No checkpoint implementation.
+- No gateway modification.
+- No executor modification.
+- No state-transition implementation.
+- No recovery runtime wiring.
+- No imports from existing recovery bridge, executor, adapter, or integration modules.
+- No public runtime APIs.
+- No persistence.
+- No subprocess.
+- No filesystem mutation.
+- No endpoint invocation.
+- No hook registration.
+- No runtime state mutation.
+- Long validation must not be run by Codex.
+- Run contract seal tests only.
+
+Package 261 owns:
+
+- `docs/contracts/runtime/recovery_checkpoint_v1.md`
+- `tests/test_runtime_recovery_checkpoint_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 262.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 261 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 261 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 261 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 262
+
+Package 262: Runtime Recovery Rollback Contract
+
+Package 262 creates Runtime Recovery Rollback Contract v1.
+
+Contract/documentation only.
+
+No runtime implementation is added. No gateway changes are made. No executor implementation is added. No state transition implementation is added. No checkpoint implementation is added. No planner, scheduler, operator, supervisor, TaskRunner, dispatcher, native runtime, or watchdog wiring is introduced. No persistence, subprocess, filesystem mutation, endpoint invocation, hook registration, or runtime state mutation is introduced.
+
+Package 262 defines public contract names only:
+
+- RecoveryRollback
+- RecoveryRollbackRequest
+- RecoveryRollbackResult
+- RecoveryRollbackFailure
+- RecoveryRollbackPolicy
+- RecoveryRollbackOwnership
+- RecoveryRollbackLifecycle
+
+Package 262 defines rollback responsibility, ownership boundaries, rollback eligibility, rollback target rules, rollback safety rules, checkpoint dependency, interactions with RecoveryExecutionPlan, RecoveryExecutor, RecoveryStateTransition, and RecoveryCheckpoint, failure taxonomy, compatibility policy, dependency graph, future implementation ownership, and forbidden implementation behaviors.
+
+Package 262 rules:
+
+- Package 262 is Contract/documentation only.
+- Do not create runtime modules.
+- Do not modify runtime code.
+- Do not modify gateway code.
+- Do not implement executor behavior.
+- Do not implement state transition behavior.
+- Do not implement checkpoint behavior.
+- Do not implement rollback behavior.
+- Do not import or call existing recovery bridge, executor, adapter, or integration modules.
+- Do not add public runtime APIs.
+- Do not add persistence.
+- Do not add subprocess.
+- Do not mutate filesystem except allowed docs/tests.
+- Do not invoke endpoints.
+- Do not register hooks.
+- Do not mutate runtime state.
+- Long validation must not be run by Codex.
+- Run contract seal tests only.
+
+Package 262 owns:
+
+- `docs/contracts/runtime/recovery_rollback_v1.md`
+- `tests/test_runtime_recovery_rollback_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 263.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 262 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 262 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 262 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 263
+
+Package 263: Runtime Recovery Retry Contract
+
+Package 263 creates Runtime Recovery Retry Contract v1.
+
+Contract/documentation only.
+
+No runtime implementation is added. No gateway changes are made. No executor implementation is added. No state transition implementation is added. No checkpoint implementation is added. No rollback implementation is added. No planner, scheduler, operator, supervisor, TaskRunner, dispatcher, native runtime, or watchdog wiring is introduced. No persistence, subprocess, filesystem mutation, endpoint invocation, hook registration, or runtime state mutation is introduced.
+
+Package 263 defines public contract names only:
+
+- RecoveryRetry
+- RecoveryRetryRequest
+- RecoveryRetryResult
+- RecoveryRetryFailure
+- RecoveryRetryPolicy
+- RecoveryRetryOwnership
+- RecoveryRetryLifecycle
+
+Package 263 defines retry responsibility, ownership boundaries, retry eligibility, retry limits, retry ordering, retry backoff semantics, terminal failure rules, interactions with RecoveryExecutionPlan, RecoveryExecutor, RecoveryStateTransition, RecoveryCheckpoint, and RecoveryRollback, failure taxonomy, compatibility policy, dependency graph, future implementation ownership, and forbidden implementation behaviors.
+
+Package 263 rules:
+
+- Package 263 is Contract/documentation only.
+- Do not create runtime modules.
+- Do not modify runtime code.
+- Do not modify gateway code.
+- Do not implement executor behavior.
+- Do not implement state transition behavior.
+- Do not implement checkpoint behavior.
+- Do not implement rollback behavior.
+- Do not implement retry behavior.
+- Do not import or call existing recovery bridge, executor, adapter, or integration modules.
+- Do not add public runtime APIs.
+- Do not add persistence.
+- Do not add subprocess.
+- Do not mutate filesystem except allowed docs/tests.
+- Do not invoke endpoints.
+- Do not register hooks.
+- Do not mutate runtime state.
+- Long validation must not be run by Codex.
+- Run contract seal tests only.
+
+Package 263 owns:
+
+- `docs/contracts/runtime/recovery_retry_v1.md`
+- `tests/test_runtime_recovery_retry_contract.py`
+- `docs/contracts/runtime/inventory.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 264.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 263 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 263 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 263 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 264
+
+Package 264: Runtime Recovery Wiring Readiness Review
+
+Package 264 creates Runtime Recovery Wiring Readiness Review.
+
+Review/documentation only.
+
+Package 264 reviews the Recovery Execution Contract, Recovery Execution Plan Contract, Recovery Executor Contract, Recovery State Transition Contract, Recovery Checkpoint Contract, Recovery Rollback Contract, and Recovery Retry Contract.
+
+Package 264 includes readiness decision, GO / NO-GO result, required contracts checklist, runtime wiring prerequisites, forbidden wiring before readiness, boundary matrix, dependency graph, non-mainline issues found, and a statement that this package still does not implement runtime wiring.
+
+Package 264 rules:
+
+- Package 264 is Review/documentation only.
+- Do not create runtime modules.
+- Do not modify runtime code.
+- Do not modify gateway code.
+- Do not implement executor behavior.
+- Do not implement state transition behavior.
+- Do not implement checkpoint behavior.
+- Do not implement rollback behavior.
+- Do not implement retry behavior.
+- Do not import or call existing recovery bridge, executor, adapter, or integration modules.
+- Do not add public runtime APIs.
+- Do not add persistence.
+- Do not add subprocess.
+- Do not mutate filesystem except allowed docs/tests.
+- Do not invoke endpoints.
+- Do not register hooks.
+- Do not mutate runtime state.
+- Long validation must not be run by Codex.
+- Run review seal tests only.
+
+Package 264 owns:
+
+- `docs/runtime_recovery_wiring_readiness_review.md`
+- `tests/test_runtime_recovery_wiring_readiness_review.py`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 265.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 264 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 264 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 264 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 265
+
+Package 265: Runtime Recovery Implementation Blueprint
+
+Package 265 creates the Runtime Recovery Implementation Blueprint.
+
+Architecture/documentation only.
+
+No runtime wiring in Package 265.
+
+Package 265 defines runtime component map, Gateway -> RecoveryExecutionPlan -> RecoveryExecutor -> RecoveryStateTransition -> RecoveryCheckpoint -> RecoveryRollback -> RecoveryRetry flow, ownership boundaries, implementation sequence, forbidden shortcuts, dependency graph, and integration points with Supervisor, Operator, and Native Runtime.
+
+Package 265 rules:
+
+- Package 265 is Architecture/documentation only.
+- Do not create runtime modules.
+- Do not modify runtime code.
+- Do not modify gateway code.
+- Do not implement executor behavior.
+- Do not implement state transition behavior.
+- Do not implement checkpoint behavior.
+- Do not implement rollback behavior.
+- Do not implement retry behavior.
+- Do not import or call recovery bridge, executor, adapter, or integration modules.
+- Do not add public runtime APIs.
+- Do not mutate runtime state.
+- Do not add persistence, subprocess, or filesystem mutation.
+- Do not register hooks or invoke endpoints.
+- Long validation must not be run by Codex.
+- Run architecture seal tests only.
+
+Package 265 owns:
+
+- `docs/runtime_recovery_implementation_blueprint.md`
+- `tests/test_runtime_recovery_implementation_blueprint.py`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 266.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 265 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 265 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 265 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 266
+
+Package 266: Runtime Recovery Wiring Phase Plan
+
+Package 266 creates the Runtime Recovery Wiring Phase Plan.
+
+Architecture/documentation only.
+
+No runtime wiring or implementation in Package 266.
+
+Package 266 defines Phase 1 inert wiring only, Phase 2 executor skeleton, Phase 3 checkpoint/rollback/retry skeletons, Phase 4 supervised execution, Phase 5 activation readiness, allowed files per future phase, forbidden files per future phase, rollback plan, validation plan, and long validation remaining local, not Codex.
+
+Package 266 rules:
+
+- Package 266 is Architecture/documentation only.
+- Do not create runtime modules.
+- Do not modify runtime code.
+- Do not modify gateway code.
+- Do not implement executor behavior.
+- Do not implement state transition behavior.
+- Do not implement checkpoint behavior.
+- Do not implement rollback behavior.
+- Do not implement retry behavior.
+- Do not import or call recovery bridge, executor, adapter, or integration modules.
+- Do not add public runtime APIs.
+- Do not mutate runtime state.
+- Do not add persistence, subprocess, or filesystem mutation.
+- Do not register hooks or invoke endpoints.
+- Long validation must not be run by Codex.
+- Run phase-plan seal tests only.
+
+Package 266 owns:
+
+- `docs/runtime_recovery_wiring_phase_plan.md`
+- `tests/test_runtime_recovery_wiring_phase_plan.py`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 267.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 266 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 266 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 266 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 267
+
+Package 267: Runtime Recovery Implementation Readiness Seal
+
+Package 267 creates the Runtime Recovery Implementation Readiness Seal.
+
+Review/documentation only.
+
+No runtime wiring or implementation in Package 267.
+
+Package 267 decides GO / NO-GO for starting Package 268 runtime wiring and includes readiness checklist, required contracts completed, required reviews completed, boundary matrix, implementation risk table, and final decision.
+
+Package 267 rules:
+
+- Package 267 is Review/documentation only.
+- Do not create runtime modules.
+- Do not modify runtime code.
+- Do not modify gateway code.
+- Do not implement executor behavior.
+- Do not implement state transition behavior.
+- Do not implement checkpoint behavior.
+- Do not implement rollback behavior.
+- Do not implement retry behavior.
+- Do not import or call recovery bridge, executor, adapter, or integration modules.
+- Do not add public runtime APIs.
+- Do not mutate runtime state.
+- Do not add persistence, subprocess, or filesystem mutation.
+- Do not register hooks or invoke endpoints.
+- Long validation must not be run by Codex.
+- Run readiness seal tests only.
+
+Package 267 owns:
+
+- `docs/runtime_recovery_implementation_readiness_seal.md`
+- `tests/test_runtime_recovery_implementation_readiness_seal.py`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Final decision: GO. Next package: Package 268.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 267 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 267 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 267 preserves that unrelated numbering drift and does not modify those files.
+
+## Package 268
+
+Package 268: Recovery Runtime Inert Wiring
+
+Package 268 creates inert recovery runtime wiring.
+
+Runtime implementation skeleton only.
+
+Package 268 adds `core/runtime/recovery_runtime_wiring.py` with public function `prepare_recovery_runtime_wiring(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `wiring_status: "inert"`
+- `runtime_state_mutated: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+
+Package 268 must not call gateway or executor modules.
+
+Package 268 rules:
+
+- No real recovery execution.
+- No runtime state mutation.
+- No filesystem mutation except allowed files.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No planner, scheduler, operator, supervisor, or native activation.
+- No imports from existing recovery bridge, executor, adapter, integration, or gateway modules.
+- No public APIs except `prepare_recovery_runtime_wiring`.
+- Use strict `__all__`.
+
+Final decision: GO. Next package: Package 269.
+
+## Package 269
+
+Package 269: RecoveryExecutor Skeleton
+
+Package 269 creates RecoveryExecutor skeleton.
+
+Runtime implementation skeleton only.
+
+Package 269 adds `core/runtime/recovery_executor.py` with public function `prepare_recovery_executor(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `executor_status: "skeleton"`
+- `execution_allowed: False`
+- `recovery_executed: False`
+- `runtime_state_mutated: False`
+
+Package 269 rules:
+
+- No real recovery execution.
+- No runtime state mutation.
+- No filesystem mutation except allowed files.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No planner, scheduler, operator, supervisor, or native activation.
+- No imports from existing recovery bridge, executor, adapter, integration, or gateway modules.
+- No public APIs except `prepare_recovery_executor`.
+- Use strict `__all__`.
+
+Final decision: GO. Next package: Package 270.
+
+## Package 270
+
+Package 270: RecoveryStateTransition Skeleton
+
+Package 270 creates RecoveryStateTransition skeleton.
+
+Runtime implementation skeleton only.
+
+Package 270 adds `core/runtime/recovery_state_transition.py` with public function `prepare_recovery_state_transition(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `transition_status: "skeleton"`
+- `transition_applied: False`
+- `runtime_state_mutated: False`
+
+Package 270 rules:
+
+- No real recovery execution.
+- No runtime state mutation.
+- No filesystem mutation except allowed files.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No planner, scheduler, operator, supervisor, or native activation.
+- No imports from existing recovery bridge, executor, adapter, integration, or gateway modules.
+- No public APIs except `prepare_recovery_state_transition`.
+- Use strict `__all__`.
+
+Final decision: GO. Next package: Package 271.
+
+## Package 271
+
+Package 271: RecoveryCheckpoint Skeleton
+
+Package 271 creates RecoveryCheckpoint skeleton.
+
+Runtime implementation skeleton only.
+
+Package 271 adds `core/runtime/recovery_checkpoint.py` with public function `prepare_recovery_checkpoint(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `checkpoint_status: "skeleton"`
+- `checkpoint_created: False`
+- `checkpoint_restored: False`
+- `runtime_state_mutated: False`
+
+Package 271 rules:
+
+- No real recovery execution.
+- No runtime state mutation.
+- No filesystem mutation except allowed files.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No planner, scheduler, operator, supervisor, or native activation.
+- No imports from existing recovery bridge, executor, adapter, integration, or gateway modules.
+- No public APIs except `prepare_recovery_checkpoint`.
+- Use strict `__all__`.
+
+Final decision: GO. Next package: Package 272.
+
+## Package 272
+
+Package 272: Recovery Implementation Seal
+
+Package 272 creates Recovery Implementation Seal.
+
+Implementation seal/documentation only.
+
+Package 272 confirms all modules are inert, confirms no runtime mutation, confirms no real recovery execution, and confirms no gateway, supervisor, operator, or native wiring.
+
+Package 272 owns:
+
+- `tests/test_recovery_runtime_implementation_bundle.py`
+- `docs/runtime_recovery_implementation_seal.md`
+- `docs/aer_evolution_v2_package_sequence.md`
+
+Package 272 rules:
+
+- No real recovery execution.
+- No runtime state mutation.
+- No filesystem mutation except allowed files.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No planner, scheduler, operator, supervisor, or native activation.
+- No imports from existing recovery bridge, executor, adapter, integration, or gateway modules.
+- No public runtime APIs except the four `prepare_*` functions.
+- Use strict `__all__` in each new module.
+- Long validation must not be run by Codex.
+
+Final decision: GO. Next package: Package 273.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 268-272 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 268-272 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Packages 268-272 preserve that unrelated numbering drift and do not modify those files.
+
+## Package 273
+
+Package 273: Recovery Runtime Wiring Activation Stub
+
+Package 273 creates disabled Recovery Runtime Wiring Activation Stub.
+
+Runtime integration stub only.
+
+Package 273 adds `core/runtime/recovery_runtime_integration.py` with public function `prepare_recovery_runtime_integration(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `integration_status: "stub"`
+- `wiring_active: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 274.
+
+## Package 274
+
+Package 274: RecoveryExecutor Integration Stub
+
+Package 274 creates RecoveryExecutor Integration Stub.
+
+Runtime integration stub only.
+
+Package 274 adds `core/runtime/recovery_executor_integration.py` with public function `prepare_recovery_executor_integration(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `executor_integration_status: "stub"`
+- `executor_bound: False`
+- `execution_allowed: False`
+- `recovery_executed: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 275.
+
+## Package 275
+
+Package 275: RecoveryStateTransition Integration Stub
+
+Package 275 creates RecoveryStateTransition Integration Stub.
+
+Runtime integration stub only.
+
+Package 275 adds `core/runtime/recovery_state_transition_integration.py` with public function `prepare_recovery_state_transition_integration(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `state_transition_integration_status: "stub"`
+- `transition_bound: False`
+- `transition_applied: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 276.
+
+## Package 276
+
+Package 276: RecoveryCheckpoint Integration Stub
+
+Package 276 creates RecoveryCheckpoint Integration Stub.
+
+Runtime integration stub only.
+
+Package 276 adds `core/runtime/recovery_checkpoint_integration.py` with public function `prepare_recovery_checkpoint_integration(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `checkpoint_integration_status: "stub"`
+- `checkpoint_bound: False`
+- `checkpoint_created: False`
+- `checkpoint_restored: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 277.
+
+## Package 277
+
+Package 277: RecoveryGateway Runtime Bridge Stub
+
+Package 277 creates RecoveryGateway Runtime Bridge Stub.
+
+Runtime integration stub only.
+
+Package 277 adds `core/runtime/recovery_gateway_runtime_bridge.py` with public function `prepare_recovery_gateway_runtime_bridge(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `bridge_status: "stub"`
+- `gateway_bound: False`
+- `runtime_bound: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 278.
+
+## Package 278
+
+Package 278: Supervisor Observation Stub
+
+Package 278 creates Supervisor Observation Stub.
+
+Runtime integration stub only.
+
+Package 278 adds `core/runtime/recovery_supervisor_observation.py` with public function `prepare_recovery_supervisor_observation(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `observation_status: "stub"`
+- `supervisor_bound: False`
+- `observation_active: False`
+- `recovery_controlled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 279.
+
+## Package 279
+
+Package 279: Recovery Integration Seal
+
+Package 279 creates Recovery Integration Seal.
+
+Integration seal/documentation only.
+
+Package 279 confirms all integration modules are disabled, no recovery execution, no runtime mutation, no checkpoint write or restore, no gateway activation, no supervisor control, and no persistence, subprocess, hooks, or endpoints.
+
+Final decision: GO. Next package: Package 280.
+
+## Package 280
+
+Package 280: Recovery Activation Readiness Review
+
+Package 280 creates Recovery Activation Readiness Review.
+
+Readiness review/documentation only.
+
+Package 280 includes GO / NO-GO readiness decision, required skeletons completed, required integration stubs completed, activation blockers, boundary matrix, risk table, and final decision.
+
+Package 280 rules:
+
+- All behavior remains disabled and inert.
+- No real recovery execution.
+- No runtime state mutation.
+- No checkpoint write or restore.
+- No rollback or retry execution.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No persistence.
+- No planner, scheduler, operator, supervisor, or native activation.
+- No imports from gateway, supervisor, operator, scheduler, planner, native runtime, bridge, executor, adapter, or integration legacy modules.
+- Long validation must not be run by Codex.
+
+Final decision: GO. Next package: Package 281.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 273-280 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 273-280 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Packages 273-280 preserve that unrelated numbering drift and do not modify those files.
+
+## Package 281
+
+Package 281: Recovery Activation Request Contract
+
+Package 281 creates Recovery Activation Request Contract v1.
+
+Contract/documentation only.
+
+Package 281 defines public contract names:
+
+- RecoveryActivationRequest
+- RecoveryActivationResult
+- RecoveryActivationFailure
+- RecoveryActivationPolicy
+- RecoveryActivationOwnership
+- RecoveryActivationLifecycle
+
+Default behavior remains disabled. No real recovery execution, runtime state mutation, checkpoint write or restore, rollback or retry execution, subprocess, endpoint invocation, hook registration, or persistence is introduced.
+
+Final decision: GO. Next package: Package 282.
+
+## Package 282
+
+Package 282: Recovery Activation Gate Stub
+
+Package 282 creates `core/runtime/recovery_activation_gate.py`.
+
+Controlled activation stub only.
+
+Public function: `prepare_recovery_activation_gate(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `gate_status: "disabled"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 283.
+
+## Package 283
+
+Package 283: Recovery Activation Policy Stub
+
+Package 283 creates `core/runtime/recovery_activation_policy.py`.
+
+Controlled activation stub only.
+
+Public function: `prepare_recovery_activation_policy(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `policy_status: "stub"`
+- `activation_policy_result: "reserved"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 284.
+
+## Package 284
+
+Package 284: Recovery Activation Admission Bridge Stub
+
+Package 284 creates `core/runtime/recovery_activation_admission_bridge.py`.
+
+Controlled activation stub only.
+
+Public function: `prepare_recovery_activation_admission_bridge(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `bridge_status: "stub"`
+- `admission_bound: False`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 285.
+
+## Package 285
+
+Package 285: Recovery Activation Observation Seal
+
+Package 285 creates Recovery Activation Observation Seal.
+
+Observation/documentation only.
+
+Package 285 confirms activation is observable only, with no execution, no state mutation, no checkpoint, rollback, or retry execution, no gateway activation, and no supervisor, operator, or native control.
+
+Final decision: GO. Next package: Package 286.
+
+## Package 286
+
+Package 286: Recovery Controlled Activation Readiness Review
+
+Package 286 creates Recovery Controlled Activation Readiness Review.
+
+Readiness review/documentation only.
+
+Package 286 includes GO / NO-GO decision, activation blockers, activation prerequisites, boundary matrix, risk table, and final decision.
+
+Package 286 rules:
+
+- Default behavior remains disabled.
+- No real recovery execution.
+- No runtime state mutation.
+- No checkpoint write or restore.
+- No rollback or retry execution.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No persistence.
+- No imports from gateway, supervisor, operator, scheduler, planner, native runtime, bridge, executor, adapter, or integration legacy modules.
+- Long validation must not be run by Codex.
+
+Final decision: GO. Next package: Package 287.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 281-286 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 281-286 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Packages 281-286 preserve that unrelated numbering drift and do not modify those files.
+
+## Package 287
+
+Package 287: Recovery Wiring Control Contract
+
+Package 287 creates Recovery Wiring Control Contract v1.
+
+Contract/documentation only.
+
+Package 287 defines public contract names:
+
+- RecoveryWiringControlRequest
+- RecoveryWiringControlResult
+- RecoveryWiringControlFailure
+- RecoveryWiringControlPolicy
+- RecoveryWiringControlOwnership
+- RecoveryWiringControlLifecycle
+
+Default behavior remains disabled. No real recovery execution, runtime state mutation, checkpoint write or restore, rollback or retry execution, subprocess, endpoint invocation, hook registration, or persistence is introduced.
+
+Final decision: GO. Next package: Package 288.
+
+## Package 288
+
+Package 288: Recovery Wiring Controller Stub
+
+Package 288 creates `core/runtime/recovery_wiring_controller.py`.
+
+Controlled wiring stub only.
+
+Public function: `prepare_recovery_wiring_controller(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `controller_status: "stub"`
+- `wiring_allowed: False`
+- `activation_bound: False`
+- `integration_bound: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 289.
+
+## Package 289
+
+Package 289: Recovery Activation -> Integration Bridge Stub
+
+Package 289 creates `core/runtime/recovery_activation_integration_bridge.py`.
+
+Controlled wiring bridge stub only.
+
+Public function: `prepare_recovery_activation_integration_bridge(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `bridge_status: "stub"`
+- `activation_bound: False`
+- `integration_bound: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 290.
+
+## Package 290
+
+Package 290: Recovery Wiring Status Projection
+
+Package 290 creates `core/runtime/recovery_wiring_status_projection.py`.
+
+Controlled wiring status projection stub only.
+
+Public function: `prepare_recovery_wiring_status_projection(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `projection_status: "stub"`
+- `wiring_status: "disabled"`
+- `activation_status: "disabled"`
+- `integration_status: "disabled"`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 291.
+
+## Package 291
+
+Package 291: Recovery Wiring Control Seal
+
+Package 291 creates Recovery Wiring Control Seal.
+
+Seal/documentation only.
+
+Package 291 confirms wiring control is disabled, the activation/integration bridge is stub only, status projection is data only, and there is no runtime mutation, recovery execution, gateway/supervisor/operator/native activation, checkpoint/rollback/retry execution, persistence, subprocess, hook registration, or endpoint invocation.
+
+Final decision: GO. Next package: Package 292.
+
+## Package 292
+
+Package 292: Recovery Wiring Readiness Review v2
+
+Package 292 creates Runtime Recovery Wiring Readiness Review v2.
+
+Readiness review/documentation only.
+
+Package 292 includes GO / NO-GO decision, wiring prerequisites, activation-control prerequisites, integration prerequisites, blockers, boundary matrix, risk table, and final decision.
+
+Package 292 rules:
+
+- Default behavior remains disabled.
+- No real recovery execution.
+- No runtime state mutation.
+- No checkpoint write or restore.
+- No rollback or retry execution.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No persistence.
+- No gateway, supervisor, operator, scheduler, planner, or native activation.
+- No imports from gateway, supervisor, operator, scheduler, planner, native runtime, bridge, executor, adapter, integration legacy modules, activation-control modules, or integration modules.
+- Long validation must not be run by Codex.
+
+Final decision: GO. Next package: Package 293.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 287-292 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 287-292 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Packages 287-292 preserve that unrelated numbering drift and do not modify those files.
+
+## Package 293
+
+Package 293: Recovery Execution Admission Stub
+
+Package 293 creates `core/runtime/recovery_execution_admission.py`.
+
+Recovery execution admission stub only.
+
+Public function: `prepare_recovery_execution_admission(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `admission_status: "stub"`
+- `admission_granted: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 294.
+
+## Package 294
+
+Package 294: Recovery Execution Dispatcher Stub
+
+Package 294 creates `core/runtime/recovery_execution_dispatcher.py`.
+
+Recovery execution dispatcher stub only.
+
+Public function: `prepare_recovery_execution_dispatcher(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `dispatcher_status: "stub"`
+- `dispatch_allowed: False`
+- `execution_allowed: False`
+- `recovery_dispatched: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 295.
+
+## Package 295
+
+Package 295: Recovery Execution Coordinator Stub
+
+Package 295 creates `core/runtime/recovery_execution_coordinator.py`.
+
+Recovery execution coordinator stub only.
+
+Public function: `prepare_recovery_execution_coordinator(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `coordinator_status: "stub"`
+- `coordination_active: False`
+- `execution_allowed: False`
+- `recovery_executed: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 296.
+
+## Package 296
+
+Package 296: Recovery Runtime Coordinator Stub
+
+Package 296 creates `core/runtime/recovery_runtime_coordinator.py`.
+
+Recovery runtime coordinator stub only.
+
+Public function: `prepare_recovery_runtime_coordinator(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `runtime_coordinator_status: "stub"`
+- `pipeline_bound: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 297.
+
+## Package 297
+
+Package 297: Recovery Status Aggregator Stub
+
+Package 297 creates `core/runtime/recovery_status_aggregator.py`.
+
+Recovery status aggregator stub only.
+
+Public function: `prepare_recovery_status_aggregator(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `aggregator_status: "stub"`
+- `status_projection: "disabled"`
+- `admission_status: "stub"`
+- `dispatch_status: "stub"`
+- `coordination_status: "stub"`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 298.
+
+## Package 298
+
+Package 298: Recovery Wiring Closure Review
+
+Package 298 creates Recovery Runtime Wiring Closure Review.
+
+Review/documentation only.
+
+Package 298 confirms disabled admission, dispatcher, coordinator, runtime coordinator, and status aggregator paths exist.
+
+Package 298 confirms no recovery execution, runtime mutation, persistence, subprocess, hook registration, endpoint invocation, checkpoint write or restore, rollback execution, or retry execution is implemented.
+
+Final decision: GO. Next package: Package 299.
+
+## Package 299
+
+Package 299: Runtime Activation GO Review
+
+Package 299 creates Runtime Activation GO Review.
+
+Review/documentation only.
+
+Package 299 includes GO / NO-GO readiness decision, activation blockers, conditions required before enabling recovery, risk matrix, boundary matrix, and a statement that activation is still disabled.
+
+Final decision: GO. Next package: Package 300.
+
+## Package 300
+
+Package 300: Recovery Runtime Milestone Seal
+
+Package 300 creates Recovery Runtime Milestone Seal.
+
+Seal/documentation only.
+
+Package 300 confirms:
+
+- Packages 257-300 completion map.
+- Contract layer completed.
+- Skeleton layer completed.
+- Integration layer completed.
+- Activation-control layer completed.
+- Wiring-control layer completed.
+- Phase 2 pipeline stubs completed.
+
+Final decision: GO. Next package: Package 301.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 293-300 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 293-300 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+
+## Package 301
+
+Package 301: Recovery Enablement Contract
+
+Package 301 creates Recovery Enablement Contract v1.
+
+Contract/documentation only.
+
+Package 301 defines public contract names:
+
+- RecoveryEnablementRequest
+- RecoveryEnablementResult
+- RecoveryEnablementFailure
+- RecoveryEnablementPolicy
+- RecoveryEnablementOwnership
+- RecoveryEnablementLifecycle
+
+Default behavior remains disabled. No real recovery execution, runtime state mutation, checkpoint write or restore, rollback or retry execution, subprocess, endpoint invocation, hook registration, or persistence is introduced.
+
+Final decision: GO. Next package: Package 302.
+
+## Package 302
+
+Package 302: Recovery Enablement Gate
+
+Package 302 creates `core/runtime/recovery_enablement_gate.py`.
+
+Controlled enablement stub only.
+
+Public function: `prepare_recovery_enablement_gate(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `gate_status: "disabled"`
+- `enablement_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 303.
+
+## Package 303
+
+Package 303: Recovery Enablement Policy
+
+Package 303 creates `core/runtime/recovery_enablement_policy.py`.
+
+Controlled enablement policy stub only.
+
+Public function: `prepare_recovery_enablement_policy(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `policy_status: "stub"`
+- `enablement_policy_result: "reserved"`
+- `enablement_allowed: False`
+- `execution_allowed: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 304.
+
+## Package 304
+
+Package 304: Recovery Enablement Status Projection
+
+Package 304 creates `core/runtime/recovery_enablement_status_projection.py`.
+
+Controlled enablement status projection stub only.
+
+Public function: `prepare_recovery_enablement_status_projection(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `projection_status: "stub"`
+- `enablement_status: "disabled"`
+- `policy_status: "stub"`
+- `gate_status: "disabled"`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 305.
+
+## Package 305
+
+Package 305: Recovery Enablement Seal
+
+Package 305 creates Recovery Enablement Seal.
+
+Seal/documentation only.
+
+Package 305 confirms enablement exists only as disabled data, with no recovery execution, runtime mutation, checkpoint write or restore, rollback execution, retry execution, gateway/supervisor/operator/native activation, persistence, subprocess, hook registration, or endpoint invocation.
+
+Final decision: GO. Next package: Package 306.
+
+## Package 306
+
+Package 306: Recovery Enablement Readiness Review
+
+Package 306 creates Recovery Enablement Readiness Review.
+
+Readiness review/documentation only.
+
+Package 306 includes GO / NO-GO decision, enablement prerequisites, execution blockers, boundary matrix, risk table, statement that recovery execution remains disabled, and final decision.
+
+Package 306 rules:
+
+- Default behavior remains disabled.
+- No real recovery execution.
+- No runtime state mutation.
+- No checkpoint write or restore.
+- No rollback or retry execution.
+- No subprocess.
+- No endpoint invocation.
+- No hook registration.
+- No persistence.
+- No imports from gateway, supervisor, operator, scheduler, planner, native runtime, bridge, executor, adapter, integration legacy modules, or prior recovery runtime stubs.
+- Long validation must not be run by Codex.
+
+Final decision: GO. Next package: Package 307.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 301-306 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 301-306 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+
+## Package 307
+
+Package 307: Recovery Control Pipeline Contract
+
+Package 307 creates Recovery Control Pipeline Contract v1.
+
+Contract/documentation only.
+
+Package 307 defines public contract names:
+
+- RecoveryControlPipelineRequest
+- RecoveryControlPipelineResult
+- RecoveryControlPipelineFailure
+- RecoveryControlPipelinePolicy
+- RecoveryControlPipelineOwnership
+- RecoveryControlPipelineLifecycle
+
+Default behavior remains disabled. No real recovery execution, runtime state mutation, checkpoint write or restore, rollback or retry execution, subprocess, endpoint invocation, hook registration, or persistence is introduced.
+
+Final decision: GO. Next package: Package 308.
+
+## Package 308
+
+Package 308: Recovery Control Pipeline Stub
+
+Package 308 creates `core/runtime/recovery_control_pipeline.py`.
+
+Disabled control pipeline stub only.
+
+Public function: `prepare_recovery_control_pipeline(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `pipeline_status: "disabled"`
+- `enablement_status: "disabled"`
+- `wiring_status: "disabled"`
+- `admission_status: "stub"`
+- `dispatch_status: "stub"`
+- `coordination_status: "stub"`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 309.
+
+## Package 309
+
+Package 309: Recovery Control Pipeline Status Projection
+
+Package 309 creates `core/runtime/recovery_control_pipeline_status.py`.
+
+Disabled control pipeline status projection stub only.
+
+Public function: `prepare_recovery_control_pipeline_status(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `projection_status: "stub"`
+- `pipeline_status: "disabled"`
+- `enablement_status: "disabled"`
+- `wiring_status: "disabled"`
+- `admission_status: "stub"`
+- `dispatch_status: "stub"`
+- `coordination_status: "stub"`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 310.
+
+## Package 310
+
+Package 310: Recovery Control Pipeline Safety Seal
+
+Package 310 creates Recovery Control Pipeline Safety Seal.
+
+Seal/documentation only.
+
+Package 310 confirms the pipeline is disabled, enablement is disabled, wiring is disabled, admission is stub only, dispatch is stub only, coordination is stub only, status projection is data only, and no recovery execution, runtime mutation, checkpoint write or restore, rollback execution, retry execution, gateway/supervisor/operator/native activation, persistence, subprocess, hook registration, or endpoint invocation is implemented.
+
+Final decision: GO. Next package: Package 311.
+
+## Package 311
+
+Package 311: Recovery Control Pipeline Readiness Review
+
+Package 311 creates Recovery Control Pipeline Readiness Review.
+
+Readiness review/documentation only.
+
+Package 311 includes GO / NO-GO decision, execution blockers, prerequisites for future controlled activation, boundary matrix, risk table, statement that execution remains disabled, and final decision.
+
+Final decision: GO. Next package: Package 312.
+
+## Package 312
+
+Package 312: Recovery Control Pipeline Milestone Seal
+
+Package 312 creates Recovery Control Pipeline Milestone Seal.
+
+Seal/documentation only.
+
+Package 312 confirms:
+
+- Packages 301-312 completion map.
+- Enablement layer completed.
+- Wiring control layer completed.
+- Disabled control pipeline completed.
+
+Final decision: GO. Next package: Package 313.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 307-312 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 307-312 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+
+## Package 313
+
+Package 313: Recovery Enablement Decision Contract
+
+Package 313 creates Recovery Enablement Decision Contract v1.
+
+Contract/documentation only.
+
+Package 313 defines public contract names:
+
+- RecoveryEnablementDecisionRequest
+- RecoveryEnablementDecisionResult
+- RecoveryEnablementDecisionFailure
+- RecoveryEnablementDecisionPolicy
+- RecoveryEnablementDecisionOwnership
+- RecoveryEnablementDecisionLifecycle
+
+Default behavior remains disabled and blocked. No real recovery execution, runtime state mutation, checkpoint write or restore, rollback or retry execution, subprocess, endpoint invocation, hook registration, or persistence is introduced.
+
+Final decision: GO. Next package: Package 314.
+
+## Package 314
+
+Package 314: Recovery Enablement Decision Stub
+
+Package 314 creates `core/runtime/recovery_enablement_decision.py`.
+
+Controlled enablement decision stub only.
+
+Public function: `prepare_recovery_enablement_decision(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `decision_status: "disabled"`
+- `decision: "blocked"`
+- `enablement_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 315.
+
+## Package 315
+
+Package 315: Recovery Enablement Decision Projection
+
+Package 315 creates `core/runtime/recovery_enablement_decision_projection.py`.
+
+Controlled enablement decision projection stub only.
+
+Public function: `prepare_recovery_enablement_decision_projection(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `projection_status: "stub"`
+- `decision_status: "disabled"`
+- `decision: "blocked"`
+- `enablement_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 316.
+
+## Package 316
+
+Package 316: Recovery Enablement Decision Audit Stub
+
+Package 316 creates `core/runtime/recovery_enablement_decision_audit.py`.
+
+Controlled enablement decision audit stub only.
+
+Public function: `prepare_recovery_enablement_decision_audit(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `audit_status: "stub"`
+- `decision_recorded: False`
+- `decision: "blocked"`
+- `enablement_allowed: False`
+- `execution_allowed: False`
+- `runtime_state_mutated: False`
+
+Final decision: GO. Next package: Package 317.
+
+## Package 317
+
+Package 317: Recovery Enablement Decision Boundary Seal
+
+Package 317 creates Recovery Enablement Decision Boundary Seal.
+
+Seal/documentation only.
+
+Package 317 confirms the decision is blocked by default, enablement is not granted, execution is not allowed, decision audit is stub/data only, and no runtime mutation, gateway/supervisor/operator/native activation, persistence, subprocess, hook registration, or endpoint invocation is implemented.
+
+Final decision: GO. Next package: Package 318.
+
+## Package 318
+
+Package 318: Recovery Execution Blocker Review
+
+Package 318 creates Recovery Execution Blocker Review.
+
+Review/documentation only.
+
+Package 318 includes execution blockers checklist, blockers that must remain active, blockers required before activation, boundary matrix, risk table, statement that execution remains disabled, and final decision.
+
+Final decision: GO. Next package: Package 319.
+
+## Package 319
+
+Package 319: Recovery Controlled Enablement GO Review
+
+Package 319 creates Recovery Controlled Enablement GO Review.
+
+Review/documentation only.
+
+Package 319 includes GO / NO-GO decision for future Package 321, prerequisites for limited enablement, constraints for future enablement, and a statement that Package 319 still does not enable recovery.
+
+Final decision: GO. Next package: Package 320.
+
+## Package 320
+
+Package 320: Recovery Enablement Decision Milestone Seal
+
+Package 320 creates Recovery Enablement Decision Milestone Seal.
+
+Seal/documentation only.
+
+Package 320 confirms:
+
+- Packages 301-320 completion map.
+- Enablement layer completed.
+- Control pipeline completed.
+- Enablement decision layer completed.
+
+Final decision: GO. Next package: Package 321.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 313-320 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 313-320 preserve those files and do not modify, remove, import, call, or wire those historical modules.
+
+## Package 321
+
+Package 321: Recovery Controlled Activation Contract
+
+Package 321 creates Recovery Controlled Activation Contract v1.
+
+Contract/documentation only.
+
+Package 321 defines public contract names:
+
+- RecoveryControlledActivationRequest
+- RecoveryControlledActivationResult
+- RecoveryControlledActivationFailure
+- RecoveryControlledActivationPolicy
+- RecoveryControlledActivationOwnership
+- RecoveryControlledActivationLifecycle
+
+Default behavior remains disabled. No recovery execution, scheduler wiring, dispatcher wiring, executor wiring, gateway behavior mutation, background worker, thread or timer creation, runtime state mutation, feature flag enabling, checkpoint write or restore, rollback or retry execution, subprocess, endpoint invocation, hook registration, persistence, or legacy recovery module connection is introduced.
+
+Final decision: GO. Next package: Package 322.
+
+## Package 322
+
+Package 322: Recovery Controlled Activation Gate Skeleton
+
+Package 322 creates `core/runtime/recovery_controlled_activation_gate.py`.
+
+Controlled activation gate skeleton only.
+
+Public function: `prepare_recovery_controlled_activation_gate(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `gate_status: "disabled"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `reason: "future_package"`
+
+Final decision: GO. Next package: Package 323.
+
+## Package 323
+
+Package 323: Recovery Controlled Activation Policy Skeleton
+
+Package 323 creates `core/runtime/recovery_controlled_activation_policy.py`.
+
+Controlled activation policy skeleton only.
+
+Public function: `prepare_recovery_controlled_activation_policy(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `policy_status: "reserved"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `reason: "future_package"`
+
+Final decision: GO. Next package: Package 324.
+
+## Package 324
+
+Package 324: Recovery Controlled Activation Projection Skeleton
+
+Package 324 creates `core/runtime/recovery_controlled_activation_projection.py`.
+
+Controlled activation projection skeleton only.
+
+Public function: `prepare_recovery_controlled_activation_projection(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `projection_status: "stub"`
+- `activation_status: "disabled"`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `reason: "future_package"`
+
+Final decision: GO. Next package: Package 325.
+
+## Package 325
+
+Package 325: Recovery Controlled Activation Audit Skeleton
+
+Package 325 creates `core/runtime/recovery_controlled_activation_audit.py`.
+
+Controlled activation audit skeleton only.
+
+Public function: `prepare_recovery_controlled_activation_audit(...)`.
+
+The function returns a deterministic plain dict only:
+
+- `enabled: False`
+- `audit_status: "stub"`
+- `activation_recorded: False`
+- `activation_allowed: False`
+- `execution_allowed: False`
+- `recovery_enabled: False`
+- `runtime_state_mutated: False`
+- `reason: "future_package"`
+
+Final decision: GO. Next package: Package 326.
+
+## Package 326
+
+Package 326: Recovery Controlled Activation Skeleton Seal
+
+Package 326 creates Recovery Controlled Activation Skeleton Seal.
+
+Seal/documentation only.
+
+Package 326 confirms controlled activation remains disabled, activation is not allowed, execution is not allowed, recovery is not enabled, runtime state is not mutated, and no scheduler wiring, dispatcher wiring, executor wiring, gateway behavior mutation, background worker, thread or timer creation, feature flag enabling, legacy recovery module connection, checkpoint write or restore, rollback or retry execution, persistence, subprocess, endpoint invocation, or hook registration is implemented.
+
+Final decision: GO. Next package: Package 327.
+
+## Package 327
+
+Package 327: Recovery Controlled Activation Skeleton Readiness Review
+
+Package 327 creates Recovery Controlled Activation Skeleton Readiness Review.
+
+Readiness review/documentation only.
+
+Package 327 includes GO / NO-GO decision, activation blockers, future activation prerequisites, boundary matrix, risk table, and statements that Recovery Runtime and recovery execution remain disabled.
+
+Final decision: GO. Next package: Package 328.
+
+## Package 328
+
+Package 328: Recovery Controlled Activation Milestone Seal
+
+Package 328 creates Recovery Controlled Activation Milestone Seal.
+
+Seal/documentation only.
+
+Package 328 confirms:
+
+- Packages 321-328 completion map.
+- Controlled activation skeleton completed.
+- Recovery Runtime remains disabled.
+
+Final decision: GO. Next package: Package 329.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Packages 321-328 preserve those files and do not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, integration, and gateway filenames from earlier packages. Packages 321-328 preserve those files and do not modify, remove, import, call, or wire those historical modules.

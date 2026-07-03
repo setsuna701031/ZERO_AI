@@ -2,93 +2,79 @@
 
 ## Purpose
 
-Package 155 reviews Packages 151 through 154 and decides whether the passive Recovery pipeline is ready for activation contracts.
+Package 280 defines the Runtime Recovery Activation Readiness Review.
 
-This is a readiness review only. It does not activate Recovery, wire Scheduler, call Dispatcher, invoke Operator runtime, supervise runtime work, persist, replay, audit, journal, perform file IO, call subprocess, or mutate runtime state.
+Review/documentation only.
 
-## Package 151 Executor Review
+Runtime Recovery activation remains disabled.
 
-Package 151 executor output is side-effect free.
+## GO / NO-GO Readiness Decision
 
-Required executor findings:
+GO / NO-GO readiness decision: GO for future Package 281 planning only.
 
-- executor reports are plain data
-- `side_effects_performed` is `false`
-- `executes_recovery` is `false`
-- scheduled, dispatched, persisted, replayed, audited, and journaled flags remain `false`
-- denied capabilities include Scheduler, Dispatcher, Operator, Runtime Supervisor, persistence, replay, audit, journal, subprocess, file IO, and runtime mutation behavior
+The GO decision does not enable recovery execution, runtime mutation, checkpoint write or restore, rollback or retry execution, persistence, subprocess behavior, endpoint invocation, hook registration, gateway activation, supervisor control, operator routing, scheduler routing, planner routing, or native runtime activation.
 
-## Package 152 Runtime Integration Review
+## Required Skeletons Completed
 
-Package 152 runtime integration is passive.
+Required skeletons completed:
 
-Required integration findings:
+- Recovery Runtime Inert Wiring
+- RecoveryExecutor Skeleton
+- RecoveryStateTransition Skeleton
+- RecoveryCheckpoint Skeleton
 
-- integration coordinates authority, intent, bridge, and executor report references
-- `external_runtime_invoked` is `false`
-- `side_effects_performed` is `false`
-- `executes_recovery` is `false`
-- integration acceptance does not activate Scheduler, Dispatcher, Operator, Runtime Supervisor, or Native Runtime
+## Required Integration Stubs Completed
 
-## Package 153 Wiring Review
+Required integration stubs completed:
 
-Package 153 wiring is documentation-only.
+- Recovery Runtime Wiring Activation Stub
+- RecoveryExecutor Integration Stub
+- RecoveryStateTransition Integration Stub
+- RecoveryCheckpoint Integration Stub
+- RecoveryGateway Runtime Bridge Stub
+- Supervisor Observation Stub
 
-Required wiring findings:
+## Activation Blockers
 
-- wiring document describes future owners only
-- Scheduler preparation is documented only
-- Operator preparation is documented only
-- Runtime Supervisor preparation is documented only
-- Native Runtime preparation is documented only
-- no imports, hook calls, runtime mutation, persistence, replay, audit, journal, subprocess, or file IO are introduced
+Activation blockers:
 
-## Package 154 End-to-End Review
+- recovery execution is disabled
+- runtime state mutation is forbidden
+- checkpoint write and restore are forbidden
+- rollback and retry execution are forbidden
+- gateway activation is forbidden
+- supervisor control is forbidden
+- persistence is forbidden
+- subprocess execution is forbidden
+- endpoint invocation is forbidden
+- hook registration is forbidden
+- planner, scheduler, operator, supervisor, and native runtime activation are forbidden
 
-Package 154 end-to-end contract preserves references.
+## Boundary Matrix
 
-Required chain findings:
+| Boundary | Package 280 Status | Activation Status |
+| --- | --- | --- |
+| Runtime integration | disabled stub | not active |
+| RecoveryExecutor integration | disabled stub | not bound |
+| RecoveryStateTransition integration | disabled stub | not bound |
+| RecoveryCheckpoint integration | disabled stub | not bound |
+| RecoveryGateway runtime bridge | disabled stub | not bound |
+| Supervisor observation | disabled stub | not active |
+| Runtime mutation | forbidden | not allowed |
+| Recovery execution | forbidden | not allowed |
 
-- authority reference is preserved
-- intent reference is preserved
-- bridge reference is preserved
-- executor boundary reference is preserved
-- executor report reference is preserved
-- complete chain remains deterministic and passive
+## Risk Table
 
-## Runtime Hook Absence
+| Risk | Package 280 Decision | Future Requirement |
+| --- | --- | --- |
+| Gateway activation | blocked | explicit GO review |
+| Supervisor control | blocked | explicit GO review |
+| Runtime mutation | blocked | state mutation contract and implementation review |
+| Checkpoint write or restore | blocked | checkpoint implementation review |
+| Rollback or retry execution | blocked | rollback and retry implementation review |
+| Persistence | blocked | persistence review |
+| Subprocess, hooks, endpoints | blocked | dedicated side-effect review |
 
-No scheduler, operator, dispatcher, runtime supervisor, or native runtime hook exists yet for the passive Recovery pipeline.
+## Final Decision
 
-Forbidden current hooks:
-
-- Scheduler admission hook
-- Dispatcher command hook
-- Operator runtime hook
-- Runtime Supervisor hook
-- Native Runtime execution hook
-- persistence hook
-- replay hook
-- audit hook
-- journal hook
-- subprocess hook
-- file IO hook
-- runtime mutation hook
-
-## Activation Readiness Decision
-
-The passive Recovery pipeline is ready for activation contracts because Packages 151 through 154 preserve references and deny runtime effects.
-
-Activation contract work may define request and response schemas, allowed activation states, forbidden activation states, and boundary rules.
-
-Activation contract work must not wire Scheduler, Dispatcher, Operator, Runtime Supervisor, or Native Runtime execution.
-
-## GO / NO-GO
-
-Final decision: GO.
-
-Recovery Runtime Activation Readiness Review is complete.
-
-## Next Package
-
-Next package: Package 156.
+Final decision: GO. Next package: Package 281.

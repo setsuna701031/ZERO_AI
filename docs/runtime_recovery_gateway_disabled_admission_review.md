@@ -8,6 +8,10 @@ Package 253 adds disabled kill-switch gating to the same gateway. The kill switc
 
 Package 254 adds a reserved Admission Policy stage. Admission policy stage is reserved. Policy result is disabled data only. Policy does not decide, authorize, execute, or mutate. Gateway still denies admission before any future policy may act.
 
+Package 255 adds a reserved Runtime Authorization stage. Runtime authorization stage is reserved. Authorization result is disabled data only. Authorization does not decide, authorize, execute, or mutate. Gateway still denies admission before any future authorization may act.
+
+Package 256 adds a reserved Recovery Execution stage. Recovery execution stage is reserved. Recovery execution result is disabled data only. Recovery execution does not decide, authorize, execute, or mutate. No runtime recovery execution is wired.
+
 Admission evaluation order is deterministic:
 
 1. Kill Switch
@@ -30,6 +34,14 @@ Confirmations:
 - Policy result is disabled data only.
 - Policy does not decide, authorize, execute, or mutate.
 - Gateway still denies admission before any future policy may act.
+- Runtime authorization stage is reserved.
+- Authorization result is disabled data only.
+- Authorization does not decide, authorize, execute, or mutate.
+- Gateway still denies admission before any future authorization may act.
+- Recovery execution stage is reserved.
+- Recovery execution result is disabled data only.
+- Recovery execution does not decide, authorize, execute, or mutate.
+- No runtime recovery execution is wired.
 - Future packages must extend the admission chain rather than reorder it.
 - Future Package 253 may add kill-switch integration, still disabled.
 

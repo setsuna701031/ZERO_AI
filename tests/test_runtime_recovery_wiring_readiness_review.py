@@ -1,7 +1,8 @@
 from pathlib import Path
 
 
-DOC = Path("docs/runtime_recovery_wiring_readiness_review.md")
+REVIEW = Path("docs/runtime_recovery_wiring_readiness_review.md")
+INVENTORY = Path("docs/contracts/runtime/inventory.md")
 PACKAGE_SEQUENCE = Path("docs/aer_evolution_v2_package_sequence.md")
 
 
@@ -9,91 +10,106 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _package_entry() -> str:
+def _package_264_entry() -> str:
     text = _text(PACKAGE_SEQUENCE)
-    start = text.index("## Package 166")
-    end = text.find("## Package 167", start + 1)
+    start = text.index("## Package 264")
+    end = text.find("## Package 265", start + 1)
     if end == -1:
         return text[start:]
     return text[start:end]
 
 
-def test_wiring_readiness_review_doc_exists():
-    assert DOC.exists()
+def test_package_264_readiness_review_exists():
+    assert REVIEW.exists()
+    text = _text(REVIEW)
+    assert "Runtime Recovery Wiring Readiness Review" in text
+    assert "Review/documentation only." in text
+    assert "This package still does not implement runtime wiring." in text
 
 
-def test_wiring_readiness_review_required_sections_exist():
-    text = _text(DOC)
-    for section in (
-        "## Purpose",
-        "## Package 159-162 Adapter Boundary Review",
-        "## Package 163 Contract Review",
-        "## Package 164 Gate Review",
-        "## Package 165 Controlled Activation Review",
+def test_reviewed_contracts_are_listed():
+    text = _text(REVIEW)
+    for contract in (
+        "Recovery Execution Contract",
+        "Recovery Execution Plan Contract",
+        "Recovery Executor Contract",
+        "Recovery State Transition Contract",
+        "Recovery Checkpoint Contract",
+        "Recovery Rollback Contract",
+        "Recovery Retry Contract",
+    ):
+        assert contract in text
+
+
+def test_review_required_sections_exist():
+    text = _text(REVIEW)
+    for heading in (
         "## Readiness Decision",
-        "## GO / NO-GO",
-        "## Next Package",
+        "## Reviewed Contracts",
+        "## Required Contracts Checklist",
+        "## Runtime Wiring Prerequisites",
+        "## Forbidden Wiring Before Readiness",
+        "## Boundary Matrix",
+        "## Dependency Graph",
+        "## Non-mainline Issues Found",
+        "## Forbidden Implementation Behaviors",
     ):
-        assert section in text
+        assert heading in text
 
 
-def test_wiring_readiness_review_preserves_passive_adapter_boundaries():
-    text = _text(DOC)
+def test_readiness_decision_and_no_runtime_wiring_statement_exist():
+    text = _text(REVIEW)
+    assert "Readiness decision: GO for future Package 265 planning only." in text
+    assert "GO / NO-GO result: GO." in text
+    assert "The GO result means the contract layer is sufficiently documented for a future package to plan wiring prerequisites." in text
+    assert "It does not authorize runtime wiring" in text
+    assert "Package 264 does not satisfy implementation prerequisites and does not wire runtime behavior." in text
+
+
+def test_forbidden_runtime_behaviors_are_explicit():
+    text = _text(REVIEW)
     for phrase in (
-        "Package 159 Scheduler Passive Adapter remains adapter-only",
-        "Package 160 Operator Passive Adapter remains adapter-only",
-        "Package 161 Runtime Supervisor Passive Adapter remains adapter-only",
-        "Package 162 Native Runtime Passive Adapter remains adapter-only",
-        "Each adapter preserves activation, authority, intent, bridge, and executor references",
-        "Each adapter denies runtime calls",
+        "Package 264 is Review/documentation only.",
+        "Package 264 must not create runtime modules.",
+        "Package 264 must not modify runtime code.",
+        "Package 264 must not modify gateway code.",
+        "Package 264 must not implement executor behavior.",
+        "Package 264 must not implement state transition behavior.",
+        "Package 264 must not implement checkpoint behavior.",
+        "Package 264 must not implement rollback behavior.",
+        "Package 264 must not implement retry behavior.",
+        "Package 264 must not wire recovery runtime modules.",
+        "Package 264 must not call or import existing recovery bridge, executor, adapter, or integration modules.",
+        "Package 264 must not add public runtime APIs.",
+        "Package 264 must not add persistence.",
+        "Package 264 must not spawn subprocesses.",
+        "Package 264 must not perform filesystem mutation.",
+        "Package 264 must not invoke endpoints.",
+        "Package 264 must not register hooks.",
+        "Package 264 must not mutate runtime state.",
     ):
         assert phrase in text
 
 
-def test_wiring_readiness_review_confirms_gate_off_and_no_activation():
-    text = _text(DOC)
-    for phrase in (
-        "activation gate to remain OFF by default",
-        "keeps activation gate OFF by default",
-        "`activation_gate_enabled` as `false`",
-        "`activation_allowed` as `false`",
-        "`runtime_mainline_wiring_allowed` as `false`",
-        "Runtime hook wiring is ready for a future review package, but it is not ready for runtime activation",
-        "Activation remains OFF",
-        "Runtime mainline wiring remains forbidden",
-    ):
-        assert phrase in text
+def test_inventory_contains_recovery_rollback_and_retry_contracts():
+    text = _text(INVENTORY)
+    assert "recovery_rollback_v1" in text
+    assert "recovery_retry_v1" in text
 
 
-def test_wiring_readiness_review_go_no_go_and_sequence_entry():
-    text = _text(DOC)
-    assert "Final decision: GO" in text
-    assert "Next package: Package 167" in text
-
-    entry = _package_entry()
-    assert "## Package 166" in entry
-    assert "Runtime Wiring Readiness Review" in entry
-    assert "docs/runtime_recovery_wiring_readiness_review.md" in entry
-    assert "tests/test_runtime_recovery_wiring_readiness_review.py" in entry
-    assert "python -m pytest tests/test_runtime_recovery_wiring_readiness_review.py -q" in entry
-    assert "Final decision: GO" in entry
-    assert "Next package: Package 167" in entry
+def test_package_sequence_contains_262_263_264():
+    text = _text(PACKAGE_SEQUENCE)
+    assert "## Package 262" in text
+    assert "## Package 263" in text
+    assert "## Package 264" in text
+    assert "Package 262: Runtime Recovery Rollback Contract" in text
+    assert "Package 263: Runtime Recovery Retry Contract" in text
+    assert "Package 264: Runtime Recovery Wiring Readiness Review" in text
 
 
-def test_wiring_readiness_review_has_no_implementation_tokens():
-    text = _text(DOC)
-    for token in (
-        "def ",
-        "class ",
-        "import ",
-        "scheduler.",
-        "operator.",
-        "dispatcher.",
-        "supervisor.",
-        "native_runtime.",
-        "subprocess.",
-        "open(",
-        ".write(",
-        "Path(",
-    ):
-        assert token not in text
+def test_package_264_sequence_entry_exists():
+    section = _package_264_entry()
+    assert "## Package 264" in section
+    assert "Package 264: Runtime Recovery Wiring Readiness Review" in section
+    assert "Review/documentation only." in section
+    assert "Final decision: GO. Next package: Package 265." in section

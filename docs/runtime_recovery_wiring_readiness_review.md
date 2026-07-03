@@ -2,67 +2,188 @@
 
 ## Purpose
 
-Package 166 reviews Runtime Hook Wiring Contracts and Controlled Activation Preparation after Packages 159 through 165.
+Package 264 defines the Runtime Recovery Wiring Readiness Review.
 
-This review is documentation-only. It does not activate Recovery, wire Recovery into runtime mainline, call Scheduler, call Operator, call Dispatcher, call Runtime Supervisor, call Native Runtime, mutate state, persist, replay, audit, journal, call subprocess, or perform file IO.
+Review/documentation only.
 
-## Package 159-162 Adapter Boundary Review
+This package still does not implement runtime wiring.
 
-The passive adapter boundaries remain preserved:
-
-- Package 159 Scheduler Passive Adapter remains adapter-only.
-- Package 160 Operator Passive Adapter remains adapter-only.
-- Package 161 Runtime Supervisor Passive Adapter remains adapter-only.
-- Package 162 Native Runtime Passive Adapter remains adapter-only.
-
-Each adapter preserves activation, authority, intent, bridge, and executor references.
-
-Each adapter denies runtime calls and reports `executes_recovery: false`.
-
-## Package 163 Contract Review
-
-Runtime Hook Wiring Contract v1 is declarative and preparatory only.
-
-It requires passive adapter reports and forbids direct runtime hooks.
-
-It requires the activation gate to remain OFF by default.
-
-## Package 164 Gate Review
-
-Recovery Wiring Gate Contract v1 keeps activation gate OFF by default.
-
-The passive gate may report prepared, blocked, or denied status.
-
-The gate does not allow activation or runtime wiring.
-
-## Package 165 Controlled Activation Review
-
-Controlled Activation Preparation produces preparation-only reports.
-
-Controlled activation preparation keeps:
-
-- `activation_gate_enabled` as `false`
-- `activation_allowed` as `false`
-- `runtime_mainline_wiring_allowed` as `false`
-- `executes_recovery` as `false`
-- `side_effects_performed` as `false`
+Package 264 does not create runtime modules, does not modify runtime code, does not modify gateway code, does not implement executor, state transition, checkpoint, rollback, or retry behavior, does not wire planner, scheduler, operator, supervisor, native runtime, or watchdog behavior, and does not introduce public runtime APIs.
 
 ## Readiness Decision
 
-Runtime hook wiring is ready for a future review package, but it is not ready for runtime activation.
+Readiness decision: GO for future Package 265 planning only.
 
-Activation remains OFF.
+GO / NO-GO result: GO.
 
-Runtime mainline wiring remains forbidden.
+The GO result means the contract layer is sufficiently documented for a future package to plan wiring prerequisites. It does not authorize runtime wiring, execution, gateway changes, executor implementation, state transition implementation, checkpoint implementation, rollback implementation, retry implementation, persistence, subprocess, filesystem mutation, endpoint invocation, hook registration, or runtime state mutation.
 
-Scheduler, Operator, Dispatcher, Runtime Supervisor, and Native Runtime calls remain forbidden.
+## Reviewed Contracts
 
-## GO / NO-GO
+Package 264 reviews these contract and review artifacts:
 
-Final decision: GO.
+- Recovery Execution Contract: `docs/contracts/runtime/recovery_execution_v1.md`
+- Recovery Execution Plan Contract: `docs/contracts/runtime/recovery_execution_plan_v1.md`
+- Recovery Executor Contract: `docs/contracts/runtime/recovery_executor_v1.md`
+- Recovery State Transition Contract: `docs/contracts/runtime/recovery_state_transition_v1.md`
+- Recovery Checkpoint Contract: `docs/contracts/runtime/recovery_checkpoint_v1.md`
+- Recovery Rollback Contract: `docs/contracts/runtime/recovery_rollback_v1.md`
+- Recovery Retry Contract: `docs/contracts/runtime/recovery_retry_v1.md`
 
-Runtime Wiring Readiness Review is complete as a readiness-only package.
+## Required Contracts Checklist
 
-## Next Package
+Required contract checklist:
 
-Next package: Package 167.
+- Recovery Execution Contract v1: present for Package 257 contract scope
+- Recovery Execution Plan Contract v1: present for Package 258 contract scope
+- Recovery Executor Contract v1: present for Package 259 contract scope
+- Recovery State Transition Contract v1: present for Package 260 contract scope
+- Recovery Checkpoint Contract v1: present for Package 261 contract scope
+- Recovery Rollback Contract v1: present for Package 262 contract scope
+- Recovery Retry Contract v1: present for Package 263 contract scope
+
+All checklist items are documentation readiness items only. None of them implement runtime behavior.
+
+## Runtime Wiring Prerequisites
+
+Future runtime wiring prerequisites:
+
+- explicit GO-reviewed implementation package after Package 264
+- gateway admission precedence preserved
+- Runtime Authorization precedence preserved
+- executor ownership defined before execution
+- state transition implementation defined before state mutation
+- checkpoint implementation defined before checkpoint creation or restore
+- rollback implementation defined before rollback eligibility or application
+- retry implementation defined before retry scheduling or application
+- persistence, audit, journal, endpoint, hook, bridge, subprocess, and filesystem mutation behavior separately reviewed before use
+- focused tests added in the future implementation package
+
+Package 264 does not satisfy implementation prerequisites and does not wire runtime behavior.
+
+## Forbidden Wiring Before Readiness
+
+Forbidden wiring before a future implementation GO review:
+
+- do not create runtime modules
+- do not modify runtime code
+- do not modify gateway code
+- do not implement executor behavior
+- do not implement state transition behavior
+- do not implement checkpoint behavior
+- do not implement rollback behavior
+- do not implement retry behavior
+- do not wire planner, scheduler, TaskRunner, operator, dispatcher, supervisor, native runtime, or watchdog behavior
+- do not import or call existing recovery bridge, executor, adapter, or integration modules
+- do not add public runtime APIs
+- do not add persistence
+- do not spawn subprocesses
+- do not perform filesystem mutation
+- do not invoke endpoints
+- do not register hooks
+- do not mutate runtime state
+
+## Boundary Matrix
+
+| Surface | Package | Current Status | Runtime Wiring Status |
+| --- | --- | --- | --- |
+| Recovery Execution Contract | 257 | Contract/documentation only | Not wired |
+| Recovery Execution Plan Contract | 258 | Contract/documentation only | Not wired |
+| Recovery Executor Contract | 259 | Contract/documentation only | Not wired |
+| Recovery State Transition Contract | 260 | Contract/documentation only | Not wired |
+| Recovery Checkpoint Contract | 261 | Contract/documentation only | Not wired |
+| Recovery Rollback Contract | 262 | Contract/documentation only | Not wired |
+| Recovery Retry Contract | 263 | Contract/documentation only | Not wired |
+| Runtime Recovery Wiring Readiness Review | 264 | Review/documentation only | Not wired |
+
+## Dependency Graph
+
+Readiness dependency direction:
+
+```text
+Runtime Recovery Gateway
+  -> Runtime Recovery Execution Contract v1
+  -> Runtime Recovery Execution Plan Contract v1
+  -> Runtime Recovery Executor Contract v1
+  -> Runtime Recovery State Transition Contract v1
+  -> Runtime Recovery Checkpoint Contract v1
+  -> Runtime Recovery Rollback Contract v1
+  -> Runtime Recovery Retry Contract v1
+  -> Runtime Recovery Wiring Readiness Review
+  -> Future Runtime Recovery Wiring after explicit GO review
+```
+
+Forbidden dependency direction:
+
+```text
+Runtime Recovery Wiring Readiness Review
+  -> recovery bridge
+  -> recovery executor implementation
+  -> recovery adapter
+  -> recovery integration
+  -> planner
+  -> scheduler
+  -> TaskRunner
+  -> operator
+  -> dispatcher
+  -> supervisor
+  -> native runtime
+  -> watchdog
+  -> persistence
+  -> audit
+  -> journal
+  -> endpoint invocation
+  -> hook registration
+  -> bridge calls
+  -> subprocess
+  -> filesystem mutation
+  -> runtime state mutation
+```
+
+The review must not call or import existing recovery bridge, executor, adapter, or integration modules.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/review/test changes from prior packages remain in the working tree. Package 264 preserves those files and does not modify them.
+- Existing historical Runtime Recovery modules include bridge, executor, scheduler adapter, operator adapter, supervisor adapter, native adapter, and integration filenames from earlier packages. Package 264 preserves those files and does not modify, remove, import, call, or wire those historical modules.
+- Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. Package 264 preserves that unrelated numbering drift and does not modify those files.
+
+## Forbidden Implementation Behaviors
+
+Package 264 is Review/documentation only.
+
+Package 264 must not create runtime modules.
+
+Package 264 must not modify runtime code.
+
+Package 264 must not modify gateway code.
+
+Package 264 must not implement executor behavior.
+
+Package 264 must not implement state transition behavior.
+
+Package 264 must not implement checkpoint behavior.
+
+Package 264 must not implement rollback behavior.
+
+Package 264 must not implement retry behavior.
+
+Package 264 must not wire recovery runtime modules.
+
+Package 264 must not call or import existing recovery bridge, executor, adapter, or integration modules.
+
+Package 264 must not add public runtime APIs.
+
+Package 264 must not add persistence.
+
+Package 264 must not spawn subprocesses.
+
+Package 264 must not perform filesystem mutation.
+
+Package 264 must not invoke endpoints.
+
+Package 264 must not register hooks.
+
+Package 264 must not mutate runtime state.
+
+Final decision: GO. Next package: Package 265.
