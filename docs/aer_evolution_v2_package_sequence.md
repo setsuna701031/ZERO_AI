@@ -10982,3 +10982,546 @@ Final decision: GO for disabled controlled activation permit milestone. Next pac
 - Existing uncommitted gateway/test changes remain outside Packages 345-352 scope and must not be modified by this milestone.
 - Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 345-352 scope unless a future explicit package defines it.
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 345-352 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
+## Package 353
+
+Package 353: Recovery Controlled Activation Grant Contract
+
+Package 353 defines the Recovery Controlled Activation Grant v1 contract.
+
+Contract/specification only.
+
+Package 353 owns:
+
+- `docs/contracts/runtime/recovery_controlled_activation_grant_v1.md`
+- controlled activation grant schema name: `aer.runtime.recovery.controlled_activation_grant.v1`
+- disabled-by-default grant shape
+- fixed required grant fields
+- grant status vocabulary
+- permit consumption vocabulary
+- authorization boundary vocabulary
+- activation permission vocabulary
+- execution permission vocabulary
+- recovery enablement vocabulary
+- runtime mutation boundary vocabulary
+- deterministic default result
+- compatibility boundary for future controlled activation packages
+- explicit separation between activation grant, activation execution, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+
+Required grant fields:
+
+- `enabled`
+- `grant_status`
+- `grant_version`
+- `permit_granted`
+- `activation_granted`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+- `metadata`
+
+Default grant values:
+
+- `enabled: false`
+- `grant_status: reserved`
+- `grant_version: v1_reserved`
+- `permit_granted: false`
+- `activation_granted: false`
+- `activation_allowed: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+- `reason: future_package`
+- `metadata: {}`
+
+Package 353 must not:
+
+- add runtime behavior
+- add activation behavior
+- approve real grant issuance
+- approve real permit consumption
+- approve real authorization
+- approve real activation
+- execute recovery
+- mutate runtime state
+- modify scheduler wiring
+- modify dispatcher wiring
+- modify executor wiring
+- modify gateway behavior
+- connect historical recovery bridge modules
+- connect historical recovery executor modules
+- connect historical recovery adapter modules
+- connect historical recovery integration modules
+- import runtime implementation modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 354: Recovery Controlled Activation Grant Policy Stub
+- Package 355: Recovery Controlled Activation Grant Projection Stub
+- Package 356: Recovery Controlled Activation Grant Audit Stub
+- Package 357: Recovery Controlled Activation Grant Boundary Seal
+- Package 358: Recovery Controlled Activation Grant Readiness Review
+- Package 359: Recovery Controlled Activation Grant GO Review
+- Package 360: Recovery Controlled Activation Grant Milestone Seal
+- any real controlled activation behavior only after an explicit future package authorizes it
+
+Final decision: GO for disabled contract only. Next package: Package 354.
+
+## Package 354
+
+Package 354: Recovery Controlled Activation Grant Policy Stub
+
+Package 354 adds the Recovery Controlled Activation Grant Policy stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 354 owns:
+
+- `core/runtime/recovery_controlled_activation_grant_policy.py`
+- public disabled policy API for controlled activation grant
+- deterministic disabled grant policy result
+- no-op grant evaluation surface
+- fixed disabled metadata
+- no side effects
+
+Expected public result shape:
+
+```python
+{
+    "enabled": False,
+    "grant_status": "reserved",
+    "grant_version": "v1_reserved",
+    "permit_granted": False,
+    "activation_granted": False,
+    "activation_allowed": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+    "reason": "future_package",
+    "metadata": {},
+}
+```
+
+Package 354 must not:
+
+- grant activation
+- consume permit
+- approve controlled activation
+- execute recovery
+- call activation gates
+- call activation permit from prior packages
+- call recovery executor
+- call scheduler
+- call dispatcher
+- call gateway
+- call runtime wiring
+- mutate runtime state
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- import historical recovery bridge, executor, adapter, integration, scheduler, dispatcher, gateway, or wiring modules
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- projection of the disabled grant result
+- audit of the disabled grant result
+- boundary review and milestone seal
+- real activation grant only after explicit future package definition
+
+Final decision: GO for disabled policy stub only. Next package: Package 355.
+
+## Package 355
+
+Package 355: Recovery Controlled Activation Grant Projection Stub
+
+Package 355 adds the Recovery Controlled Activation Grant Projection stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 355 owns:
+
+- `core/runtime/recovery_controlled_activation_grant_projection.py`
+- projection of disabled grant status
+- deterministic disabled projection result
+- fixed public projection fields
+- no side effects
+
+Projection result must include:
+
+- `enabled`
+- `grant_status`
+- `activation_granted`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+- `metadata`
+
+Package 355 must not:
+
+- approve grant issuance
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- perform checkpoint writes or restores
+- perform rollback or retry
+- start background workers
+- create threads
+- create timers
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- audit of the disabled grant result
+- boundary review and milestone seal
+- real grant projection only after explicit future package definition
+
+Final decision: GO for disabled projection stub only. Next package: Package 356.
+
+## Package 356
+
+Package 356: Recovery Controlled Activation Grant Audit Stub
+
+Package 356 adds the Recovery Controlled Activation Grant Audit stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 356 owns:
+
+- `core/runtime/recovery_controlled_activation_grant_audit.py`
+- data-only audit summary for controlled activation grants
+- deterministic audit result stating no grant was issued
+- deterministic audit result stating no activation occurred
+- deterministic audit result stating no execution occurred
+- deterministic audit result stating runtime state was not mutated
+- no audit-log writes
+- no side effects
+
+Audit result must confirm:
+
+- grant was not issued
+- activation did not occur
+- execution did not occur
+- recovery was not enabled
+- runtime state was not mutated
+- reason remains `future_package`
+
+Package 356 must not:
+
+- write audit logs
+- write files
+- write checkpoints
+- restore checkpoints
+- approve grant issuance
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- boundary review over the disabled grant surfaces
+- readiness review over the disabled grant surfaces
+- real audit persistence only after explicit future package definition
+
+Final decision: GO for disabled audit stub only. Next package: Package 357.
+
+## Package 357
+
+Package 357: Recovery Controlled Activation Grant Boundary Seal
+
+Package 357 creates the Recovery Controlled Activation Grant Boundary Seal.
+
+Seal/documentation only.
+
+Package 357 owns:
+
+- `docs/runtime_recovery_controlled_activation_grant_boundary_seal.md`
+- boundary statement for controlled activation grant layer
+- explicit rule that grant is not activation execution
+- explicit rule that grant is not recovery execution
+- explicit rule that grant is not scheduler wiring
+- explicit rule that grant is not dispatcher wiring
+- explicit rule that grant is not executor wiring
+- explicit rule that grant is not gateway mutation
+- explicit rule that grant cannot enable recovery
+- explicit rule that grant cannot mutate runtime state
+- GO / NO-GO rule for grant-layer isolation
+
+GO conditions:
+
+- contract exists
+- policy stub remains disabled
+- projection stub remains disabled
+- audit stub remains disabled
+- no runtime execution path is introduced
+- no runtime state mutation is introduced
+- no scheduler, dispatcher, executor, gateway, or historical recovery module wiring is introduced
+
+NO-GO conditions:
+
+- any grant is issued
+- any activation is approved
+- any recovery execution is introduced
+- any runtime state mutation is introduced
+- any scheduler, dispatcher, executor, gateway, bridge, adapter, or integration module is connected
+- any background worker, thread, timer, hook, subprocess, endpoint, checkpoint write, checkpoint restore, rollback, retry, or feature flag enabling behavior is introduced
+
+Package 357 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real grant issuance
+- approve real activation
+- weaken previous Recovery Runtime disabled guards
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- readiness review
+- GO review
+- milestone seal
+- real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled boundary seal only. Next package: Package 358.
+
+## Package 358
+
+Package 358: Recovery Controlled Activation Grant Readiness Review
+
+Package 358 creates the Recovery Controlled Activation Grant Readiness Review.
+
+Readiness review/documentation only.
+
+Package 358 owns:
+
+- `docs/runtime_recovery_controlled_activation_grant_readiness_review.md`
+- contract readiness review
+- policy readiness review
+- projection readiness review
+- audit readiness review
+- disabled-by-default readiness review
+- forbidden runtime wiring review
+- activation blocker list
+- future activation prerequisites
+- GO / NO-GO decision for disabled grant layer only
+
+The readiness review must state:
+
+- controlled activation grant layer is ready only as a disabled surface
+- real grant issuance is not approved
+- real activation is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Package 358 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real grant issuance
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- GO review
+- milestone seal
+- any real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled readiness only. Next package: Package 359.
+
+## Package 359
+
+Package 359: Recovery Controlled Activation Grant GO Review
+
+Package 359 creates the Recovery Controlled Activation Grant GO Review.
+
+GO review/documentation only.
+
+Package 359 owns:
+
+- `docs/runtime_recovery_controlled_activation_grant_go_review.md`
+- final GO / NO-GO decision for Packages 353-360 readiness
+- explicit approval only for disabled grant layer
+- explicit rejection of real grant issuance in this milestone
+- explicit rejection of real permit consumption in this milestone
+- explicit rejection of real authorization in this milestone
+- explicit rejection of real activation in this milestone
+- explicit rejection of scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring in this milestone
+- explicit statement that Recovery Runtime remains disabled
+
+GO means:
+
+- disabled grant layer may exist
+- deterministic data-only APIs may exist
+- package sequence may proceed to Package 360 milestone seal
+
+GO does not mean:
+
+- grant may be issued
+- permit may be consumed
+- authorization may allow activation
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 359 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real grant issuance
+- approve real permit consumption
+- approve real authorization
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 360 grant milestone seal
+- any future activation package only after explicit package definition
+
+Final decision: GO for disabled grant layer only. Next package: Package 360.
+
+## Package 360
+
+Package 360: Recovery Controlled Activation Grant Milestone Seal
+
+Package 360 seals Packages 353-360 as the Recovery Controlled Activation Grant milestone.
+
+Seal/documentation only.
+
+Package 360 owns:
+
+- `docs/recovery_controlled_activation_grant_milestone_seal.md`
+- Packages 353-360 completion map
+- confirmation that all new APIs are disabled/data-only
+- confirmation that grant cannot be issued
+- confirmation that permit cannot be consumed
+- confirmation that authorization cannot allow activation
+- confirmation that no recovery execution exists
+- confirmation that no runtime mutation exists
+- confirmation that no scheduler wiring exists
+- confirmation that no dispatcher wiring exists
+- confirmation that no executor wiring exists
+- confirmation that no gateway mutation exists
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- explicit instruction that the next package may proceed only with explicit package definition
+
+Milestone test:
+
+- `tests/test_recovery_runtime_controlled_activation_grant_bundle.py`
+
+Package 360 must not:
+
+- modify runtime behavior
+- approve real grant issuance
+- approve real permit consumption
+- approve real authorization
+- approve real activation
+- execute recovery
+- mutate runtime state
+- wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 361 only after explicit package definition exists
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled controlled activation grant milestone. Next package: Package 361.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/test changes remain outside Packages 353-360 scope and must not be modified by this milestone.
+- Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 353-360 scope unless a future explicit package defines it.
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 353-360 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
