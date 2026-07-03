@@ -11525,3 +11525,599 @@ Final decision: GO for disabled controlled activation grant milestone. Next pack
 - Existing uncommitted gateway/test changes remain outside Packages 353-360 scope and must not be modified by this milestone.
 - Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 353-360 scope unless a future explicit package defines it.
 - Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 353-360 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
+## Package 361
+
+Package 361: Recovery Controlled Activation Commit Contract
+
+Package 361 defines the Recovery Controlled Activation Commit v1 contract.
+
+Contract/specification only.
+
+Package 361 owns:
+
+- `docs/contracts/runtime/recovery_controlled_activation_commit_v1.md`
+- controlled activation commit schema name: `aer.runtime.recovery.controlled_activation_commit.v1`
+- disabled-by-default commit shape
+- fixed required commit fields
+- commit status vocabulary
+- grant consumption vocabulary
+- permit consumption vocabulary
+- authorization boundary vocabulary
+- activation permission vocabulary
+- execution permission vocabulary
+- recovery enablement vocabulary
+- runtime mutation boundary vocabulary
+- deterministic default result
+- compatibility boundary for future controlled activation packages
+- explicit separation between activation commit, activation execution, gateway admission, scheduler wiring, dispatcher wiring, executor wiring, and runtime state mutation
+
+Required commit fields:
+
+- `enabled`
+- `commit_status`
+- `commit_version`
+- `grant_consumed`
+- `permit_consumed`
+- `authorization_confirmed`
+- `activation_committed`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+- `metadata`
+
+Default commit values:
+
+- `enabled: false`
+- `commit_status: reserved`
+- `commit_version: v1_reserved`
+- `grant_consumed: false`
+- `permit_consumed: false`
+- `authorization_confirmed: false`
+- `activation_committed: false`
+- `activation_allowed: false`
+- `execution_allowed: false`
+- `recovery_enabled: false`
+- `runtime_state_mutated: false`
+- `reason: future_package`
+- `metadata: {}`
+
+Package 361 must not:
+
+- add runtime behavior
+- add activation behavior
+- approve real commit
+- consume grants
+- consume permits
+- confirm real authorization
+- approve real activation
+- execute recovery
+- mutate runtime state
+- modify scheduler wiring
+- modify dispatcher wiring
+- modify executor wiring
+- modify gateway behavior
+- connect historical recovery bridge modules
+- connect historical recovery executor modules
+- connect historical recovery adapter modules
+- connect historical recovery integration modules
+- import runtime implementation modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 362: Recovery Controlled Activation Commit Policy Stub
+- Package 363: Recovery Controlled Activation Commit Projection Stub
+- Package 364: Recovery Controlled Activation Commit Audit Stub
+- Package 365: Recovery Controlled Activation Commit Boundary Seal
+- Package 366: Recovery Controlled Activation Commit Readiness Review
+- Package 367: Recovery Controlled Activation Commit GO Review
+- Package 368: Recovery Controlled Activation Commit Milestone Seal
+- any real controlled activation behavior only after an explicit future package authorizes it
+
+Final decision: GO for disabled contract only. Next package: Package 362.
+
+## Package 362
+
+Package 362: Recovery Controlled Activation Commit Policy Stub
+
+Package 362 adds the Recovery Controlled Activation Commit Policy stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 362 owns:
+
+- `core/runtime/recovery_controlled_activation_commit_policy.py`
+- public disabled policy API for controlled activation commit
+- deterministic disabled commit policy result
+- no-op commit evaluation surface
+- fixed disabled metadata
+- no side effects
+
+Expected public result shape:
+
+```python
+{
+    "enabled": False,
+    "commit_status": "reserved",
+    "commit_version": "v1_reserved",
+    "grant_consumed": False,
+    "permit_consumed": False,
+    "authorization_confirmed": False,
+    "activation_committed": False,
+    "activation_allowed": False,
+    "execution_allowed": False,
+    "recovery_enabled": False,
+    "runtime_state_mutated": False,
+    "reason": "future_package",
+    "metadata": {},
+}
+```
+
+Package 362 must not:
+
+- commit activation
+- consume grants
+- consume permits
+- confirm authorization
+- approve controlled activation
+- execute recovery
+- call activation gates
+- call activation grant from prior packages
+- call activation permit from prior packages
+- call recovery executor
+- call scheduler
+- call dispatcher
+- call gateway
+- call runtime wiring
+- mutate runtime state
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- import historical recovery bridge, executor, adapter, integration, scheduler, dispatcher, gateway, or wiring modules
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- projection of the disabled commit result
+- audit of the disabled commit result
+- boundary review and milestone seal
+- real activation commit only after explicit future package definition
+
+Final decision: GO for disabled policy stub only. Next package: Package 363.
+
+## Package 363
+
+Package 363: Recovery Controlled Activation Commit Projection Stub
+
+Package 363 adds the Recovery Controlled Activation Commit Projection stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 363 owns:
+
+- `core/runtime/recovery_controlled_activation_commit_projection.py`
+- projection of disabled commit status
+- deterministic disabled projection result
+- fixed public projection fields
+- no side effects
+
+Projection summary fields:
+
+- `enabled`
+- `commit_status`
+- `commit_version`
+- `grant_consumed`
+- `permit_consumed`
+- `authorization_confirmed`
+- `activation_committed`
+- `activation_allowed`
+- `execution_allowed`
+- `recovery_enabled`
+- `runtime_state_mutated`
+- `reason`
+
+Package 363 must not:
+
+- commit activation
+- consume grants
+- consume permits
+- confirm authorization
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- pass through unknown upstream fields
+- expose runtime execution objects
+- write files
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- audit projection of the disabled commit result
+- boundary review and milestone seal
+- real activation projection only after explicit future package definition
+
+Final decision: GO for disabled projection stub only. Next package: Package 364.
+
+## Package 364
+
+Package 364: Recovery Controlled Activation Commit Audit Stub
+
+Package 364 adds the Recovery Controlled Activation Commit Audit stub.
+
+Runtime module stub only. Data-only. Deterministic. Disabled.
+
+Package 364 owns:
+
+- `core/runtime/recovery_controlled_activation_commit_audit.py`
+- data-only audit summary for controlled activation commit
+- deterministic audit result stating no commit occurred
+- deterministic audit result stating no grant was consumed
+- deterministic audit result stating no permit was consumed
+- deterministic audit result stating no authorization was confirmed
+- deterministic audit result stating no activation occurred
+- deterministic audit result stating no execution occurred
+- deterministic audit result stating runtime state was not mutated
+- no audit-log writes
+- no side effects
+
+Audit result must confirm:
+
+- activation commit did not occur
+- grant was not consumed
+- permit was not consumed
+- authorization was not confirmed
+- activation did not occur
+- execution did not occur
+- recovery was not enabled
+- runtime state was not mutated
+- reason remains `future_package`
+
+Package 364 must not:
+
+- write audit logs
+- write files
+- write checkpoints
+- restore checkpoints
+- commit activation
+- consume grants
+- consume permits
+- confirm authorization
+- approve activation
+- execute recovery
+- mutate runtime state
+- call scheduler
+- call dispatcher
+- call executor
+- call gateway
+- call runtime wiring
+- call historical recovery bridge, executor, adapter, or integration modules
+- perform rollback
+- perform retry
+- start background workers
+- create threads
+- create timers
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- boundary review over the disabled commit surfaces
+- readiness review over the disabled commit surfaces
+- real audit persistence only after explicit future package definition
+
+Final decision: GO for disabled audit stub only. Next package: Package 365.
+
+## Package 365
+
+Package 365: Recovery Controlled Activation Commit Boundary Seal
+
+Package 365 creates the Recovery Controlled Activation Commit Boundary Seal.
+
+Seal/documentation only.
+
+Package 365 owns:
+
+- `docs/runtime_recovery_controlled_activation_commit_boundary_seal.md`
+- boundary statement for controlled activation commit layer
+- explicit rule that commit is not activation execution
+- explicit rule that commit is not recovery execution
+- explicit rule that commit is not grant consumption
+- explicit rule that commit is not permit consumption
+- explicit rule that commit is not authorization confirmation
+- explicit rule that commit is not scheduler wiring
+- explicit rule that commit is not dispatcher wiring
+- explicit rule that commit is not executor wiring
+- explicit rule that commit is not gateway mutation
+- explicit rule that commit cannot enable recovery
+- explicit rule that commit cannot mutate runtime state
+- GO / NO-GO rule for commit-layer isolation
+
+GO conditions:
+
+- contract exists
+- policy stub remains disabled
+- projection stub remains disabled
+- audit stub remains disabled
+- no runtime execution path is introduced
+- no runtime state mutation is introduced
+- no grant, permit, authorization, activation, scheduler, dispatcher, executor, gateway, or historical recovery module wiring is introduced
+
+NO-GO conditions:
+
+- any commit is approved
+- any grant is consumed
+- any permit is consumed
+- any authorization is confirmed
+- any activation is approved
+- any recovery execution is introduced
+- any runtime state mutation is introduced
+- any scheduler, dispatcher, executor, gateway, bridge, adapter, or integration module is connected
+- any background worker, thread, timer, hook, subprocess, endpoint, checkpoint write, checkpoint restore, rollback, retry, or feature flag enabling behavior is introduced
+
+Package 365 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real activation commit
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization
+- approve real activation
+- weaken previous Recovery Runtime disabled guards
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- readiness review
+- GO review
+- milestone seal
+- real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled boundary seal only. Next package: Package 366.
+
+## Package 366
+
+Package 366: Recovery Controlled Activation Commit Readiness Review
+
+Package 366 creates the Recovery Controlled Activation Commit Readiness Review.
+
+Readiness review/documentation only.
+
+Package 366 owns:
+
+- `docs/runtime_recovery_controlled_activation_commit_readiness_review.md`
+- contract readiness review
+- policy readiness review
+- projection readiness review
+- audit readiness review
+- disabled-by-default readiness review
+- forbidden runtime wiring review
+- activation blocker list
+- future activation prerequisites
+- GO / NO-GO decision for disabled commit layer only
+
+The readiness review must state:
+
+- controlled activation commit layer is ready only as a disabled surface
+- real commit is not approved
+- real grant consumption is not approved
+- real permit consumption is not approved
+- real authorization confirmation is not approved
+- real activation is not approved
+- recovery execution is not approved
+- scheduler wiring is not approved
+- dispatcher wiring is not approved
+- executor wiring is not approved
+- gateway mutation is not approved
+- runtime state mutation is not approved
+
+Package 366 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real commit
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization confirmation
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- GO review
+- milestone seal
+- any real activation behavior only after explicit future package definition
+
+Final decision: GO for disabled readiness only. Next package: Package 367.
+
+## Package 367
+
+Package 367: Recovery Controlled Activation Commit GO Review
+
+Package 367 creates the Recovery Controlled Activation Commit GO Review.
+
+GO review/documentation only.
+
+Package 367 owns:
+
+- `docs/runtime_recovery_controlled_activation_commit_go_review.md`
+- final GO / NO-GO decision for Packages 361-368 readiness
+- explicit approval only for disabled commit layer
+- explicit rejection of real commit in this milestone
+- explicit rejection of real grant consumption in this milestone
+- explicit rejection of real permit consumption in this milestone
+- explicit rejection of real authorization confirmation in this milestone
+- explicit rejection of real activation in this milestone
+- explicit rejection of scheduler, dispatcher, executor, gateway, bridge, adapter, integration, and runtime wiring in this milestone
+- explicit statement that Recovery Runtime remains disabled
+
+GO means:
+
+- disabled commit layer may exist
+- deterministic data-only APIs may exist
+- package sequence may proceed to Package 368 milestone seal
+
+GO does not mean:
+
+- commit may occur
+- grant may be consumed
+- permit may be consumed
+- authorization may be confirmed
+- activation may run
+- recovery may execute
+- scheduler may schedule recovery
+- dispatcher may dispatch recovery
+- executor may execute recovery
+- gateway may mutate behavior
+- runtime state may mutate
+- historical recovery modules may be connected
+
+Package 367 must not:
+
+- modify runtime code
+- add runtime behavior
+- approve real commit
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization confirmation
+- approve real activation
+- weaken previous disabled guards
+- modify scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or wiring modules
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 368 commit milestone seal
+- any future activation package only after explicit package definition
+
+Final decision: GO for disabled commit layer only. Next package: Package 368.
+
+## Package 368
+
+Package 368: Recovery Controlled Activation Commit Milestone Seal
+
+Package 368 seals Packages 361-368 as the Recovery Controlled Activation Commit milestone.
+
+Seal/documentation only.
+
+Package 368 owns:
+
+- `docs/recovery_controlled_activation_commit_milestone_seal.md`
+- Packages 361-368 completion map
+- confirmation that all new APIs are disabled/data-only
+- confirmation that commit cannot occur
+- confirmation that grant cannot be consumed
+- confirmation that permit cannot be consumed
+- confirmation that authorization cannot be confirmed
+- confirmation that no recovery execution exists
+- confirmation that no runtime mutation exists
+- confirmation that no scheduler wiring exists
+- confirmation that no dispatcher wiring exists
+- confirmation that no executor wiring exists
+- confirmation that no gateway mutation exists
+- confirmation that historical recovery bridge, executor, adapter, and integration modules remain unconnected
+- explicit instruction that the next package may proceed only with explicit package definition
+
+Milestone test:
+
+- `tests/test_recovery_runtime_controlled_activation_commit_bundle.py`
+
+Package 368 must not:
+
+- modify runtime behavior
+- approve real commit
+- approve real grant consumption
+- approve real permit consumption
+- approve real authorization confirmation
+- approve real activation
+- execute recovery
+- mutate runtime state
+- wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules
+- start background workers
+- create threads
+- create timers
+- write checkpoints
+- restore checkpoints
+- perform rollback
+- perform retry
+- perform subprocess calls
+- invoke endpoints
+- register hooks
+- enable feature flags
+- modify CI
+- install dependencies
+- modify PATH, venv, pip, bundled Python, or execution environment
+
+Future packages own:
+
+- Package 369 only after explicit package definition exists
+- any real controlled activation behavior only after a dedicated future package authorizes it
+- any recovery execution behavior only after a dedicated future package authorizes it
+
+Final decision: GO for disabled controlled activation commit milestone. Next package: Package 369.
+
+## Non-mainline Issues Found
+
+- Existing uncommitted gateway/test changes remain outside Packages 361-368 scope and must not be modified by this milestone.
+- Existing untracked `docs/runtime_activation_go_review.md` remains outside Packages 361-368 scope unless a future explicit package defines it.
+- Existing historical Runtime Recovery modules include bridge, executor, adapter, integration, scheduler, dispatcher, gateway, and wiring filenames from earlier packages. Packages 361-368 must preserve those files and must not modify, remove, import, call, or wire those historical modules.
+
