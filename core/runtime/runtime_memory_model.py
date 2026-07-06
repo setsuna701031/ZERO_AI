@@ -12,6 +12,11 @@ from typing import Any, Mapping
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
 
 
+MAX_THAW_DEPTH = 8
+MAX_THAW_ITEMS = 200
+MAX_THAW_BYTES = 4096
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -41,7 +46,12 @@ def _canonicalize_for_fingerprint(value: Any) -> Any:
         canonical_items = [_canonicalize_for_fingerprint(item) for item in value]
         return sorted(
             canonical_items,
-            key=lambda item: json.dumps(item, sort_keys=True, default=str, separators=(",", ":")),
+            key=lambda item: json.dumps(
+                item,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            ),
         )
     if isinstance(value, datetime):
         return value.astimezone(timezone.utc).isoformat()
@@ -88,7 +98,9 @@ def _stable_hash(value: Any) -> str:
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _freeze(item) for key, item in sorted(value.items())})
+        return MappingProxyType(
+            {str(key): _freeze(item) for key, item in sorted(value.items())}
+        )
     if isinstance(value, list | tuple):
         return tuple(_freeze(item) for item in value)
     if isinstance(value, set):
@@ -96,11 +108,93 @@ def _freeze(value: Any) -> Any:
     return copy.deepcopy(value)
 
 
-def _thaw(value: Any) -> Any:
+def _thaw(
+    value: Any,
+    *,
+    depth: int = 0,
+    seen: set[int] | None = None,
+) -> Any:
+    if seen is None:
+        seen = set()
+
+    if depth > MAX_THAW_DEPTH:
+        return {
+            "__truncated__": True,
+            "reason": "max_thaw_depth_exceeded",
+            "max_depth": MAX_THAW_DEPTH,
+        }
+
+    value_id = id(value)
+    if value_id in seen:
+        return {
+            "__truncated__": True,
+            "reason": "cycle_detected",
+        }
+
+    if isinstance(value, bytes):
+        if len(value) > MAX_THAW_BYTES:
+            return {
+                "__bytes_truncated__": True,
+                "size": len(value),
+                "sha256": hashlib.sha256(value).hexdigest(),
+                "max_inline_bytes": MAX_THAW_BYTES,
+            }
+        return copy.deepcopy(value)
+
     if isinstance(value, MappingProxyType):
-        return {key: _thaw(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw(item) for item in value]
+        seen.add(value_id)
+        items = list(value.items())
+        truncated = len(items) > MAX_THAW_ITEMS
+        selected = items[:MAX_THAW_ITEMS]
+        result = {
+            key: _thaw(item, depth=depth + 1, seen=seen)
+            for key, item in selected
+        }
+        if truncated:
+            result["__truncated__"] = True
+            result["__truncated_reason__"] = "max_mapping_items_exceeded"
+            result["__original_item_count__"] = len(items)
+            result["__max_items__"] = MAX_THAW_ITEMS
+        seen.discard(value_id)
+        return result
+
+    if isinstance(value, Mapping):
+        seen.add(value_id)
+        items = list(value.items())
+        truncated = len(items) > MAX_THAW_ITEMS
+        selected = items[:MAX_THAW_ITEMS]
+        result = {
+            str(key): _thaw(item, depth=depth + 1, seen=seen)
+            for key, item in selected
+        }
+        if truncated:
+            result["__truncated__"] = True
+            result["__truncated_reason__"] = "max_mapping_items_exceeded"
+            result["__original_item_count__"] = len(items)
+            result["__max_items__"] = MAX_THAW_ITEMS
+        seen.discard(value_id)
+        return result
+
+    if isinstance(value, tuple | list):
+        seen.add(value_id)
+        items = list(value)
+        truncated = len(items) > MAX_THAW_ITEMS
+        result = [
+            _thaw(item, depth=depth + 1, seen=seen)
+            for item in items[:MAX_THAW_ITEMS]
+        ]
+        if truncated:
+            result.append(
+                {
+                    "__truncated__": True,
+                    "reason": "max_sequence_items_exceeded",
+                    "original_item_count": len(items),
+                    "max_items": MAX_THAW_ITEMS,
+                }
+            )
+        seen.discard(value_id)
+        return result
+
     return copy.deepcopy(value)
 
 
@@ -133,7 +227,11 @@ class RuntimeMemorySnapshot:
                 "runtime-memory-" + _stable_hash(self._fingerprint_payload())[:16],
             )
         if not self.fingerprint:
-            object.__setattr__(self, "fingerprint", _stable_hash(self._fingerprint_payload()))
+            object.__setattr__(
+                self,
+                "fingerprint",
+                _stable_hash(self._fingerprint_payload()),
+            )
 
     def view(self) -> "RuntimeMemoryView":
         return RuntimeMemoryView(snapshot=self)

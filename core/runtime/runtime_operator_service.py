@@ -670,6 +670,10 @@ class RuntimeOperatorService:
                             "authority_context",
                             {},
                         ),
+                        "requested_changes": launch_package.get(
+                            "requested_changes",
+                            [],
+                        ),
                     }
                 )
 
