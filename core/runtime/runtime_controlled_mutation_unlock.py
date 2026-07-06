@@ -151,10 +151,22 @@ def _lineage_matches(unlock: Mapping[str, Any]) -> bool:
 
 def _requested_changes(unlock: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw = unlock.get("requested_changes") or unlock.get("changes") or []
+
+    if not raw:
+        controlled_real_executor_result = _mapping(
+            unlock.get("controlled_real_executor_result")
+        )
+        raw = (
+            controlled_real_executor_result.get("requested_changes")
+            or controlled_real_executor_result.get("changes")
+            or []
+        )
+
     if not raw:
         adapter_result = _mapping(unlock.get("adapter_result"))
         output = _mapping(adapter_result.get("output_summary"))
         raw = output.get("requested_changes") or output.get("changes") or []
+
     if isinstance(raw, Mapping):
         raw = [raw]
     changes: list[dict[str, Any]] = []
