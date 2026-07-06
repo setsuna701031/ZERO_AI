@@ -396,6 +396,8 @@ def _status_payload(
         "run_id": run_id,
         "package_id": _text(package.get("package_id")),
         "task_id": _text(package.get("task_id")),
+        "package_dispatch_bound": bool(result.get("package_dispatch_bound") is True),
+        "package_dispatch_schema": _text(result.get("package_dispatch_schema")),
         "requested_mode": _text(package.get("requested_mode")),
         "console_mode": mode,
         "chain": chain,
@@ -459,7 +461,7 @@ def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
                 repo_root=Path("."),
             )
     service = RuntimeOperatorService(_config(package), **adapters)
-    return service.run_goal(_goal(package), explicit_manual_mode=True)
+    return service.run_package(package, explicit_manual_mode=True)
 
 
 def _record_run(

@@ -120,6 +120,9 @@ from core.runtime.runtime_operator_config import (
     RuntimeOperatorConfig,
     load_runtime_operator_config,
 )
+from core.runtime.runtime_operator_package_dispatch_bridge import (
+    prepare_runtime_operator_package_dispatch,
+)
 
 
 RUNTIME_OPERATOR_SERVICE_SCHEMA = "zero.runtime.operator_service.v1"
@@ -460,6 +463,7 @@ class RuntimeOperatorService:
         self,
         goal_text: Any,
         *,
+        runtime_package: Mapping[str, Any] | None = None,
         explicit_manual_mode: bool = False,
     ) -> dict[str, Any]:
         result = launch_goal_session(
@@ -468,6 +472,14 @@ class RuntimeOperatorService:
             explicit_manual_mode=explicit_manual_mode,
             emergency_stop_active=self._state.get("emergency_stop_active") is True,
         )
+        package_dispatch = _mapping(runtime_package)
+        if package_dispatch:
+            result = dict(result)
+            result["package"] = package_dispatch
+            result["package_dispatch_bound"] = True
+            result["package_dispatch_schema"] = package_dispatch.get("schema", "")
+            result["package_id"] = package_dispatch.get("package_id", "")
+            result["task_id"] = package_dispatch.get("task_id", "")
         queue_submit = submit_goal_session_to_queue(
             result,
             existing_queue=self._state.get("queue_entries"),
@@ -710,6 +722,10 @@ class RuntimeOperatorService:
             "schema": RUNTIME_OPERATOR_SERVICE_SCHEMA,
             "ok": result.get("ok") is True and queue_submit.get("queued") is True,
             "action": "run",
+            "package_dispatch_bound": result.get("package_dispatch_bound") is True,
+            "package_dispatch_schema": result.get("package_dispatch_schema") or "",
+            "package_id": result.get("package_id") or "",
+            "task_id": result.get("task_id") or "",
             "goal_id": result.get("goal_id") or "",
             "work_package_id": result.get("work_package_id") or "",
             "runtime_session_id": result.get("runtime_session_id") or "",
@@ -1340,6 +1356,19 @@ class RuntimeOperatorService:
             "task_executed": False,
             "direct_dispatch_requested": False,
         }
+
+    def run_package(
+        self,
+        package: Mapping[str, Any],
+        *,
+        explicit_manual_mode: bool = False,
+    ) -> dict[str, Any]:
+        dispatch = prepare_runtime_operator_package_dispatch(package)
+        return self.run_goal(
+            dispatch.get("goal") or package.get("goal") or package.get("package_id"),
+            runtime_package=dispatch,
+            explicit_manual_mode=explicit_manual_mode,
+        )
 
     def queue_status(self) -> dict[str, Any]:
         return build_queue_state(self._state.get("queue_entries"))
