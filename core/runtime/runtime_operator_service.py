@@ -655,10 +655,26 @@ class RuntimeOperatorService:
             self._state["controlled_real_executor_unlocks"] = (
                 controlled_real_executor_unlock["unlocks"]
             )
-            controlled_mutation_unlock = submit_controlled_mutation_unlock(
+            mutation_request = dict(
                 controlled_real_executor_unlock.get(
                     "controlled_real_executor_result"
-                ),
+                )
+                or {}
+            )
+            launch_package = result.get("package") or {}
+            if isinstance(launch_package, Mapping):
+                mutation_request.update(
+                    {
+                        "target_root": launch_package.get("target_root"),
+                        "authority_context": launch_package.get(
+                            "authority_context",
+                            {},
+                        ),
+                    }
+                )
+
+            controlled_mutation_unlock = submit_controlled_mutation_unlock(
+                mutation_request,
                 governed_mutation_adapter=self._controlled_mutation_adapter,
                 existing_mutations=self._state.get("controlled_mutations"),
                 runtime_operator_service_authorized=True,
