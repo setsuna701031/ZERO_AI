@@ -102,6 +102,21 @@ def _changed_files(payload: Mapping[str, Any]) -> list[str]:
     return applied or skipped
 
 
+def _target_root(request: Mapping[str, Any]) -> str:
+    requested = _text(request.get("target_root") or request.get("mutation_target_root"))
+    return requested or "workspace"
+
+
+def _repo_root_mutation_allowed(request: Mapping[str, Any]) -> bool:
+    authority = _mapping(request.get("authority_context"))
+    return (
+        _target_root(request) == "repo"
+        and authority.get("repo_root_mutation_allowed") is True
+        and authority.get("controlled_mutation") is True
+        and authority.get("operator_approved") is True
+    )
+
+
 @dataclass
 class RuntimeGovernedMutationAdapter:
     workspace_root: str | Path = "workspace/operator_console/governed_mutation/workspace"
@@ -110,6 +125,7 @@ class RuntimeGovernedMutationAdapter:
     )
     rollback_root: str | Path = "workspace/operator_console/governed_mutation/rollback"
     report_root: str | Path = "workspace/operator_console/governed_mutation/reports"
+    repo_root: str | Path = "."
     governed_runtime_runner: Callable[[MutationGatewayRequest], Any] | None = None
 
     safe_governed_mutation_adapter: bool = True
@@ -137,6 +153,7 @@ class RuntimeGovernedMutationAdapter:
                 "rollback_completed": False,
                 "commit_allowed": False,
                 "changed_files": [],
+                "repo_root_mutation": False,
                 "non_mainline_issues": [
                     f"governed_mutation_runtime_unavailable:{exc.__class__.__name__}"
                 ],
@@ -158,6 +175,7 @@ class RuntimeGovernedMutationAdapter:
             "rollback_completed": rolled_back,
             "commit_allowed": bool(verified and not failed and not rolled_back),
             "changed_files": changed_files,
+            "repo_root_mutation": bool(payload.get("repo_root_mutation") is True),
             "governed_mutation_adapter_attached": True,
             "governed_runtime_result": payload,
             "non_mainline_issues": [],
@@ -172,6 +190,27 @@ class RuntimeGovernedMutationAdapter:
 
         authority = _mapping(request.get("authority_context"))
         lineage = _mapping(request.get("lineage"))
+        repo_root_mutation = _repo_root_mutation_allowed(request)
+
+        workspace_root = (
+            Path(self.repo_root)
+            if repo_root_mutation
+            else Path(self.workspace_root)
+        )
+
+        metadata = {
+            "schema": ZERO_RUNTIME_GOVERNED_MUTATION_ADAPTER_SCHEMA,
+            "mutation_request_id": _text(request.get("mutation_request_id")),
+            "execution_id": _text(request.get("execution_id")),
+            "executor_result_id": _text(request.get("executor_result_id")),
+            "authority_context": dict(authority),
+            "lineage": dict(lineage),
+            "runtime_operator_service_owner": True,
+            "console_facade_only": True,
+            "target_root": _target_root(request),
+            "repo_root_mutation": repo_root_mutation,
+        }
+
         return MutationGatewayRequest(
             intent="Controlled runtime operator mutation",
             initiator="RuntimeOperatorService",
@@ -183,7 +222,7 @@ class RuntimeGovernedMutationAdapter:
                 allow_new_files=True,
                 allow_delete_files=False,
             ),
-            workspace_root=Path(self.workspace_root),
+            workspace_root=workspace_root,
             sandbox_source_root=Path(self.sandbox_source_root),
             rollback_root=Path(self.rollback_root),
             report_root=Path(self.report_root),
@@ -193,16 +232,7 @@ class RuntimeGovernedMutationAdapter:
             verification_checks=(_verification_check(request),),
             dry_run=False,
             governed_mainline=True,
-            metadata={
-                "schema": ZERO_RUNTIME_GOVERNED_MUTATION_ADAPTER_SCHEMA,
-                "mutation_request_id": _text(request.get("mutation_request_id")),
-                "execution_id": _text(request.get("execution_id")),
-                "executor_result_id": _text(request.get("executor_result_id")),
-                "authority_context": dict(authority),
-                "lineage": dict(lineage),
-                "runtime_operator_service_owner": True,
-                "console_facade_only": True,
-            },
+            metadata=metadata,
         )
 
 

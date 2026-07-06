@@ -310,6 +310,7 @@ def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
                 sandbox_source_root=root / "sandbox",
                 rollback_root=root / "rollback",
                 report_root=root / "reports",
+                repo_root=Path("."),
             )
     service = RuntimeOperatorService(_config(package), **adapters)
     return service.run_goal(_goal(package), explicit_manual_mode=True)
