@@ -1,0 +1,1 @@
+- Runtime Execution Result Closure v1: `docs/contracts/runtime/runtime_execution_result_closure_v1.md`
