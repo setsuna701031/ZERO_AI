@@ -46,6 +46,7 @@ class RuntimeControlledMutationRequest:
     execution_id: str
     executor_result_id: str
     mutation_request_id: str
+    target_root: str
     requested_changes: list[dict[str, Any]]
     authority_context: dict[str, Any]
     lineage: dict[str, str]
@@ -149,9 +150,11 @@ def _lineage_matches(unlock: Mapping[str, Any]) -> bool:
 
 
 def _requested_changes(unlock: Mapping[str, Any]) -> list[dict[str, Any]]:
-    adapter_result = _mapping(unlock.get("adapter_result"))
-    output = _mapping(adapter_result.get("output_summary"))
-    raw = output.get("requested_changes") or output.get("changes") or []
+    raw = unlock.get("requested_changes") or unlock.get("changes") or []
+    if not raw:
+        adapter_result = _mapping(unlock.get("adapter_result"))
+        output = _mapping(adapter_result.get("output_summary"))
+        raw = output.get("requested_changes") or output.get("changes") or []
     if isinstance(raw, Mapping):
         raw = [raw]
     changes: list[dict[str, Any]] = []
@@ -173,7 +176,8 @@ def _requested_changes(unlock: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _authority_context(unlock: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    upstream = dict(_mapping(unlock.get("authority_context")))
+    authority = {
         "runtime_operator_service_owner": True,
         "governed_mutation_adapter_required": True,
         "repo_edit_sandbox_required": True,
@@ -184,6 +188,17 @@ def _authority_context(unlock: Mapping[str, Any]) -> dict[str, Any]:
         "unlock_id": _text(unlock.get("unlock_id")),
         "adapter_result_id": _text(unlock.get("adapter_result_id")),
     }
+    authority.update(upstream)
+    authority["runtime_operator_service_owner"] = True
+    authority["governed_mutation_adapter_required"] = True
+    authority["repo_edit_sandbox_required"] = True
+    authority["rollback_required"] = True
+    authority["validation_required"] = True
+    authority["real_executor_enabled"] = bool(unlock.get("real_executor_enabled") is True)
+    authority["execution_real"] = bool(unlock.get("execution_real") is True)
+    authority["unlock_id"] = _text(unlock.get("unlock_id"))
+    authority["adapter_result_id"] = _text(unlock.get("adapter_result_id"))
+    return authority
 
 
 def _direct_filesystem_requested(changes: list[dict[str, Any]]) -> bool:
@@ -241,6 +256,7 @@ def _request(unlock: Mapping[str, Any]) -> dict[str, Any]:
         execution_id=execution_id,
         executor_result_id=executor_result_id,
         mutation_request_id=mutation_request_id,
+        target_root=_text(unlock.get("target_root") or unlock.get("mutation_target_root")),
         requested_changes=_requested_changes(unlock),
         authority_context=_authority_context(unlock),
         lineage=_lineage(unlock),
@@ -317,6 +333,7 @@ def _base_payload(
         "executor_result_id": _text(request.get("executor_result_id"))
         or _text(unlock.get("execution_result_id")),
         "mutation_request_id": _text(request.get("mutation_request_id")),
+        "target_root": _text(request.get("target_root")),
         "mutation_allowed": bool(result.get("mutation_allowed") is True),
         "mutation_started": bool(result.get("mutation_started") is True),
         "mutation_completed": bool(result.get("mutation_completed") is True),
@@ -583,6 +600,7 @@ def submit_controlled_mutation_unlock(
         ],
         "autonomous_runtime_loop_closed": mutation["autonomous_runtime_loop_closed"],
         "changed_files": mutation["changed_files"],
+        "target_root": mutation.get("target_root") or "",
         "mutations": records,
         "mutation_count": len(records),
         "denial_reason": mutation["denial_reason"],
@@ -616,6 +634,7 @@ def build_controlled_mutation_state(mutations: Any) -> dict[str, Any]:
             latest.get("autonomous_runtime_loop_closed") is True
         ),
         "changed_files": list(latest.get("changed_files") or []),
+        "target_root": _text(latest.get("target_root")),
         "mutation_count": len(records),
         "mutations": records,
     }
