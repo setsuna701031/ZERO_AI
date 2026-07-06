@@ -461,7 +461,17 @@ def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
                 repo_root=Path("."),
             )
     service = RuntimeOperatorService(_config(package), **adapters)
-    return service.run_package(package, explicit_manual_mode=True)
+
+    if hasattr(service, "run_package"):
+        return service.run_package(
+            package,
+            explicit_manual_mode=True,
+        )
+
+    return service.run_goal(
+        _goal(package),
+        explicit_manual_mode=True,
+    )
 
 
 def _record_run(
