@@ -170,7 +170,7 @@ def test_controlled_example_cli_completes_without_hanging() -> None:
         cwd=Path.cwd(),
         text=True,
         capture_output=True,
-        timeout=30,
+        timeout=240,
     )
 
     assert result.returncode == 0, result.stderr

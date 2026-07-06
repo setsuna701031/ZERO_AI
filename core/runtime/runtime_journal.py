@@ -13,14 +13,17 @@ from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VER
 
 
 JOURNAL_RESTORE_TRUNCATION_MARKER = "__truncated_for_journal_restore__"
-_JOURNAL_RESTORE_MAX_DEPTH = 8
-_JOURNAL_RESTORE_MAX_ITEMS = 64
+_JOURNAL_RESTORE_MAX_DEPTH = 5
+_JOURNAL_RESTORE_MAX_ITEMS = 32
 _JOURNAL_RESTORE_ESSENTIAL_KEYS = {
     "abi_version",
     "applied",
     "boundary",
     "checkpoint_id",
     "checkpoint_type",
+    "commit_allowed",
+    "commit_applied",
+    "commit_recorded",
     "decision_id",
     "event_id",
     "event_type",
@@ -48,6 +51,7 @@ _JOURNAL_RESTORE_ESSENTIAL_KEYS = {
     "timestamp",
     "to_state",
     "transaction_id",
+    "validation_passed",
     "verified",
 }
 
@@ -175,16 +179,23 @@ class RuntimeWALRecord:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "RuntimeWALRecord":
+        raw_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+        raw_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        projected_payload = project_journal_restore_payload(raw_payload)
+        projected_metadata = project_journal_restore_payload(raw_metadata)
+        integrity_hash = str(payload.get("integrity_hash") or "")
+        if projected_payload != raw_payload or projected_metadata != raw_metadata:
+            integrity_hash = ""
         return cls(
             sequence=int(payload.get("sequence") or 0),
             record_type=str(payload.get("record_type") or ""),
-            payload=dict(payload.get("payload") or {}),
-            metadata=dict(payload.get("metadata") or {}),
+            payload=projected_payload if isinstance(projected_payload, dict) else {},
+            metadata=projected_metadata if isinstance(projected_metadata, dict) else {},
             timestamp=str(payload.get("timestamp") or utc_timestamp()),
             record_id=str(payload.get("record_id") or ""),
             runtime_version=str(payload.get("runtime_version") or RUNTIME_KERNEL_VERSION),
             abi_version=str(payload.get("abi_version") or RUNTIME_ABI_VERSION),
-            integrity_hash=str(payload.get("integrity_hash") or ""),
+            integrity_hash=integrity_hash,
         )
 
 

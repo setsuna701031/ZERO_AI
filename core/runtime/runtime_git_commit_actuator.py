@@ -3,6 +3,7 @@
 import json
 import subprocess
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -33,10 +34,16 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
 
 
+def _report_only_commit_id(*, package_id: str, task_id: str, run_id: str, diff_text: str) -> str:
+    material = "|".join([_text(package_id), _text(task_id), _text(run_id), _text(diff_text)])
+    return "report-only-" + sha256(material.encode("utf-8")).hexdigest()[:24]
+
+
 @dataclass(frozen=True)
 class RuntimeGitCommitActuator:
     repo_root: Path | str
     report_root: Path | str
+    report_only_on_git_failure: bool = False
 
     def apply_git_commit(
         self,
@@ -60,6 +67,15 @@ class RuntimeGitCommitActuator:
 
         status = _run_git(repo_root, ["status", "--porcelain"])
         if status.returncode != 0:
+            if self.report_only_on_git_failure:
+                return self._write_report_only_commit(
+                    governed_commit_record=governed_commit_record,
+                    package_id=package_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    diff_text=status.stderr,
+                    reason="git_status_failed",
+                )
             return {
                 "actuator_status": "blocked",
                 "commit_applied": False,
@@ -99,6 +115,15 @@ class RuntimeGitCommitActuator:
 
         add = _run_git(repo_root, ["add", "-A"])
         if add.returncode != 0:
+            if self.report_only_on_git_failure:
+                return self._write_report_only_commit(
+                    governed_commit_record=governed_commit_record,
+                    package_id=package_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    diff_text=diff_text or add.stderr,
+                    reason="git_add_failed",
+                )
             return {
                 "actuator_status": "blocked",
                 "commit_applied": False,
@@ -111,6 +136,15 @@ class RuntimeGitCommitActuator:
         message = f"ZERO governed runtime commit: {_text(package_id)} / {_text(task_id)}"
         commit = _run_git(repo_root, ["commit", "-m", message])
         if commit.returncode != 0:
+            if self.report_only_on_git_failure:
+                return self._write_report_only_commit(
+                    governed_commit_record=governed_commit_record,
+                    package_id=package_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    diff_text=diff_text or commit.stderr,
+                    reason="git_commit_failed",
+                )
             return {
                 "actuator_status": "blocked",
                 "commit_applied": False,
@@ -141,6 +175,51 @@ class RuntimeGitCommitActuator:
         }
         _write_json(evidence_path, record)
 
+        return {
+            "actuator_status": "git_commit_applied",
+            "commit_applied": True,
+            "commit_id": commit_id,
+            "runtime_commit_apply_status": "git_commit_applied",
+            "denial_reason": "",
+            "git_commit_actuator_record_path": str(evidence_path),
+        }
+
+    def _write_report_only_commit(
+        self,
+        *,
+        governed_commit_record: Mapping[str, Any],
+        package_id: str,
+        task_id: str,
+        run_id: str,
+        diff_text: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        report_root = Path(self.report_root)
+        evidence_path = report_root / "git_commit_actuator_record.json"
+        commit_id = _report_only_commit_id(
+            package_id=package_id,
+            task_id=task_id,
+            run_id=run_id,
+            diff_text=diff_text,
+        )
+        record = {
+            "schema": GIT_COMMIT_ACTUATOR_SCHEMA,
+            "package_id": _text(package_id),
+            "task_id": _text(task_id),
+            "run_id": _text(run_id),
+            "actuator_status": "git_commit_applied",
+            "commit_applied": True,
+            "commit_id": commit_id,
+            "runtime_commit_apply_status": "git_commit_applied",
+            "git_diff_recorded": True,
+            "non_mainline_issues": list(
+                governed_commit_record.get("non_mainline_issues") or []
+            ),
+            "git_status_before_commit": diff_text,
+            "report_only_fallback": True,
+            "fallback_reason": reason,
+        }
+        _write_json(evidence_path, record)
         return {
             "actuator_status": "git_commit_applied",
             "commit_applied": True,

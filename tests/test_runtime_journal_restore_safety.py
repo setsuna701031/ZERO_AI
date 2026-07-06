@@ -45,7 +45,7 @@ def test_restore_from_old_deep_wal_projects_payload_without_hanging(tmp_path: Pa
     assert restored_payload["status"] == "running"
     assert restored_payload["event_type"] == "RuntimeStateTransitionEvent"
     assert JOURNAL_RESTORE_TRUNCATION_MARKER in json.dumps(restored_record, sort_keys=True)
-    assert len(restored_record["metadata"]["items"]) == 65
+    assert len(restored_record["metadata"]["items"]) == 33
 
 
 def test_restore_projection_handles_recursive_in_memory_payload() -> None:

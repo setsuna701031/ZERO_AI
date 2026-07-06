@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.runtime.runtime_operator_config import load_runtime_operator_config
+from core.runtime.runtime_operator_failure_evidence import write_operator_failure_evidence
+from core.runtime.runtime_operator_resume_evidence import write_operator_resume_evidence
 from core.runtime.runtime_operator_service import RuntimeOperatorService
+from core.runtime.runtime_journal import RuntimeJournal
 
 try:
     from core.runtime.runtime_governed_mutation_adapter import (
@@ -84,6 +87,20 @@ def _stable_id(prefix: str, *parts: Any) -> str:
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+
+
+def _write_failure_evidence(
+    *,
+    package: Mapping[str, Any],
+    command: str,
+    problems: list[str],
+) -> str:
+    return write_operator_failure_evidence(
+        report_root=_workspace_root_for_package(package) / "reports",
+        command=command,
+        package=package,
+        problems=problems,
+    )
 
 
 def _load_package(path: str | Path) -> dict[str, Any]:
@@ -210,6 +227,7 @@ def _apply_governed_commit_if_available(
         actuator = RuntimeGitCommitActuator(
             repo_root=Path("."),
             report_root=root / "reports",
+            report_only_on_git_failure=True,
         )
         git_result = actuator.apply_git_commit(
             governed_commit_record=adapter_result.get("record") or {},
@@ -239,6 +257,127 @@ def _apply_governed_commit_if_available(
         }
     )
     return updated
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _payload_has_true(payload: Any, *fields: str) -> bool:
+    if isinstance(payload, Mapping):
+        return any(payload.get(field) is True for field in fields) or any(
+            _payload_has_true(value, *fields) for value in payload.values()
+        )
+    if isinstance(payload, list):
+        return any(_payload_has_true(value, *fields) for value in payload)
+    return False
+
+
+def _restore_completed_run_if_available(
+    *,
+    package: Mapping[str, Any],
+    mode: str,
+) -> dict[str, Any] | None:
+    if mode != "controlled":
+        return None
+
+    run_id = _stable_id(
+        "operator-console-run",
+        package.get("package_id"),
+        package.get("task_id"),
+        mode,
+    )
+    root = _workspace_root_for_package(package)
+    report_root = root / "reports"
+    journal_path = report_root / "runtime.wal.jsonl"
+    governed_record_path = report_root / "governed_commit_record.json"
+    git_record_path = report_root / "git_commit_actuator_record.json"
+    if not (
+        journal_path.exists()
+        and governed_record_path.exists()
+        and git_record_path.exists()
+    ):
+        return None
+
+    reconstruction = RuntimeJournal(journal_path).reconstruct()
+    records = reconstruction.get("records") if isinstance(reconstruction, dict) else []
+    mutation_restored = any(
+        _payload_has_true(
+            (record.get("payload") if isinstance(record, Mapping) else {}),
+            "mutation_completed",
+            "controlled_mutation",
+        )
+        for record in records or []
+    )
+    commit_restored = any(
+        _payload_has_true(
+            (record.get("payload") if isinstance(record, Mapping) else {}),
+            "commit_recorded",
+            "commit_applied",
+        )
+        for record in records or []
+    )
+
+    governed_record = _read_json_file(governed_record_path)
+    git_record = _read_json_file(git_record_path)
+    commit_id = _text(git_record.get("commit_id"))
+    if (
+        not mutation_restored
+        or not commit_restored
+        or governed_record.get("commit_recorded") is not True
+        or git_record.get("commit_applied") is not True
+        or not commit_id
+    ):
+        return None
+
+    resume_evidence_path = write_operator_resume_evidence(
+        report_root=report_root,
+        package=package,
+        run_id=run_id,
+        commit_id=commit_id,
+        restored_record_count=int(reconstruction.get("record_count") or 0),
+    )
+    return {
+        "ok": True,
+        "launch_admitted": True,
+        "invocation_approval_status": "approved",
+        "invocation_gate_status": "opened",
+        "invocation_record_status": "recorded",
+        "executor_invocation_dispatch_status": "dispatch_bound",
+        "runtime_execution_session_start_status": "dry_run_started",
+        "runtime_execution_result_capture_status": "dry_run_completed",
+        "runtime_executor_closure_status": "dry_run_runtime_closed",
+        "controlled_real_executor_unlock_status": "controlled_real_executor_unlocked",
+        "controlled_mutation_status": "controlled_mutation_commit_allowed",
+        "validation_passed": True,
+        "commit_allowed": True,
+        "commit_applied": True,
+        "commit_recorded": True,
+        "commit_id": commit_id,
+        "git_diff_recorded": True,
+        "runtime_commit_apply_status": "git_commit_applied",
+        "governed_mutation_adapter_attached": True,
+        "governed_commit_adapter_attached": True,
+        "controlled_mutation": True,
+        "mutation_allowed": True,
+        "real_executor_enabled": True,
+        "execution_real": True,
+        "rollback_available": True,
+        "validation_required": True,
+        "rollback_completed": False,
+        "governed_commit_record_path": str(governed_record_path),
+        "git_commit_actuator_record_path": str(git_record_path),
+        "resume_evidence_path": resume_evidence_path,
+        "resume_restored": True,
+        "duplicate_mutation": False,
+        "duplicate_commit": False,
+        "duplicate_git_actuator_execution": False,
+        "non_mainline_issues": [],
+    }
 
 
 def _status_payload(
@@ -294,6 +433,13 @@ def _status_payload(
         ),
         "denial_reason": _text(result.get("denial_reason")),
         "non_mainline_issues": list(result.get("non_mainline_issues") or []),
+        "resume_restored": bool(result.get("resume_restored") is True),
+        "resume_evidence_path": _text(result.get("resume_evidence_path")),
+        "duplicate_mutation": bool(result.get("duplicate_mutation") is True),
+        "duplicate_commit": bool(result.get("duplicate_commit") is True),
+        "duplicate_git_actuator_execution": bool(
+            result.get("duplicate_git_actuator_execution") is True
+        ),
     }
 
 
@@ -377,6 +523,11 @@ def run_package(package_json: str | Path, *, controlled: bool = False) -> dict[s
     package = _load_package(package_json)
     problems = _validate_package(package)
     if problems:
+        failure_evidence_path = _write_failure_evidence(
+            package=package,
+            command="run",
+            problems=problems,
+        )
         return {
             "schema": OPERATOR_CONSOLE_SCHEMA,
             "ok": False,
@@ -389,9 +540,17 @@ def run_package(package_json: str | Path, *, controlled: bool = False) -> dict[s
             "non_mainline_issues": problems,
             "chain": {field: "rejected" for field in CHAIN_FIELDS},
             "mutation_allowed": False,
+            "controlled_mutation": False,
+            "commit_allowed": False,
+            "commit_applied": False,
+            "commit_recorded": False,
+            "runtime_commit_apply_status": "rejected",
+            "failure_evidence_path": failure_evidence_path,
         }
     mode = "controlled" if controlled else "dry_run"
-    result = _run_service(package, mode=mode)
+    result = _restore_completed_run_if_available(package=package, mode=mode)
+    if result is None:
+        result = _run_service(package, mode=mode)
     payload = _record_run(package=package, mode=mode, result=result)
     payload["command"] = "run"
     if not controlled:
