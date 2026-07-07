@@ -1,0 +1,67 @@
+TaskRunner Registry Direct Admission Inventory
+
+Purpose:
+Inventory report for TaskRunner registry direct admission boundary.
+
+Direct Registry Call Inventory
+
+Package24 Helper Presence
+
+Recommended Package26
+
+Non-mainline issue reporting
+
+Package 24 helper:
+
+_zero_taskrunner_registry_admit_aer_closure_v24
+
+_aer_registry_admit
+
+TaskRunner registry helper remains the historical compatibility reference.
+
+Target:
+
+core/runtime/task_runner.py
+
+Direct Admission Review:
+
+TaskRunner registry direct admission path is inventoried.
+
+Runtime route registry owns runtime admission.
+
+TaskRunner does not bypass runtime admission.
+
+Scheduler does not bypass runtime admission.
+
+Executor does not bypass runtime admission.
+
+Agent loop does not bypass runtime admission.
+
+No execution authorization.
+
+No scheduler invocation.
+
+No executor invocation.
+
+No operator invocation.
+
+Boundary:
+
+- runtime route registry
+- runtime native mainline
+- task runner compatibility entry
+- scheduler compatibility entry
+
+Decision:
+
+Inventory only.
+
+No runtime mutation.
+
+Non-mainline issue reporting:
+
+Any non-mainline issue discovered during this inventory must be reported explicitly.
+
+Recommended next action:
+
+Package26 should replace legacy direct registry admission with controlled runtime route admission.

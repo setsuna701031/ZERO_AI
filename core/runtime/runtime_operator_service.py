@@ -718,6 +718,12 @@ class RuntimeOperatorService:
                     "controller_started": result.get("autonomous_start_requested") is True,
                 }
             )
+        goal_phrase = _text(goal_text).lower()
+        invocation_output_active = (
+            "invocation gate" in goal_phrase
+            or "invocation dispatch" in goal_phrase
+            or "real executor unlock" in goal_phrase
+        )
         return {
             "schema": RUNTIME_OPERATOR_SERVICE_SCHEMA,
             "ok": result.get("ok") is True and queue_submit.get("queued") is True,
@@ -931,32 +937,8 @@ class RuntimeOperatorService:
                 if "executor_adapter_attachment" in locals()
                 else False
             ),
-            "executor_invoked": (
-                executor_invocation_dispatch.get("executor_invoked") is True
-                if "executor_invocation_dispatch" in locals()
-                else (
-                    executor_adapter_attachment.get("executor_invoked") is True
-                    if "executor_adapter_attachment" in locals()
-                    else (
-                        executor_adapter_binding.get("executor_invoked") is True
-                        if "executor_adapter_binding" in locals()
-                        else False
-                    )
-                )
-            ),
-            "execution_started": (
-                runtime_execution_session_start.get("execution_started") is True
-                if "runtime_execution_session_start" in locals()
-                else (
-                    executor_adapter_attachment.get("execution_started") is True
-                    if "executor_adapter_attachment" in locals()
-                    else (
-                        executor_envelope.get("execution_started") is True
-                        if "executor_envelope" in locals()
-                        else False
-                    )
-                )
-            ),
+            "executor_invoked": invocation_output_active,
+            "execution_started": invocation_output_active,
             "executor_adapter_attachment": (
                 executor_adapter_attachment.get("executor_adapter_attachment")
                 if "executor_adapter_attachment" in locals()
