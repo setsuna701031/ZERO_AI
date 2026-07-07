@@ -137,20 +137,26 @@ def _call_first_available(target: Any, request: Dict[str, Any]) -> Any:
     raise AttributeError("Runtime native mainline object has no supported entry method")
 
 
+def _native_entry_status_for_result(result: Dict[str, Any]) -> str:
+    if "status" in result:
+        return normalize_runtime_native_status(result.get("status"))
+    if result.get("ok") is True:
+        return "finished"
+    if result.get("ok") is False:
+        return "failed"
+    return "queued"
+
+
 def normalize_runtime_native_entry_result(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         result = dict(value)
     else:
         result = {"ok": True, "result": value}
 
-    if "status" in result:
-        result["status"] = normalize_runtime_native_status(result.get("status"))
-    elif result.get("ok") is True:
-        result["status"] = "finished"
-    elif result.get("ok") is False:
-        result["status"] = "failed"
-
-    return result
+    return {
+        **result,
+        "status": _native_entry_status_for_result(result),
+    }
 
 
 class RuntimeNativeEntryAdapter:
@@ -164,7 +170,12 @@ class RuntimeNativeEntryAdapter:
         request = normalize_runtime_native_entry_request(value)
         target = mainline if mainline is not None else self.mainline
         if target is None:
-            return {"ok": True, "status": "queued", "request": request, "adapter": "runtime_native_entry_adapter"}
+            return {
+                "ok": True,
+                "status": "queued",
+                "request": request,
+                "adapter": "runtime_native_entry_adapter",
+            }
         return normalize_runtime_native_entry_result(_call_first_available(target, request))
 
     execute = run

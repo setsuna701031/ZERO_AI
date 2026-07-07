@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -75,6 +76,106 @@ def _unlock_attempts(boundaries: dict[str, Any]) -> list[str]:
 
 def _lease_id(lease_request_id: str, runtime_session_id: str) -> str:
     return f"execution-lease::{runtime_session_id}::{lease_request_id}"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionLease:
+    lease_id: str = ""
+    request_id: str = ""
+    granted: bool = False
+    trace_id: str = ""
+    status: str = "lease_not_granted"
+    reason: str = ""
+    owner: Any = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    runtime_session_id: str = ""
+    lease_status: str = "inactive"
+    allowed_statuses: list[str] = field(default_factory=lambda: list(LEASE_STATUSES))
+    lease_owner: dict[str, Any] = field(default_factory=dict)
+    expiration_model: dict[str, Any] = field(default_factory=dict)
+    revocation_model: dict[str, Any] = field(default_factory=dict)
+    record_only: bool = True
+    executor_started: bool = False
+    executor_start_allowed: bool = False
+    task_execution_allowed: bool = False
+    subprocess_allowed: bool = False
+    file_mutation_allowed: bool = False
+    io_allowed: bool = False
+    tool_call_allowed: bool = False
+    autonomy_allowed: bool = False
+    self_start_allowed: bool = False
+    background_loop_allowed: bool = False
+    execution_allowed: bool = False
+    mutation_allowed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "lease_id": self.lease_id,
+            "request_id": self.request_id,
+            "granted": self.granted,
+            "trace_id": self.trace_id,
+            "status": self.status,
+            "reason": self.reason,
+            "owner": deepcopy(self.owner),
+            "metadata": deepcopy(self.metadata),
+            "runtime_session_id": self.runtime_session_id,
+            "lease_status": self.lease_status,
+            "allowed_statuses": list(self.allowed_statuses),
+            "lease_owner": deepcopy(self.lease_owner),
+            "expiration_model": deepcopy(self.expiration_model),
+            "revocation_model": deepcopy(self.revocation_model),
+            "record_only": self.record_only,
+            "executor_started": self.executor_started,
+            "executor_start_allowed": self.executor_start_allowed,
+            "task_execution_allowed": self.task_execution_allowed,
+            "subprocess_allowed": self.subprocess_allowed,
+            "file_mutation_allowed": self.file_mutation_allowed,
+            "io_allowed": self.io_allowed,
+            "tool_call_allowed": self.tool_call_allowed,
+            "autonomy_allowed": self.autonomy_allowed,
+            "self_start_allowed": self.self_start_allowed,
+            "background_loop_allowed": self.background_loop_allowed,
+            "execution_allowed": self.execution_allowed,
+            "mutation_allowed": self.mutation_allowed,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any] | None) -> "RuntimeExecutionLease":
+        record = _as_mapping(value)
+        return cls(
+            lease_id=str(record.get("lease_id") or ""),
+            request_id=str(record.get("request_id") or record.get("lease_request_id") or ""),
+            granted=record.get("granted") is True,
+            trace_id=str(record.get("trace_id") or ""),
+            status=str(record.get("status") or record.get("lease_status") or "lease_not_granted"),
+            reason=str(record.get("reason") or ""),
+            owner=deepcopy(record.get("owner")),
+            metadata=_as_mapping(record.get("metadata")),
+            runtime_session_id=str(record.get("runtime_session_id") or ""),
+            lease_status=str(record.get("lease_status") or "inactive"),
+            allowed_statuses=list(record.get("allowed_statuses") or LEASE_STATUSES),
+            lease_owner=_as_mapping(record.get("lease_owner")),
+            expiration_model=_as_mapping(record.get("expiration_model")),
+            revocation_model=_as_mapping(record.get("revocation_model")),
+            record_only=record.get("record_only", True) is True,
+            executor_started=record.get("executor_started") is True,
+            executor_start_allowed=record.get("executor_start_allowed") is True,
+            task_execution_allowed=record.get("task_execution_allowed") is True,
+            subprocess_allowed=record.get("subprocess_allowed") is True,
+            file_mutation_allowed=record.get("file_mutation_allowed") is True,
+            io_allowed=record.get("io_allowed") is True,
+            tool_call_allowed=record.get("tool_call_allowed") is True,
+            autonomy_allowed=record.get("autonomy_allowed") is True,
+            self_start_allowed=record.get("self_start_allowed") is True,
+            background_loop_allowed=record.get("background_loop_allowed") is True,
+            execution_allowed=record.get("execution_allowed") is True,
+            mutation_allowed=record.get("mutation_allowed") is True,
+        )
+
+    @classmethod
+    def from_request(cls, request: dict[str, Any]) -> "RuntimeExecutionLease":
+        return cls.from_dict(build_runtime_execution_lease_record(request))
 
 
 def build_runtime_execution_lease_request(
@@ -166,20 +267,14 @@ def validate_runtime_execution_lease_request(request: dict[str, Any]) -> dict[st
     if record.get("non_mainline_issue_reporting_required") is not True:
         problems.append("non_mainline_issue_reporting_not_required")
 
-    lease_record = (
-        build_runtime_execution_lease_record(record)
-        if not problems
-        else None
-    )
+    lease_record = build_runtime_execution_lease_record(record) if not problems else None
 
     return {
         "schema": RUNTIME_EXECUTION_LEASE_SCHEMA,
         "valid": not problems,
         "lease_request_id": record.get("lease_request_id"),
         "runtime_session_id": session_id,
-        "status": "accepted_execution_lease_record_request"
-        if not problems
-        else "blocked",
+        "status": "accepted_execution_lease_record_request" if not problems else "blocked",
         "problems": problems,
         "missing_required_fields": missing,
         "missing_required_blockers": missing_blockers,
@@ -208,6 +303,13 @@ def build_runtime_execution_lease_record(request: dict[str, Any]) -> dict[str, A
 
     return {
         "lease_id": _lease_id(lease_request_id, session_id),
+        "request_id": lease_request_id,
+        "granted": False,
+        "trace_id": "",
+        "status": "lease_record_only",
+        "reason": "",
+        "owner": None,
+        "metadata": {},
         "runtime_session_id": session_id,
         "lease_status": "granted",
         "allowed_statuses": list(LEASE_STATUSES),
@@ -231,11 +333,11 @@ def build_runtime_execution_lease_record(request: dict[str, Any]) -> dict[str, A
 
 
 def expire_runtime_execution_lease(
-    lease_record: dict[str, Any],
+    lease_record: dict[str, Any] | RuntimeExecutionLease,
     *,
     current_tick: int,
 ) -> dict[str, Any]:
-    lease = _as_mapping(lease_record)
+    lease = lease_record.to_dict() if isinstance(lease_record, RuntimeExecutionLease) else _as_mapping(lease_record)
     expiration = _as_mapping(lease.get("expiration_model"))
     expires_at = expiration.get("expires_at_tick", 0)
     expired = current_tick >= expires_at
@@ -251,11 +353,11 @@ def expire_runtime_execution_lease(
 
 
 def revoke_runtime_execution_lease(
-    lease_record: dict[str, Any],
+    lease_record: dict[str, Any] | RuntimeExecutionLease,
     *,
     reason: str,
 ) -> dict[str, Any]:
-    lease = _as_mapping(lease_record)
+    lease = lease_record.to_dict() if isinstance(lease_record, RuntimeExecutionLease) else _as_mapping(lease_record)
     revocation = _as_mapping(lease.get("revocation_model"))
     revocation["revoked"] = True
     revocation["revocation_reason"] = reason
@@ -267,9 +369,9 @@ def revoke_runtime_execution_lease(
 
 
 def can_runtime_execution_lease_authorize_execution(
-    lease_record: dict[str, Any],
+    lease_record: dict[str, Any] | RuntimeExecutionLease,
 ) -> dict[str, Any]:
-    lease = _as_mapping(lease_record)
+    lease = lease_record.to_dict() if isinstance(lease_record, RuntimeExecutionLease) else _as_mapping(lease_record)
     active = lease.get("lease_status") == "granted"
     blocked_reason = None
     if lease.get("lease_status") == "expired":
@@ -293,9 +395,12 @@ def can_runtime_execution_lease_authorize_execution(
 
 
 def build_runtime_execution_lease_heartbeat_projection(
-    lease_record: dict[str, Any] | None,
+    lease_record: dict[str, Any] | RuntimeExecutionLease | None,
 ) -> dict[str, Any]:
-    lease = _as_mapping(lease_record)
+    if isinstance(lease_record, RuntimeExecutionLease):
+        lease = lease_record.to_dict()
+    else:
+        lease = _as_mapping(lease_record)
     return {
         "projection": "runtime_execution_lease_heartbeat",
         "projection_only": True,
@@ -382,6 +487,7 @@ __all__ = [
     "REQUIRED_EXECUTION_LEASE_FIELDS",
     "LEASE_BOUNDARY_LOCKS",
     "REQUIRED_BLOCKERS",
+    "RuntimeExecutionLease",
     "build_runtime_execution_lease_request",
     "validate_runtime_execution_lease_request",
     "build_runtime_execution_lease_record",
