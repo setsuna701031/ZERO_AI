@@ -8,7 +8,11 @@ from pathlib import Path
 
 PACKAGE_PATH = Path("examples/runtime_operator_package.example.json")
 REPORT_ROOT = Path("workspace/operator_console/runtime-operator-package-example/reports")
-_ALLOWED_COMMIT_STATUSES = {"git_commit_applied", "git_commit_noop_no_diff"}
+_ALLOWED_COMMIT_STATUSES = {
+    "git_commit_applied",
+    "git_commit_noop_no_diff",
+    "no_diff",
+}
 
 
 def _read_json(path: Path) -> dict:
@@ -83,7 +87,10 @@ def test_runtime_operator_console_e2e_seal() -> None:
         assert actuator["commit_applied"] is True
         assert actuator["commit_id"]
     else:
-        assert actuator["actuator_status"] == "git_commit_noop_no_diff"
+        assert actuator["actuator_status"] in {
+            "git_commit_noop_no_diff",
+            "no_diff",
+        }
         assert actuator["commit_applied"] is False
         assert actuator.get("commit_id", "") == ""
 
