@@ -16,6 +16,7 @@ from core.runtime.aer_runtime_recovery_observation_report import (
 
 
 RECOVERY_PREFLIGHT_ELIGIBILITY_CONTRACT = "aer.runtime.recovery.preflight_eligibility.v1"
+RECOVERY_PREFLIGHT_ELIGIBILITY_REPORT_CONTRACT = RECOVERY_PREFLIGHT_ELIGIBILITY_CONTRACT
 RECOVERY_PREFLIGHT_ALLOWED_STATUSES = ("prepared", "blocked", "denied")
 RECOVERY_PREFLIGHT_DENIED_CAPABILITIES = (
     "recovery_execution",
