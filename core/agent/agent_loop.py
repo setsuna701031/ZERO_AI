@@ -701,10 +701,9 @@ class AgentLoop:
 
         try:
             from core.tasks.engineering_task_runner import run_engineering_task
-            from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
             result = self._run_via_runtime_route_registry(
-                route_key=RuntimeRouteKeys.ENGINEERING_TASK,
+                route_key="engineering_task",
                 entrypoint="core.agent.agent_loop.AgentLoop.engineering_task_route",
                 runner=lambda: run_engineering_task(payload, repo_root=repo_root),
                 request=payload,

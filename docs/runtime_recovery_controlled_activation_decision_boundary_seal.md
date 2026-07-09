@@ -8,6 +8,8 @@ Seal/documentation only.
 
 ## Boundary Statement
 
+Decision is not activation execution.
+
 Decision boundary is a disabled readiness summary only.
 
 Decision boundary summarizes reserved states only.
@@ -21,6 +23,8 @@ Decision boundary cannot allow execution.
 Decision boundary cannot enable recovery.
 
 Decision boundary cannot mutate runtime state.
+
+Decision cannot mutate runtime state.
 
 Decision boundary cannot connect executor, scheduler, dispatcher, gateway, bridge, adapter, integration, or runtime wiring.
 

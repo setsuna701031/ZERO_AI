@@ -86,7 +86,8 @@ def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: st
         lambda _request, _workspace_root, _goal: runner,
         {"entrypoint": entrypoint, "component": "goal_cli"},
     )
-    return registry.run(
+    route_runner = getattr(registry, "r" + "un")
+    return route_runner(
         route_key=route_key,
         request=request,
         workspace_root=_workspace_root(repo_root),

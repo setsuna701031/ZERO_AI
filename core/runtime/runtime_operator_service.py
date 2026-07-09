@@ -723,6 +723,45 @@ class RuntimeOperatorService:
             "invocation gate" in goal_phrase
             or "invocation dispatch" in goal_phrase
             or "real executor unlock" in goal_phrase
+            or "runtime closure" in goal_phrase
+            or "executor runtime closure" in goal_phrase
+        )
+        executor_invoked_active = (
+            invocation_output_active
+            or (
+                executor_adapter_binding.get("executor_invoked") is True
+                if "executor_adapter_binding" in locals()
+                else False
+            )
+            or (
+                executor_invocation_record.get("executor_invocation_recorded") is True
+                if "executor_invocation_record" in locals()
+                else False
+            )
+            or (
+                executor_invocation_gate.get("executor_invocation_gate_open") is True
+                if "executor_invocation_gate" in locals()
+                else False
+            )
+        )
+        execution_started_active = (
+            executor_invoked_active
+            or (
+                executor_envelope.get("execution_started") is True
+                if "executor_envelope" in locals()
+                else False
+            )
+            or (
+                runtime_execution_result_capture.get("execution_completed") is True
+                if "runtime_execution_result_capture" in locals()
+                else False
+            )
+            or (
+                runtime_executor_closure.get("runtime_executor_closure_status")
+                == "dry_run_runtime_closed"
+                if "runtime_executor_closure" in locals()
+                else False
+            )
         )
         return {
             "schema": RUNTIME_OPERATOR_SERVICE_SCHEMA,
@@ -892,11 +931,7 @@ class RuntimeOperatorService:
                 if "executor_envelope" in locals()
                 else "rejected"
             ),
-            "execution_started": (
-                executor_envelope.get("execution_started") is True
-                if "executor_envelope" in locals()
-                else False
-            ),
+            "execution_started": execution_started_active,
             "executor_attached": (
                 executor_envelope.get("executor_attached") is True
                 if "executor_envelope" in locals()
@@ -917,11 +952,7 @@ class RuntimeOperatorService:
                 if "executor_adapter_binding" in locals()
                 else False
             ),
-            "executor_invoked": (
-                executor_adapter_binding.get("executor_invoked") is True
-                if "executor_adapter_binding" in locals()
-                else False
-            ),
+            "executor_invoked": executor_invoked_active,
             "executor_adapter_binding": (
                 executor_adapter_binding.get("executor_adapter_binding")
                 if "executor_adapter_binding" in locals()
@@ -937,8 +968,8 @@ class RuntimeOperatorService:
                 if "executor_adapter_attachment" in locals()
                 else False
             ),
-            "executor_invoked": invocation_output_active,
-            "execution_started": invocation_output_active,
+            "executor_invoked": executor_invoked_active,
+            "execution_started": execution_started_active,
             "executor_adapter_attachment": (
                 executor_adapter_attachment.get("executor_adapter_attachment")
                 if "executor_adapter_attachment" in locals()

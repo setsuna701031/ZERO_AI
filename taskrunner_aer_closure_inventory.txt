@@ -1,0 +1,88 @@
+﻿TaskRunner AER Closure Inventory
+
+Purpose:
+
+This inventory records the TaskRunner AER closure boundary for release readiness.
+
+This inventory records the TaskRunner AER closure boundary for regression coverage.
+
+Target Files:
+
+core/runtime/task_runner.py
+
+tests/test_aer_mainline_closure_seal.py
+
+Token Inventory:
+
+- TaskRunner
+- TaskRuntime
+- StepExecutor
+- Scheduler
+- Runtime Boundary
+- Persistence
+- Operator Session
+
+Function Inventory:
+
+- run_task_tick
+- _run_via_runtime_native_mainline
+- StepExecutor execution boundary
+- TaskRuntime state boundary
+- Scheduler forwarding boundary
+
+Classification:
+
+- runtime boundary
+- closure inventory
+- non-mainline issue tracking
+- regression seal
+- documentation only
+
+Runtime Boundary Rules:
+
+- TaskRunner remains the runtime execution coordinator.
+- Scheduler may dispatch tasks.
+- Executor execution path remains governed.
+- Runtime ownership remains explicit.
+- Runtime state ownership remains preserved.
+
+Safety Rules:
+
+- no executor bypass
+- no activation behavior
+- no uncontrolled mutation
+- no direct runtime activation
+- no scheduler ownership escalation
+
+Non-mainline issue reporting:
+
+All non-mainline issues must be reported explicitly.
+
+Non-mainline issues:
+
+- compatibility issues
+- migration issues
+- integration drift
+
+AER Closure Rules:
+
+- TaskRunner closure verified.
+- Runtime boundaries preserved.
+- Operator session compatibility preserved.
+- Scheduler forwarding compatibility preserved.
+- Persistence compatibility preserved.
+
+Audit Rules:
+
+- Changes require explicit review.
+- Non-mainline issue reporting must be reported explicitly.
+- Executor bypass remains forbidden.
+
+Final decision:
+
+GO for TaskRunner AER closure inventory only.
+
+Recommended Package24:
+
+- Recommended Package24 remains documentation-only.
+- Recommended Package24 does not activate runtime behavior.

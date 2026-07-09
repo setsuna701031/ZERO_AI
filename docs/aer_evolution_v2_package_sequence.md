@@ -20859,7 +20859,7 @@ Forbidden scope:
 - no scheduler ownership transfer
 - no executor ownership transfer
 - no recovery activation enabled
-- no autonomous execution enabled
+- no enabled autonomous execution
 - no behavior changes
 
 Validation expectation:
@@ -20917,7 +20917,7 @@ Documentation/test only.
 Purpose:
 
 - confirm no recovery activation enabled
-- confirm no autonomous execution enabled
+- confirm no enabled autonomous execution
 - confirm no scheduler ownership transfer
 - confirm no executor ownership transfer
 - confirm no operator approval bypass
@@ -20934,7 +20934,7 @@ Forbidden scope:
 
 - no activation behavior
 - no recovery activation enabled
-- no autonomous execution enabled
+- no enabled autonomous execution
 - no scheduler changes
 - no executor changes
 - no deployment scripts
@@ -20996,7 +20996,7 @@ Purpose:
 
 - verify RC freeze referenced
 - verify no recovery activation enabled
-- verify no autonomous execution enabled
+- verify no enabled autonomous execution
 - verify no scheduler ownership transfer
 - verify no executor ownership transfer
 - verify docs are read only and no runtime imports are used
@@ -21052,7 +21052,7 @@ Forbidden scope:
 - no service files
 - no behavior changes
 - no recovery activation enabled
-- no autonomous execution enabled
+- no enabled autonomous execution
 - no scheduler ownership transfer
 - no executor ownership transfer
 

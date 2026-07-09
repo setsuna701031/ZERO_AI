@@ -280,4 +280,29 @@ def _json_default(value: Any) -> Any:
     to_dict = getattr(value, "to_dict", None)
     if callable(to_dict):
         return to_dict()
+
+    if isinstance(value, Path):
+        return str(value)
+
+    if isinstance(value, (set, tuple)):
+        return list(value)
+
+    runtime_class_name = type(value).__name__
+    runtime_module = getattr(type(value), "__module__", "")
+    if runtime_class_name == "PersistentOperatorRuntime" or runtime_module.startswith(
+        "core.runtime"
+    ):
+        return {
+            "serialized_runtime_object": True,
+            "runtime_object_type": runtime_class_name,
+            "runtime_object_module": runtime_module,
+        }
+
+    if hasattr(value, "__dict__"):
+        return {
+            "serialized_object": True,
+            "object_type": runtime_class_name,
+            "object_module": runtime_module,
+        }
+
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")

@@ -8,6 +8,8 @@ Seal/documentation only.
 
 ## Boundary Statement
 
+Authorization is not activation.
+
 Authorization boundary is a disabled authorization record only.
 
 Authorization boundary cannot make authorization effective.
@@ -35,6 +37,8 @@ Authorization boundary is not executor wiring.
 Authorization boundary is not gateway mutation.
 
 Authorization boundary cannot mutate runtime state.
+
+Authorization cannot mutate runtime state.
 
 Authorization boundary cannot wire scheduler, dispatcher, executor, gateway, bridge, adapter, integration, or historical recovery modules.
 
