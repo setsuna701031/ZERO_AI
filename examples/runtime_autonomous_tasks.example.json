@@ -1,0 +1,13 @@
+{
+  "schema": "zero.runtime.autonomous_task_batch.v1",
+  "tasks": [
+    {
+      "task_id": "task-1",
+      "goal": "在 workspace 建立 autonomous_loop_one.txt，內容寫入 task one"
+    },
+    {
+      "task_id": "task-2",
+      "goal": "在 workspace 建立 autonomous_loop_two.txt，內容寫入 task two"
+    }
+  ]
+}

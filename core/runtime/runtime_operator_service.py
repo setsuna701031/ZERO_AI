@@ -763,6 +763,144 @@ class RuntimeOperatorService:
                 else False
             )
         )
+        mutation_success_active = (
+            "controlled_mutation_unlock" in locals()
+            and controlled_mutation_unlock.get("controlled_mutation") is True
+            and controlled_mutation_unlock.get("mutation_completed") is True
+            and controlled_mutation_unlock.get("validation_passed") is True
+        )
+        controlled_real_executor_unlock_status_active = (
+            "controlled_real_executor_unlocked"
+            if mutation_success_active
+            else (
+                controlled_real_executor_unlock.get(
+                    "controlled_real_executor_unlock_status"
+                )
+                if "controlled_real_executor_unlock" in locals()
+                else "rejected"
+            )
+        )
+        denial_reason_active = "" if mutation_success_active else (
+            result.get("denial_reason")
+            or queue_submit.get("denial_reason")
+            or (pickup.get("denial_reason") if "pickup" in locals() else "")
+            or (
+                cycle_binding.get("denial_reason")
+                if "cycle_binding" in locals()
+                else ""
+            )
+            or (
+                execution_bridge.get("denial_reason")
+                if "execution_bridge" in locals()
+                else ""
+            )
+            or (
+                loop_activation.get("denial_reason")
+                if "loop_activation" in locals()
+                else ""
+            )
+            or (
+                tick_decision.get("denial_reason")
+                if "tick_decision" in locals()
+                else ""
+            )
+            or (
+                action_proposal.get("denial_reason")
+                if "action_proposal" in locals()
+                else ""
+            )
+            or (
+                action_authorization.get("denial_reason")
+                if "action_authorization" in locals()
+                else ""
+            )
+            or (
+                action_commit.get("denial_reason")
+                if "action_commit" in locals()
+                else ""
+            )
+            or (
+                execution_admission.get("denial_reason")
+                if "execution_admission" in locals()
+                else ""
+            )
+            or (
+                execution_permit.get("denial_reason")
+                if "execution_permit" in locals()
+                else ""
+            )
+            or (
+                executor_envelope.get("denial_reason")
+                if "executor_envelope" in locals()
+                else ""
+            )
+            or (
+                executor_adapter_binding.get("denial_reason")
+                if "executor_adapter_binding" in locals()
+                else ""
+            )
+            or (
+                executor_adapter_attachment.get("denial_reason")
+                if "executor_adapter_attachment" in locals()
+                else ""
+            )
+            or (
+                executor_invocation_preparation.get("denial_reason")
+                if "executor_invocation_preparation" in locals()
+                else ""
+            )
+            or (
+                executor_invocation_approval.get("denial_reason")
+                if "executor_invocation_approval" in locals()
+                else ""
+            )
+            or (
+                executor_invocation_gate.get("denial_reason")
+                if "executor_invocation_gate" in locals()
+                else ""
+            )
+            or (
+                executor_invocation_record.get("denial_reason")
+                if "executor_invocation_record" in locals()
+                else ""
+            )
+            or (
+                executor_invocation_dispatch.get("denial_reason")
+                if "executor_invocation_dispatch" in locals()
+                else ""
+            )
+            or (
+                runtime_execution_session_start.get("denial_reason")
+                if "runtime_execution_session_start" in locals()
+                else ""
+            )
+            or (
+                runtime_execution_result_capture.get("denial_reason")
+                if "runtime_execution_result_capture" in locals()
+                else ""
+            )
+            or (
+                runtime_executor_closure.get("denial_reason")
+                if "runtime_executor_closure" in locals()
+                else ""
+            )
+            or (
+                controlled_real_executor_unlock.get("denial_reason")
+                if "controlled_real_executor_unlock" in locals()
+                else ""
+            )
+            or (
+                controlled_mutation_unlock.get("denial_reason")
+                if "controlled_mutation_unlock" in locals()
+                else ""
+            )
+            or (
+                runtime_commit_apply.get("denial_reason")
+                if "runtime_commit_apply" in locals()
+                else ""
+            )
+            or ""
+        )
         return {
             "schema": RUNTIME_OPERATOR_SERVICE_SCHEMA,
             "ok": result.get("ok") is True and queue_submit.get("queued") is True,
@@ -1139,11 +1277,7 @@ class RuntimeOperatorService:
                 else None
             ),
             "controlled_real_executor_unlock_status": (
-                controlled_real_executor_unlock.get(
-                    "controlled_real_executor_unlock_status"
-                )
-                if "controlled_real_executor_unlock" in locals()
-                else "rejected"
+                controlled_real_executor_unlock_status_active
             ),
             "controlled_real_executor_result": (
                 controlled_real_executor_unlock.get(
@@ -1244,129 +1378,11 @@ class RuntimeOperatorService:
                 if "runtime_commit_apply" in locals()
                 else None
             ),
-            "denial_reason": result.get("denial_reason")
-            or queue_submit.get("denial_reason")
-            or (pickup.get("denial_reason") if "pickup" in locals() else "")
-            or (
-                cycle_binding.get("denial_reason")
-                if "cycle_binding" in locals()
-                else ""
-            )
-            or (
-                execution_bridge.get("denial_reason")
-                if "execution_bridge" in locals()
-                else ""
-            )
-            or (
-                loop_activation.get("denial_reason")
-                if "loop_activation" in locals()
-                else ""
-            )
-            or (
-                tick_decision.get("denial_reason")
-                if "tick_decision" in locals()
-                else ""
-            )
-            or (
-                action_proposal.get("denial_reason")
-                if "action_proposal" in locals()
-                else ""
-            )
-            or (
-                action_authorization.get("denial_reason")
-                if "action_authorization" in locals()
-                else ""
-            )
-            or (
-                action_commit.get("denial_reason")
-                if "action_commit" in locals()
-                else ""
-            )
-            or (
-                execution_admission.get("denial_reason")
-                if "execution_admission" in locals()
-                else ""
-            )
-            or (
-                execution_permit.get("denial_reason")
-                if "execution_permit" in locals()
-                else ""
-            )
-            or (
-                executor_envelope.get("denial_reason")
-                if "executor_envelope" in locals()
-                else ""
-            )
-            or (
-                executor_adapter_binding.get("denial_reason")
-                if "executor_adapter_binding" in locals()
-                else ""
-            )
-            or (
-                executor_adapter_attachment.get("denial_reason")
-                if "executor_adapter_attachment" in locals()
-                else ""
-            )
-            or (
-                executor_invocation_preparation.get("denial_reason")
-                if "executor_invocation_preparation" in locals()
-                else ""
-            )
-            or (
-                executor_invocation_approval.get("denial_reason")
-                if "executor_invocation_approval" in locals()
-                else ""
-            )
-            or (
-                executor_invocation_gate.get("denial_reason")
-                if "executor_invocation_gate" in locals()
-                else ""
-            )
-            or (
-                executor_invocation_record.get("denial_reason")
-                if "executor_invocation_record" in locals()
-                else ""
-            )
-            or (
-                executor_invocation_dispatch.get("denial_reason")
-                if "executor_invocation_dispatch" in locals()
-                else ""
-            )
-            or (
-                runtime_execution_session_start.get("denial_reason")
-                if "runtime_execution_session_start" in locals()
-                else ""
-            )
-            or (
-                runtime_execution_result_capture.get("denial_reason")
-                if "runtime_execution_result_capture" in locals()
-                else ""
-            )
-            or (
-                runtime_executor_closure.get("denial_reason")
-                if "runtime_executor_closure" in locals()
-                else ""
-            )
-            or (
-                controlled_real_executor_unlock.get("denial_reason")
-                if "controlled_real_executor_unlock" in locals()
-                else ""
-            )
-            or (
-                controlled_mutation_unlock.get("denial_reason")
-                if "controlled_mutation_unlock" in locals()
-                else ""
-            )
-            or (
-                runtime_commit_apply.get("denial_reason")
-                if "runtime_commit_apply" in locals()
-                else ""
-            )
-            or "",
+            "denial_reason": denial_reason_active,
             "launch": result,
             "status": self.status(),
-            "runtime_state_mutated": False,
-            "task_executed": False,
+            "runtime_state_mutated": mutation_success_active,
+            "task_executed": mutation_success_active,
             "direct_dispatch_requested": False,
         }
 

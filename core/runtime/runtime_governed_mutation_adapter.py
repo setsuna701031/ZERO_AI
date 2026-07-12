@@ -39,12 +39,17 @@ def _relative_path(value: Any) -> str:
     text = _text(value).replace("\\", "/")
     if not text:
         raise ValueError("mutation_change_path_required")
+
     path = PurePosixPath(text)
+
     if path.is_absolute() or any(part == ".." for part in path.parts):
         raise ValueError("mutation_change_path_must_be_workspace_relative")
+
     normalized = str(path).rstrip("/")
+
     if normalized in {"", "."}:
         raise ValueError("mutation_change_path_required")
+
     return normalized
 
 
@@ -56,21 +61,33 @@ def _allowed_path(path: str) -> str:
 
 
 def _operation(change: Mapping[str, Any]) -> dict[str, Any]:
-    path = _relative_path(change.get("path") or change.get("relative_path"))
+    path = _relative_path(
+        change.get("path")
+        or change.get("relative_path")
+        or change.get("target_path")
+    )
+
     content = (
         change.get("content")
         if change.get("content") is not None
         else change.get("new_content")
     )
+
     if content is None:
-        content = (
-            "# governed mutation adapter generated sandbox content\n"
-            f"CONTROLLED_MUTATION_PATH = {path!r}\n"
-        )
+        content = ""
+
+    operation = _text(change.get("operation")).lower()
+
+    op_type = "replace"
+    if operation in {"delete_file", "delete", "remove_file"}:
+        op_type = "delete"
+    elif operation in {"create_file", "write_file", "update_file", "replace"}:
+        op_type = "replace"
+
     return {
         "path": path,
         "target_path": path,
-        "op_type": "replace",
+        "op_type": op_type,
         "content": str(content),
     }
 
@@ -78,10 +95,15 @@ def _operation(change: Mapping[str, Any]) -> dict[str, Any]:
 def _verification_check(request: Mapping[str, Any]) -> MutationVerificationCheck:
     authority = _mapping(request.get("authority_context"))
     changes = [_mapping(item) for item in request.get("requested_changes") or []]
+
     validation_passed = (
         authority.get("force_validation_failure") is not True
-        and not any(change.get("force_validation_failure") is True for change in changes)
+        and not any(
+            change.get("force_validation_failure") is True
+            for change in changes
+        )
     )
+
     return MutationVerificationCheck(
         name="operator_console_controlled_validation",
         passed=validation_passed,
@@ -96,44 +118,68 @@ def _verification_check(request: Mapping[str, Any]) -> MutationVerificationCheck
 def _changed_files(payload: Mapping[str, Any]) -> list[str]:
     if isinstance(payload.get("impacted_files"), list):
         return [str(item) for item in payload.get("impacted_files") or []]
+
     apply_result = _mapping(payload.get("apply_result"))
     applied = [str(item) for item in apply_result.get("applied_paths") or []]
     skipped = [str(item) for item in apply_result.get("skipped_paths") or []]
+
     return applied or skipped
 
 
 def _target_root(request: Mapping[str, Any]) -> str:
-    requested = _text(request.get("target_root") or request.get("mutation_target_root"))
+    requested = _text(
+        request.get("target_root")
+        or request.get("mutation_target_root")
+    )
     return requested or "workspace"
 
 
 def _repo_root_mutation_allowed(request: Mapping[str, Any]) -> bool:
     authority = _mapping(request.get("authority_context"))
+    target_root = _target_root(request)
+
+    approved_repo_targets = {".", "repo", "repository", "worktree"}
+
     return (
-        _target_root(request) == "repo"
-        and authority.get("repo_root_mutation_allowed") is True
-        and authority.get("controlled_mutation") is True
-        and authority.get("operator_approved") is True
+        target_root in approved_repo_targets
+        and authority.get("controlled_execution_required") is True
+        and authority.get("governed_mutation_adapter_required") is True
+        and authority.get("operator_service_required") is True
+        and authority.get("direct_dispatch_allowed") is False
+        and authority.get("executor_bypass_allowed") is False
+        and authority.get("validation_required") is True
+        and authority.get("rollback_required") is True
     )
 
 
 @dataclass
 class RuntimeGovernedMutationAdapter:
-    workspace_root: str | Path = "workspace/operator_console/governed_mutation/workspace"
+    workspace_root: str | Path = (
+        "workspace/operator_console/governed_mutation/workspace"
+    )
     sandbox_source_root: str | Path = (
         "workspace/operator_console/governed_mutation/sandbox"
     )
-    rollback_root: str | Path = "workspace/operator_console/governed_mutation/rollback"
-    report_root: str | Path = "workspace/operator_console/governed_mutation/reports"
+    rollback_root: str | Path = (
+        "workspace/operator_console/governed_mutation/rollback"
+    )
+    report_root: str | Path = (
+        "workspace/operator_console/governed_mutation/reports"
+    )
     repo_root: str | Path = "."
     governed_runtime_runner: Callable[[MutationGatewayRequest], Any] | None = None
 
     safe_governed_mutation_adapter: bool = True
 
-    def execute_governed_mutation(self, request: Mapping[str, Any]) -> dict[str, Any]:
+    def execute_governed_mutation(
+        self,
+        request: Mapping[str, Any],
+    ) -> dict[str, Any]:
         controlled_request = _mapping(request)
+
         try:
             gateway_request = self.to_gateway_request(controlled_request)
+
             runner = self.governed_runtime_runner
             if runner is None:
                 from core.runtime.governed_mutation_runtime import (
@@ -141,7 +187,9 @@ class RuntimeGovernedMutationAdapter:
                 )
 
                 runner = run_governed_mutation_runtime
+
             raw_result = runner(gateway_request)
+
         except Exception as exc:
             return {
                 "schema": ZERO_RUNTIME_GOVERNED_MUTATION_ADAPTER_SCHEMA,
@@ -155,36 +203,69 @@ class RuntimeGovernedMutationAdapter:
                 "changed_files": [],
                 "repo_root_mutation": False,
                 "non_mainline_issues": [
-                    f"governed_mutation_runtime_unavailable:{exc.__class__.__name__}"
+                    (
+                        "governed_mutation_runtime_unavailable:"
+                        f"{exc.__class__.__name__}"
+                    )
                 ],
             }
 
-        payload = raw_result.to_dict() if hasattr(raw_result, "to_dict") else dict(_mapping(raw_result))
+        payload = (
+            raw_result.to_dict()
+            if hasattr(raw_result, "to_dict")
+            else dict(_mapping(raw_result))
+        )
+
         verified = bool(payload.get("verified") is True)
         rolled_back = bool(payload.get("rolled_back") is True)
         failed = bool(payload.get("failed") is True)
         blocked = bool(payload.get("blocked") is True)
         changed_files = _changed_files(payload)
+
         return {
             "schema": ZERO_RUNTIME_GOVERNED_MUTATION_ADAPTER_SCHEMA,
             "adapter_status": "completed",
-            "mutation_started": bool(payload.get("executed") is True or changed_files),
+            "mutation_started": bool(
+                payload.get("executed") is True
+                or changed_files
+            ),
             "mutation_completed": not blocked,
             "validation_passed": verified and not failed,
             "rollback_required": bool(rolled_back or failed),
             "rollback_completed": rolled_back,
-            "commit_allowed": bool(verified and not failed and not rolled_back),
+            "commit_allowed": bool(
+                verified
+                and not failed
+                and not rolled_back
+            ),
             "changed_files": changed_files,
-            "repo_root_mutation": bool(payload.get("repo_root_mutation") is True),
+            "repo_root_mutation": bool(
+                payload.get("repo_root_mutation") is True
+            ),
             "governed_mutation_adapter_attached": True,
             "governed_runtime_result": payload,
-            "non_mainline_issues": [],
+            "non_mainline_issues": list(
+                payload.get("non_mainline_issues") or []
+            ),
         }
 
-    def to_gateway_request(self, request: Mapping[str, Any]) -> MutationGatewayRequest:
-        changes = [_mapping(item) for item in request.get("requested_changes") or []]
-        operations = tuple(_operation(change) for change in changes if change)
+    def to_gateway_request(
+        self,
+        request: Mapping[str, Any],
+    ) -> MutationGatewayRequest:
+        changes = [
+            _mapping(item)
+            for item in request.get("requested_changes") or []
+        ]
+
+        operations = tuple(
+            _operation(change)
+            for change in changes
+            if change
+        )
+
         relative_paths = tuple(item["path"] for item in operations)
+
         if not relative_paths:
             raise ValueError("controlled_mutation_request_changes_required")
 
@@ -217,7 +298,14 @@ class RuntimeGovernedMutationAdapter:
             reason="controlled_mutation_unlock",
             relative_paths=relative_paths,
             scope=MutationScope(
-                allowed_paths=tuple(sorted({_allowed_path(path) for path in relative_paths})),
+                allowed_paths=tuple(
+                    sorted(
+                        {
+                            _allowed_path(path)
+                            for path in relative_paths
+                        }
+                    )
+                ),
                 max_files_changed=len(relative_paths),
                 allow_new_files=True,
                 allow_delete_files=False,

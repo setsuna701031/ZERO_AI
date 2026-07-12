@@ -12,6 +12,12 @@ from core.runtime.runtime_operator_failure_evidence import write_operator_failur
 from core.runtime.runtime_operator_resume_evidence import write_operator_resume_evidence
 from core.runtime.runtime_operator_service import RuntimeOperatorService
 from core.runtime.runtime_journal import RuntimeJournal
+from cli.zero_controlled_execution import run_controlled_execution_cli
+from cli.zero_active_execution_authorization import run_active_execution_authorization_cli
+from cli.zero_transactional_execution import run_transactional_execution_cli
+from cli.zero_runtime_session import run as run_runtime_session_cli
+from cli.zero_runtime_scheduler import run as run_runtime_scheduler_cli
+from cli.zero_runtime_worker import run_cli as run_runtime_worker_cli
 
 try:
     from core.runtime.runtime_governed_mutation_adapter import (
@@ -488,6 +494,12 @@ def _status_payload(
         ),
         "denial_reason": _text(result.get("denial_reason")),
         "non_mainline_issues": list(result.get("non_mainline_issues") or []),
+        "changed_files": list(result.get("changed_files") or []),
+        "governed_runtime_result": dict(result.get("governed_runtime_result") or {}),
+        "controlled_mutation_result": dict(result.get("controlled_mutation_result") or {}),
+        "rollback_snapshot_paths": list(result.get("rollback_snapshot_paths") or []),
+        "rollback_restored_paths": list(result.get("rollback_restored_paths") or []),
+        "rollback_evidence_path": _text(result.get("rollback_evidence_path")),
         "resume_restored": bool(result.get("resume_restored") is True),
         "resume_evidence_path": _text(result.get("resume_evidence_path")),
         "duplicate_mutation": bool(result.get("duplicate_mutation") is True),
@@ -533,27 +545,10 @@ def _build_console_mutation_adapter(
         return None, False
 
     root = _workspace_root_for_package(package)
-    probe_request = {
-        "package_id": _text(package.get("package_id")),
-        "task_id": _text(package.get("task_id")),
-        "target_root": package.get("target_root"),
-        "authority_context": dict(package.get("authority_context") or {}),
-        "requested_changes": requested_changes,
-        "console_controlled_probe": True,
-    }
-
-    if (
-        getattr(RuntimeGovernedMutationAdapter, "__module__", "")
-        == "core.runtime.runtime_governed_mutation_adapter"
-    ):
-        adapter = _ConsoleGovernedMutationAdapter(
-            requested_changes=requested_changes
-        )
-        return adapter, True
 
     try:
         adapter = RuntimeGovernedMutationAdapter(
-            workspace_root=root / "workspace",
+            workspace_root=Path(package.get("target_root") or "."),
             sandbox_source_root=root / "sandbox",
             rollback_root=root / "rollback",
             report_root=root / "reports",
@@ -562,13 +557,236 @@ def _build_console_mutation_adapter(
     except TypeError:
         adapter = RuntimeGovernedMutationAdapter()
 
-    _invoke_governed_adapter_probe(adapter, probe_request)
+    probe_request = {
+        "package_id": _text(package.get("package_id")),
+        "task_id": _text(package.get("task_id")),
+        "target_root": package.get("target_root") or ".",
+        "authority_context": dict(package.get("authority_context") or {}),
+        "requested_changes": requested_changes,
+        "console_controlled_probe": True,
+    }
+
+    _invoke_governed_adapter_probe(
+        adapter,
+        probe_request,
+    )
+
     return adapter, True
 
+
+def _console_safe_relative_path(value: Any) -> str:
+    text = _text(value).replace("\\", "/").strip().strip("'\"")
+    if not text:
+        raise ValueError("console_mutation_path_required")
+    path = Path(text)
+    if path.is_absolute():
+        raise ValueError("console_mutation_path_must_be_relative")
+    parts = [part for part in text.split("/") if part and part != "."]
+    if not parts or any(part == ".." for part in parts):
+        raise ValueError("console_mutation_path_must_be_relative")
+    return "/".join(parts)
+
+
+def _apply_console_filesystem_mutation(
+    *,
+    package: Mapping[str, Any],
+    requested_changes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    authority = package.get("authority_context")
+    authority = authority if isinstance(authority, Mapping) else {}
+
+    if authority.get("controlled_execution_required") is not True:
+        return {
+            "ok": False,
+            "mutation_started": False,
+            "mutation_completed": False,
+            "validation_passed": False,
+            "changed_files": [],
+            "denial_reason": "controlled_execution_required",
+            "non_mainline_issues": ["controlled_execution_required"],
+        }
+    if authority.get("governed_mutation_adapter_required") is not True:
+        return {
+            "ok": False,
+            "mutation_started": False,
+            "mutation_completed": False,
+            "validation_passed": False,
+            "changed_files": [],
+            "denial_reason": "governed_mutation_adapter_required",
+            "non_mainline_issues": ["governed_mutation_adapter_required"],
+        }
+    if authority.get("direct_dispatch_allowed") is not False:
+        return {
+            "ok": False,
+            "mutation_started": False,
+            "mutation_completed": False,
+            "validation_passed": False,
+            "changed_files": [],
+            "denial_reason": "direct_dispatch_not_denied",
+            "non_mainline_issues": ["direct_dispatch_not_denied"],
+        }
+    if authority.get("executor_bypass_allowed") is not False:
+        return {
+            "ok": False,
+            "mutation_started": False,
+            "mutation_completed": False,
+            "validation_passed": False,
+            "changed_files": [],
+            "denial_reason": "executor_bypass_not_denied",
+            "non_mainline_issues": ["executor_bypass_not_denied"],
+        }
+
+    target_root = _text(package.get("target_root")) or "."
+    root = (
+        Path(".")
+        if target_root in {".", "repo", "repository", "worktree"}
+        else Path(target_root)
+    )
+    rollback_root = _workspace_root_for_package(package) / "rollback"
+    rollback_root.mkdir(parents=True, exist_ok=True)
+
+    changed_files: list[str] = []
+    issues: list[str] = []
+    rollback_snapshot_paths: list[str] = []
+    rollback_restored_paths: list[str] = []
+    rollback_records: list[dict[str, Any]] = []
+
+    def _snapshot(relative: str, target: Path) -> None:
+        snapshot_path = rollback_root / relative
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        existed = target.exists()
+        content = target.read_text(encoding="utf-8") if existed else ""
+        snapshot_path.write_text(content, encoding="utf-8")
+        record = {
+            "path": relative,
+            "target_path": str(target),
+            "snapshot_path": str(snapshot_path),
+            "existed_before": existed,
+        }
+        rollback_records.append(record)
+        rollback_snapshot_paths.append(str(snapshot_path))
+
+    def _restore_snapshots() -> None:
+        for record in reversed(rollback_records):
+            target = Path(str(record["target_path"]))
+            snapshot = Path(str(record["snapshot_path"]))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if record.get("existed_before") is True:
+                target.write_text(snapshot.read_text(encoding="utf-8"), encoding="utf-8")
+            elif target.exists():
+                target.unlink()
+            rollback_restored_paths.append(str(record.get("path") or ""))
+
+    try:
+        for index, change in enumerate(requested_changes, start=1):
+            operation = _text(change.get("operation")).lower()
+            replace_operations = {"create_file", "write_file", "update_file", "replace"}
+            append_operations = {"append_file", "append"}
+
+            if operation not in replace_operations | append_operations:
+                issues.append(f"unsupported_operation:{operation or 'missing'}")
+                continue
+
+            try:
+                relative = _console_safe_relative_path(
+                    change.get("path")
+                    or change.get("relative_path")
+                    or change.get("target_path")
+                )
+            except ValueError as exc:
+                issues.append(f"invalid_path:{index}:{exc}")
+                continue
+
+            target = root / relative
+            _snapshot(relative, target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            content = change.get("content")
+            if content is None:
+                content = change.get("new_content")
+            if content is None:
+                content = ""
+
+            text_content = str(content)
+
+            if operation in append_operations:
+                existing = ""
+                if target.exists():
+                    existing = target.read_text(encoding="utf-8")
+                if existing and not existing.endswith("\n"):
+                    existing = existing + "\n"
+                target.write_text(existing + text_content, encoding="utf-8")
+            else:
+                target.write_text(text_content, encoding="utf-8")
+
+            changed_files.append(relative)
+
+            if change.get("force_validation_failure") is True:
+                issues.append(f"forced_validation_failure:{relative}")
+
+    except Exception as exc:
+        issues.append(f"mutation_exception:{exc.__class__.__name__}")
+
+    ok = bool(changed_files) and not issues
+    rollback_completed = False
+    if changed_files and not ok:
+        try:
+            _restore_snapshots()
+            rollback_completed = True
+        except Exception as exc:
+            issues.append(f"rollback_restore_failed:{exc.__class__.__name__}")
+
+    evidence = {
+        "schema": "zero.operator_console.rollback_evidence.v1",
+        "ok": ok,
+        "package_id": _text(package.get("package_id")),
+        "task_id": _text(package.get("task_id")),
+        "target_root": str(root),
+        "changed_files": changed_files,
+        "rollback_required": True,
+        "rollback_completed": rollback_completed,
+        "rollback_snapshot_paths": rollback_snapshot_paths,
+        "rollback_restored_paths": rollback_restored_paths,
+        "non_mainline_issues": issues,
+    }
+    rollback_evidence_path = rollback_root / "rollback_evidence.json"
+    rollback_evidence_path.write_text(
+        json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    return {
+        "ok": ok,
+        "mutation_started": bool(changed_files),
+        "mutation_completed": ok,
+        "validation_passed": ok,
+        "rollback_required": True,
+        "rollback_completed": rollback_completed,
+        "commit_allowed": ok,
+        "changed_files": changed_files if ok else [],
+        "denial_reason": "" if ok else "console_filesystem_mutation_incomplete",
+        "non_mainline_issues": issues,
+        "rollback_snapshot_paths": rollback_snapshot_paths,
+        "rollback_restored_paths": rollback_restored_paths,
+        "rollback_evidence_path": str(rollback_evidence_path),
+        "governed_runtime_result": {
+            "schema": "zero.operator_console.filesystem_mutation.v1",
+            "ok": ok,
+            "applied_paths": changed_files if ok else [],
+            "target_root": str(root),
+            "rollback_required": True,
+            "rollback_completed": rollback_completed,
+            "rollback_snapshot_paths": rollback_snapshot_paths,
+            "rollback_restored_paths": rollback_restored_paths,
+            "rollback_evidence_path": str(rollback_evidence_path),
+            "non_mainline_issues": issues,
+        },
+    }
 
 def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
     adapters: dict[str, Any] = {}
     governed_adapter_attached = False
+    console_mutation_result: dict[str, Any] = {}
     if mode == "controlled":
         requested_changes = [
             dict(item) for item in package.get("requested_changes") or []
@@ -582,6 +800,10 @@ def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
         )
         if governed_adapter is not None:
             adapters["controlled_mutation_adapter"] = governed_adapter
+            console_mutation_result = _apply_console_filesystem_mutation(
+                package=package,
+                requested_changes=requested_changes,
+            )
 
     service = RuntimeOperatorService(_config(package), **adapters)
 
@@ -611,6 +833,17 @@ def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
         result["runtime_execution_result_capture_status"] = "dry_run_completed"
         result["runtime_executor_closure_status"] = "dry_run_runtime_closed"
         result["governed_mutation_adapter_attached"] = governed_adapter_attached
+        if console_mutation_result:
+            result["changed_files"] = list(console_mutation_result.get("changed_files") or [])
+            result["governed_runtime_result"] = dict(console_mutation_result.get("governed_runtime_result") or {})
+            result["controlled_mutation_result"] = dict(console_mutation_result)
+            result["rollback_snapshot_paths"] = list(console_mutation_result.get("rollback_snapshot_paths") or [])
+            result["rollback_restored_paths"] = list(console_mutation_result.get("rollback_restored_paths") or [])
+            result["rollback_evidence_path"] = _text(console_mutation_result.get("rollback_evidence_path"))
+            result["rollback_completed"] = console_mutation_result.get("rollback_completed") is True
+            if console_mutation_result.get("ok") is True:
+                result["controlled_real_executor_unlock_status"] = "controlled_real_executor_unlocked"
+                result["denial_reason"] = ""
         if governed_adapter_attached:
             result["controlled_mutation"] = True
             result["mutation_allowed"] = True
@@ -635,6 +868,12 @@ def _run_service(package: Mapping[str, Any], *, mode: str) -> dict[str, Any]:
             result["controlled_mutation_status"] = (
                 "controlled_mutation_commit_allowed"
             )
+            if console_mutation_result.get("ok") is True:
+                result["mutation_started"] = True
+                result["mutation_completed"] = True
+                result["validation_passed"] = True
+                result["commit_allowed"] = True
+                result["denial_reason"] = ""
         else:
             result["controlled_mutation"] = False
             result["mutation_allowed"] = False
@@ -788,6 +1027,12 @@ def _record_run(
             final_result["controlled_mutation_status"] = (
                 "controlled_mutation_commit_allowed"
             )
+            final_result["controlled_real_executor_unlock_status"] = (
+                final_result.get("controlled_real_executor_unlock_status")
+                or "controlled_real_executor_unlocked"
+            )
+            if final_result.get("changed_files"):
+                final_result["denial_reason"] = ""
             if final_result.get("resume_restored") is not True:
                 final_result = _ensure_controlled_commit_artifacts(
                     package=package,
@@ -922,6 +1167,37 @@ def build_parser() -> argparse.ArgumentParser:
     mode = run.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--controlled", action="store_true")
+    controlled_dry_run = commands.add_parser("controlled-dry-run")
+    controlled_dry_run.add_argument("execution_plan_file")
+    controlled_dry_run.add_argument("review_result_file")
+    controlled_dry_run.add_argument("operator_request_file")
+    controlled_dry_run.add_argument("--target-root", required=True)
+    controlled_dry_run.add_argument("--now")
+    controlled_dry_run.add_argument("--result-path", required=True)
+    active_authorize = commands.add_parser("active-authorize")
+    active_authorize.add_argument("controlled_result_file")
+    active_authorize.add_argument("authorization_file")
+    active_authorize.add_argument("--now")
+    active_authorize.add_argument("--result-path", required=True)
+    transactional = commands.add_parser("transactional-execute")
+    transactional.add_argument("authorization_file"); transactional.add_argument("invocation_file"); transactional.add_argument("bundle_file")
+    transactional.add_argument("--target-root", required=True); transactional.add_argument("--workspace-root", required=True); transactional.add_argument("--now"); transactional.add_argument("--result-path", required=True)
+    for command in ("session-create", "session-status", "session-resume", "session-cancel"):
+        delegated = commands.add_parser(command)
+        delegated.add_argument("session_args", nargs=argparse.REMAINDER)
+    for command in ("scheduler-init", "scheduler-status", "scheduler-enqueue", "scheduler-list", "scheduler-waiting",
+                    "scheduler-submit-input", "scheduler-dispatch", "scheduler-resume-ready", "scheduler-cancel", "scheduler-stats"):
+        delegated = commands.add_parser(command)
+        delegated.add_argument("scheduler_args", nargs=argparse.REMAINDER)
+    for command in ("worker-init", "worker-run", "worker-status", "worker-health", "worker-pause", "worker-resume", "worker-stop"):
+        delegated = commands.add_parser(command); delegated.add_argument("worker_args", nargs=argparse.REMAINDER)
+    for command in ("mission-create", "mission-status", "mission-goals", "mission-ready", "mission-confirm-plan",
+                    "mission-advance", "mission-submit-input", "mission-cancel", "mission-evidence", "mission-create-natural",
+                    "mission-planning-status", "mission-submit-clarification", "mission-request-replan", "mission-confirm-replan",
+                    "mission-reject-replan", "mission-replanning-history"):
+        delegated = commands.add_parser(command); delegated.add_argument("mission_args", nargs=argparse.REMAINDER)
+    for command in ("mission-plan", "mission-plan-file"):
+        delegated = commands.add_parser(command); delegated.add_argument("planner_args", nargs=argparse.REMAINDER)
     return parser
 
 
@@ -931,6 +1207,46 @@ def main(argv: list[str] | None = None) -> int:
         result = submit_package(args.package_json)
     elif args.command == "status":
         result = status_run(args.run_id)
+    elif args.command == "controlled-dry-run":
+        result, exit_code = run_controlled_execution_cli(
+            "run", args.execution_plan_file, args.review_result_file,
+            args.operator_request_file, target_root=args.target_root,
+            now=args.now, result_path=args.result_path,
+        )
+        _print_json(result)
+        return exit_code
+    elif args.command == "active-authorize":
+        result, exit_code = run_active_execution_authorization_cli(
+            "authorize", args.controlled_result_file, args.authorization_file,
+            now=args.now, result_path=args.result_path,
+        )
+        _print_json(result)
+        return exit_code
+    elif args.command == "transactional-execute":
+        result, exit_code = run_transactional_execution_cli("run", args.authorization_file,
+            args.invocation_file, args.bundle_file, target_root=args.target_root,
+            workspace_root=args.workspace_root, now=args.now, result_path=args.result_path)
+        _print_json(result); return exit_code
+    elif args.command.startswith("session-"):
+        operation = args.command.removeprefix("session-")
+        result, exit_code = run_runtime_session_cli([operation, *args.session_args])
+        _print_json(result); return exit_code
+    elif args.command.startswith("scheduler-"):
+        operation = args.command.removeprefix("scheduler-")
+        result, exit_code = run_runtime_scheduler_cli([operation, *args.scheduler_args])
+        _print_json(result); return exit_code
+    elif args.command.startswith("worker-"):
+        operation = args.command.removeprefix("worker-")
+        result, exit_code = run_runtime_worker_cli([operation, *args.worker_args])
+        _print_json(result); return exit_code
+    elif args.command in {"mission-plan", "mission-plan-file"}:
+        from cli.zero_mission_planner import main as run_planner_cli
+        operation = args.command.removeprefix("mission-")
+        return run_planner_cli([operation, *args.planner_args])
+    elif args.command.startswith("mission-"):
+        from cli.zero_mission_runtime import main as run_mission_cli
+        operation = args.command.removeprefix("mission-")
+        return run_mission_cli([operation, *args.mission_args])
     else:
         result = run_package(args.package_json, controlled=args.controlled)
     _print_json(result)

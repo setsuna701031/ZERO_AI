@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from hashlib import sha256
 import json
+import re
 from typing import Any, Mapping, Sequence
 
 RUNTIME_NATURAL_TASK_PACKAGE_GENERATOR_SCHEMA = (
@@ -39,7 +40,237 @@ def _stable_token(prefix: str, payload: Mapping[str, Any], *, length: int = 16) 
     return f"{prefix}-{digest}"
 
 
+def _safe_relative_path(value: Any) -> str:
+    path = _text(value).strip("'\"").replace("\\", "/")
+    path = path.strip().strip(".,;:，。；：")
+
+    if not path:
+        return ""
+
+    if re.match(r"^[A-Za-z]:/", path):
+        return ""
+
+    if path.startswith("/") or path.startswith("../") or "/../" in path:
+        return ""
+
+    parts = [part for part in path.split("/") if part not in {"", "."}]
+    if any(part == ".." for part in parts):
+        return ""
+
+    return "/".join(parts)
+
+
+def _strip_quotes(value: str) -> str:
+    text = _text(value)
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        return text[1:-1]
+    return text
+
+
+def _file_token_pattern() -> str:
+    return r"([A-Za-z0-9_.\-/]+\.[A-Za-z0-9_]+)"
+
+
+def _build_file_change(
+    *,
+    task_text: str,
+    path: str,
+    operation: str,
+    content: str,
+) -> dict[str, Any]:
+    return {
+        "change_id": "natural-task-change-1",
+        "change_type": "file_mutation",
+        "description": task_text,
+        "target_path": path,
+        "path": path,
+        "relative_path": path,
+        "operation": operation,
+        "content": content,
+    }
+
+
+def _extract_chinese_create_file_change(
+    task_text: str,
+) -> dict[str, Any] | None:
+    text = _text(task_text)
+    file_pattern = _file_token_pattern()
+
+    patterns = (
+        rf"^\s*在\s+([A-Za-z0-9_.\-/]+)\s*(?:建立|創建|新增|產生)\s+{file_pattern}\s*[，,]\s*內容(?:寫入|為|是)\s+(.+?)\s*$",
+        rf"^\s*(?:建立|創建|新增|產生)\s+{file_pattern}\s*[，,]\s*內容(?:寫入|為|是)\s+(.+?)\s*$",
+    )
+
+    for index, pattern in enumerate(patterns):
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        if index == 0:
+            directory = _safe_relative_path(match.group(1))
+            filename = _safe_relative_path(match.group(2))
+            content = _strip_quotes(match.group(3))
+            path = _safe_relative_path(f"{directory}/{filename}")
+        else:
+            path = _safe_relative_path(match.group(1))
+            content = _strip_quotes(match.group(2))
+
+        if path:
+            return _build_file_change(
+                task_text=task_text,
+                path=path,
+                operation="create_file",
+                content=content,
+            )
+
+    return None
+
+
+def _extract_english_create_file_change(
+    task_text: str,
+) -> dict[str, Any] | None:
+    text = _text(task_text)
+    file_pattern = _file_token_pattern()
+
+    patterns = (
+        rf"^\s*create\s+(?:a\s+)?file\s+(?:called|named)\s+{file_pattern}\s+in\s+([A-Za-z0-9_.\-/]+)\s+with\s+(?:content\s+)?(.+?)\s*$",
+        rf"^\s*create\s+(?:a\s+)?file\s+(?:called|named)\s+{file_pattern}\s+with\s+(?:content\s+)?(.+?)\s*$",
+        rf"^\s*create\s+{file_pattern}\s+with\s+(?:content\s+)?(.+?)\s*$",
+    )
+
+    for index, pattern in enumerate(patterns):
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        if index == 0:
+            filename = _safe_relative_path(match.group(1))
+            directory = _safe_relative_path(match.group(2))
+            content = _strip_quotes(match.group(3))
+            path = _safe_relative_path(f"{directory}/{filename}")
+        else:
+            path = _safe_relative_path(match.group(1))
+            content = _strip_quotes(match.group(2))
+
+        if path:
+            return _build_file_change(
+                task_text=task_text,
+                path=path,
+                operation="create_file",
+                content=content,
+            )
+
+    return None
+
+
+def _extract_create_file_path(task_text: str) -> str:
+    text = _text(task_text)
+
+    patterns = (
+        r"\bcalled\s+([A-Za-z0-9_.\-/]+)",
+        r"\bnamed\s+([A-Za-z0-9_.\-/]+)",
+        r"\bfile\s+([A-Za-z0-9_.\-/]+)",
+        r"\bcreate\s+([A-Za-z0-9_.\-/]+\.[A-Za-z0-9_]+)",
+        r"(?:建立|創建|新增|產生)\s+([A-Za-z0-9_.\-/]+\.[A-Za-z0-9_]+)",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            path = _safe_relative_path(match.group(1))
+            if path:
+                return path
+
+    return ""
+
+
+def _extract_append_file_change(task_text: str) -> dict[str, Any] | None:
+    text = _text(task_text)
+    file_pattern = _file_token_pattern()
+
+    patterns = (
+        rf"^\s*append\s+(.+?)\s+to\s+{file_pattern}\s*$",
+        rf"^\s*add\s+(.+?)\s+to\s+{file_pattern}\s*$",
+        rf"^\s*write\s+(.+?)\s+to\s+{file_pattern}\s*$",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        content = _strip_quotes(match.group(1))
+        path = _safe_relative_path(match.group(2))
+
+        if path:
+            return _build_file_change(
+                task_text=task_text,
+                path=path,
+                operation="append_file",
+                content=content,
+            )
+
+    return None
+
+
+def _extract_update_file_change(task_text: str) -> dict[str, Any] | None:
+    text = _text(task_text)
+    file_pattern = _file_token_pattern()
+
+    patterns = (
+        rf"^\s*update\s+{file_pattern}\s+with\s+(.+?)\s*$",
+        rf"^\s*replace\s+{file_pattern}\s+with\s+(.+?)\s*$",
+        rf"^\s*overwrite\s+{file_pattern}\s+with\s+(.+?)\s*$",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        path = _safe_relative_path(match.group(1))
+        content = _strip_quotes(match.group(2))
+
+        if path:
+            return _build_file_change(
+                task_text=task_text,
+                path=path,
+                operation="update_file",
+                content=content,
+            )
+
+    return None
+
+
 def _default_requested_changes(task_text: str) -> list[dict[str, Any]]:
+    chinese_create_change = _extract_chinese_create_file_change(task_text)
+    if chinese_create_change is not None:
+        return [chinese_create_change]
+
+    english_create_change = _extract_english_create_file_change(task_text)
+    if english_create_change is not None:
+        return [english_create_change]
+
+    append_change = _extract_append_file_change(task_text)
+    if append_change is not None:
+        return [append_change]
+
+    update_change = _extract_update_file_change(task_text)
+    if update_change is not None:
+        return [update_change]
+
+    path = _extract_create_file_path(task_text)
+
+    if path:
+        return [
+            _build_file_change(
+                task_text=task_text,
+                path=path,
+                operation="create_file",
+                content="",
+            )
+        ]
+
     return [
         {
             "change_id": "natural-task-change-1",
@@ -82,7 +313,7 @@ def build_runtime_operator_package_from_task(
     """Build a deterministic runtime operator package from natural task text.
 
     The helper is intentionally data-only. It only builds deterministic package
-    dictionaries and never starts work or mutates runtime state.
+    dictionaries and never starts work directly.
     """
 
     normalized_task = _text(task_text)
@@ -113,6 +344,7 @@ def build_runtime_operator_package_from_task(
         "target_root": normalized_target_root,
         "requested_changes": changes,
     }
+
     task_id = _stable_token("task", seed)
     package_id = _stable_token("runtime-package", {"task_id": task_id, **seed})
 
@@ -199,6 +431,7 @@ def validate_generated_runtime_operator_package(
         "validation_required",
         "rollback_required",
     )
+
     for field in required_fields:
         if field not in payload:
             errors.append(f"missing:{field}")

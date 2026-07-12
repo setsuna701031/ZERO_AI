@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,9 +13,7 @@ from typing import Any, Mapping
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
 
 
-MAX_THAW_DEPTH = 8
-MAX_THAW_ITEMS = 200
-MAX_THAW_BYTES = 4096
+RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA = "zero.runtime.activity_memory_query.v1"
 
 
 def _utc_now() -> str:
@@ -78,11 +77,17 @@ def _canonicalize_for_fingerprint(value: Any) -> Any:
             if not str(key).startswith("_")
         }
         return {
-            "__type__": f"{value.__class__.__module__}.{value.__class__.__qualname__}",
+            "__type__": (
+                f"{value.__class__.__module__}."
+                f"{value.__class__.__qualname__}"
+            ),
             "attrs": _canonicalize_for_fingerprint(public_attrs),
         }
     return {
-        "__type__": f"{value.__class__.__module__}.{value.__class__.__qualname__}",
+        "__type__": (
+            f"{value.__class__.__module__}."
+            f"{value.__class__.__qualname__}"
+        ),
         "value": str(value),
     }
 
@@ -99,7 +104,10 @@ def _stable_hash(value: Any) -> str:
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType(
-            {str(key): _freeze(item) for key, item in sorted(value.items())}
+            {
+                str(key): _freeze(item)
+                for key, item in sorted(value.items())
+            }
         )
     if isinstance(value, list | tuple):
         return tuple(_freeze(item) for item in value)
@@ -108,94 +116,292 @@ def _freeze(value: Any) -> Any:
     return copy.deepcopy(value)
 
 
-def _thaw(
-    value: Any,
-    *,
-    depth: int = 0,
-    seen: set[int] | None = None,
-) -> Any:
-    if seen is None:
-        seen = set()
-
-    if depth > MAX_THAW_DEPTH:
-        return {
-            "__truncated__": True,
-            "reason": "max_thaw_depth_exceeded",
-            "max_depth": MAX_THAW_DEPTH,
-        }
-
-    value_id = id(value)
-    if value_id in seen:
-        return {
-            "__truncated__": True,
-            "reason": "cycle_detected",
-        }
-
-    if isinstance(value, bytes):
-        if len(value) > MAX_THAW_BYTES:
-            return {
-                "__bytes_truncated__": True,
-                "size": len(value),
-                "sha256": hashlib.sha256(value).hexdigest(),
-                "max_inline_bytes": MAX_THAW_BYTES,
-            }
-        return copy.deepcopy(value)
-
-    if isinstance(value, MappingProxyType):
-        seen.add(value_id)
-        items = list(value.items())
-        truncated = len(items) > MAX_THAW_ITEMS
-        selected = items[:MAX_THAW_ITEMS]
-        result = {
-            key: _thaw(item, depth=depth + 1, seen=seen)
-            for key, item in selected
-        }
-        if truncated:
-            result["__truncated__"] = True
-            result["__truncated_reason__"] = "max_mapping_items_exceeded"
-            result["__original_item_count__"] = len(items)
-            result["__max_items__"] = MAX_THAW_ITEMS
-        seen.discard(value_id)
-        return result
-
+def _thaw(value: Any) -> Any:
     if isinstance(value, Mapping):
-        seen.add(value_id)
-        items = list(value.items())
-        truncated = len(items) > MAX_THAW_ITEMS
-        selected = items[:MAX_THAW_ITEMS]
-        result = {
-            str(key): _thaw(item, depth=depth + 1, seen=seen)
-            for key, item in selected
+        return {
+            str(key): _thaw(item)
+            for key, item in value.items()
         }
-        if truncated:
-            result["__truncated__"] = True
-            result["__truncated_reason__"] = "max_mapping_items_exceeded"
-            result["__original_item_count__"] = len(items)
-            result["__max_items__"] = MAX_THAW_ITEMS
-        seen.discard(value_id)
-        return result
-
-    if isinstance(value, tuple | list):
-        seen.add(value_id)
-        items = list(value)
-        truncated = len(items) > MAX_THAW_ITEMS
-        result = [
-            _thaw(item, depth=depth + 1, seen=seen)
-            for item in items[:MAX_THAW_ITEMS]
-        ]
-        if truncated:
-            result.append(
-                {
-                    "__truncated__": True,
-                    "reason": "max_sequence_items_exceeded",
-                    "original_item_count": len(items),
-                    "max_items": MAX_THAW_ITEMS,
-                }
-            )
-        seen.discard(value_id)
-        return result
-
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
     return copy.deepcopy(value)
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return _thaw(value) if isinstance(value, Mapping) else {}
+
+
+def _list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return copy.deepcopy(value)
+    if isinstance(value, tuple):
+        return list(copy.deepcopy(value))
+    return []
+
+
+def _goal_tokens(value: Any) -> set[str]:
+    text = _text(value).lower()
+    if not text:
+        return set()
+
+    latin_tokens = re.findall(r"[a-z0-9_.\-/]+", text)
+    chinese_tokens = re.findall(r"[\u4e00-\u9fff]{2,}", text)
+
+    tokens = {
+        token.strip("._-/")
+        for token in latin_tokens + chinese_tokens
+        if token.strip("._-/")
+    }
+    return {token for token in tokens if len(token) >= 2}
+
+
+def _record_paths(record: Mapping[str, Any]) -> set[str]:
+    return {
+        _text(path).replace("\\", "/").lower()
+        for path in _list(record.get("changed_files"))
+        if _text(path)
+    }
+
+
+def _activity_similarity(
+    goal: str,
+    record: Mapping[str, Any],
+) -> tuple[float, list[str]]:
+    query_tokens = _goal_tokens(goal)
+    record_goal = _text(record.get("goal"))
+    record_tokens = _goal_tokens(record_goal)
+
+    if not query_tokens or not record_tokens:
+        return 0.0, []
+
+    overlap = sorted(query_tokens & record_tokens)
+    union = query_tokens | record_tokens
+    token_score = len(overlap) / len(union) if union else 0.0
+
+    query_paths = {
+        token.replace("\\", "/").lower()
+        for token in query_tokens
+        if "/" in token or "." in token
+    }
+    record_paths = _record_paths(record)
+    path_overlap = query_paths & record_paths
+    path_score = 1.0 if path_overlap else 0.0
+
+    exact_goal_score = 1.0 if goal.strip().lower() == record_goal.lower() else 0.0
+    score = (
+        token_score * 0.65
+        + path_score * 0.20
+        + exact_goal_score * 0.15
+    )
+    return round(score, 6), overlap
+
+
+def _load_activity_records(
+    log_path: str | Path,
+) -> tuple[list[dict[str, Any]], int]:
+    path = Path(log_path)
+    if not path.exists():
+        return [], 0
+
+    records: list[dict[str, Any]] = []
+    invalid_line_count = 0
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            invalid_line_count += 1
+            continue
+        if isinstance(payload, dict):
+            records.append(payload)
+        else:
+            invalid_line_count += 1
+
+    return records, invalid_line_count
+
+
+@dataclass(frozen=True)
+class RuntimeActivityExperience:
+    record: Any
+    similarity: float
+    matched_tokens: Any = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "record", _freeze(self.record or {}))
+        object.__setattr__(
+            self,
+            "matched_tokens",
+            tuple(_text(item) for item in self.matched_tokens if _text(item)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "similarity": self.similarity,
+            "matched_tokens": list(self.matched_tokens),
+            "record": _thaw(self.record),
+        }
+
+
+@dataclass(frozen=True)
+class RuntimeActivityMemory:
+    log_path: str | Path = "workspace/operator_activity/activity.jsonl"
+
+    def read_all(self) -> dict[str, Any]:
+        records, invalid_line_count = _load_activity_records(self.log_path)
+        return {
+            "schema": RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA,
+            "ok": True,
+            "memory_status": "loaded" if records else "empty",
+            "records": records,
+            "record_count": len(records),
+            "invalid_line_count": invalid_line_count,
+            "log_path": str(self.log_path),
+        }
+
+    def query(
+        self,
+        goal: Any,
+        *,
+        limit: int = 5,
+        status: str | None = None,
+        minimum_similarity: float = 0.0,
+    ) -> dict[str, Any]:
+        normalized_goal = _text(goal)
+        if not normalized_goal:
+            return {
+                "schema": RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA,
+                "ok": False,
+                "memory_status": "denied",
+                "denial_reason": "goal_required",
+                "query_goal": "",
+                "matches": [],
+                "match_count": 0,
+                "log_path": str(self.log_path),
+            }
+
+        loaded = self.read_all()
+        requested_status = _text(status).lower()
+        bounded_limit = max(1, int(limit))
+        threshold = max(0.0, min(1.0, float(minimum_similarity)))
+
+        matches: list[RuntimeActivityExperience] = []
+        for record in loaded["records"]:
+            if requested_status:
+                record_status = _text(record.get("status")).lower()
+                if record_status != requested_status:
+                    continue
+
+            similarity, matched_tokens = _activity_similarity(
+                normalized_goal,
+                record,
+            )
+            if similarity < threshold:
+                continue
+
+            matches.append(
+                RuntimeActivityExperience(
+                    record=record,
+                    similarity=similarity,
+                    matched_tokens=matched_tokens,
+                )
+            )
+
+        matches.sort(
+            key=lambda item: (
+                item.similarity,
+                _text(_mapping(item.record).get("recorded_at")),
+            ),
+            reverse=True,
+        )
+        selected = matches[:bounded_limit]
+
+        return {
+            "schema": RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA,
+            "ok": True,
+            "memory_status": "matched" if selected else "no_match",
+            "query_goal": normalized_goal,
+            "requested_status": requested_status,
+            "minimum_similarity": threshold,
+            "matches": [item.to_dict() for item in selected],
+            "match_count": len(selected),
+            "record_count": loaded["record_count"],
+            "invalid_line_count": loaded["invalid_line_count"],
+            "log_path": str(self.log_path),
+        }
+
+    def decision_context(
+        self,
+        goal: Any,
+        *,
+        limit: int = 3,
+    ) -> dict[str, Any]:
+        completed = self.query(
+            goal,
+            limit=limit,
+            status="completed",
+            minimum_similarity=0.01,
+        )
+        failed = self.query(
+            goal,
+            limit=limit,
+            status="failed",
+            minimum_similarity=0.01,
+        )
+        rolled_back = self.query(
+            goal,
+            limit=limit,
+            status="rolled_back",
+            minimum_similarity=0.01,
+        )
+
+        successful_paths: list[str] = []
+        prior_denial_reasons: list[str] = []
+
+        for match in completed["matches"]:
+            record = _mapping(match.get("record"))
+            for path in _list(record.get("changed_files")):
+                normalized = _text(path)
+                if normalized and normalized not in successful_paths:
+                    successful_paths.append(normalized)
+
+        for group in (failed["matches"], rolled_back["matches"]):
+            for match in group:
+                record = _mapping(match.get("record"))
+                reason = _text(record.get("denial_reason"))
+                if reason and reason not in prior_denial_reasons:
+                    prior_denial_reasons.append(reason)
+
+        return {
+            "schema": RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA,
+            "ok": True,
+            "memory_status": (
+                "context_available"
+                if (
+                    completed["match_count"]
+                    or failed["match_count"]
+                    or rolled_back["match_count"]
+                )
+                else "empty"
+            ),
+            "goal": _text(goal),
+            "completed_experiences": completed["matches"],
+            "failed_experiences": failed["matches"],
+            "rolled_back_experiences": rolled_back["matches"],
+            "successful_paths": successful_paths,
+            "prior_denial_reasons": prior_denial_reasons,
+            "experience_count": (
+                completed["match_count"]
+                + failed["match_count"]
+                + rolled_back["match_count"]
+            ),
+            "log_path": str(self.log_path),
+        }
 
 
 @dataclass(frozen=True)
@@ -214,17 +420,26 @@ class RuntimeMemorySnapshot:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", _freeze(self.state or {}))
-        object.__setattr__(self, "transactions", _freeze(self.transactions or {}))
+        object.__setattr__(
+            self,
+            "transactions",
+            _freeze(self.transactions or {}),
+        )
         object.__setattr__(self, "replay", _freeze(self.replay or {}))
         object.__setattr__(self, "recovery", _freeze(self.recovery or {}))
-        object.__setattr__(self, "capabilities", _freeze(self.capabilities or {}))
+        object.__setattr__(
+            self,
+            "capabilities",
+            _freeze(self.capabilities or {}),
+        )
         object.__setattr__(self, "intent", _freeze(self.intent or {}))
         object.__setattr__(self, "scheduler", _freeze(self.scheduler or {}))
         if not self.snapshot_id:
             object.__setattr__(
                 self,
                 "snapshot_id",
-                "runtime-memory-" + _stable_hash(self._fingerprint_payload())[:16],
+                "runtime-memory-"
+                + _stable_hash(self._fingerprint_payload())[:16],
             )
         if not self.fingerprint:
             object.__setattr__(
@@ -353,6 +568,9 @@ def build_runtime_memory_snapshot(
 
 
 __all__ = [
+    "RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA",
+    "RuntimeActivityExperience",
+    "RuntimeActivityMemory",
     "RuntimeMemorySnapshot",
     "RuntimeMemoryView",
     "RuntimeStateView",
