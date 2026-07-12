@@ -2,32 +2,20 @@
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import Callable
+from core.runtime.aer_runtime_recovery_canonical_request import (
+    prepare_canonical_runtime_recovery_request as _prepare_canonical_runtime_recovery_request,
+)
+from core.runtime.aer_runtime_recovery_canonical_response import (
+    prepare_canonical_runtime_recovery_response as _prepare_canonical_runtime_recovery_response,
+)
+from core.runtime.aer_runtime_recovery_canonical_surface import (
+    prepare_canonical_runtime_recovery_surface as _prepare_canonical_runtime_recovery_surface,
+)
 
 
 __all__ = [
     "prepare_runtime_recovery_surface_integration",
 ]
-
-
-def _canonical_helper(module_suffix: str, helper_suffix: str) -> Callable[..., dict[str, object]]:
-    module = import_module(
-        f"core.runtime.aer_runtime_recovery_canonical_{module_suffix}"
-    )
-    helper_name = "_".join(
-        [
-            "prepare",
-            "canonical",
-            "runtime",
-            "recovery",
-            helper_suffix,
-        ]
-    )
-    helper = getattr(module, helper_name)
-    if not callable(helper):
-        raise TypeError(f"canonical recovery helper is not callable: {module_suffix}")
-    return helper
 
 
 def prepare_runtime_recovery_surface_integration(
@@ -47,11 +35,7 @@ def prepare_runtime_recovery_surface_integration(
     plain_recovery_context = _plain_mapping(recovery_context)
     plain_metadata = _plain_mapping(metadata)
 
-    request_helper = _canonical_helper("request", "request")
-    surface_helper = _canonical_helper("surface", "surface")
-    response_helper = _canonical_helper("response", "response")
-
-    request_result = request_helper(
+    request_result = _prepare_canonical_runtime_recovery_request(
         request_id=request_id,
         surface_id=surface_id,
         runtime_identity=plain_runtime_identity,
@@ -60,7 +44,7 @@ def prepare_runtime_recovery_surface_integration(
         recovery_context=plain_recovery_context,
         metadata=plain_metadata,
     )
-    surface_result = surface_helper(
+    surface_result = _prepare_canonical_runtime_recovery_surface(
         surface_id=surface_id,
         requested_status=request_result["status"],
         metadata={
@@ -69,7 +53,7 @@ def prepare_runtime_recovery_surface_integration(
             **plain_metadata,
         },
     )
-    response_result = response_helper(
+    response_result = _prepare_canonical_runtime_recovery_response(
         response_id=response_id,
         request_id=request_id,
         surface_id=surface_id,

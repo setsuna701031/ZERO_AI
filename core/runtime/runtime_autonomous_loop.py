@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
-from typing import Any, Mapping, Sequence
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
 
 RUNTIME_AUTONOMOUS_LOOP_SCHEMA = "zero.runtime.autonomous_loop.v1"
+RUNTIME_AUTONOMOUS_MISSION_DRIVER_SCHEMA = "zero.runtime.autonomous_mission_driver.v1"
 
 def project_runtime_session(session: Mapping[str, Any] | None) -> dict[str, Any]:
     """Return a read-only operator-session projection; never resumes a session."""
@@ -596,6 +598,257 @@ class RuntimeAutonomousLoop:
             "runtime_loop_closed": True,
         }
 
+    def run_mission(
+        self,
+        mission: Mapping[str, Any] | str | Path,
+        *,
+        scheduler_state_path: Any,
+        worker_state_path: Any,
+        worker_name: str,
+        target_root: Any,
+        workspace_root: Any,
+        runtime_config: Mapping[str, Any] | None = None,
+        max_iterations: int | None = None,
+        lease_seconds: int | None = None,
+        now_provider: Callable[[], Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Drive one persisted Mission through the existing Mission
+        Orchestrator, Goal Execution Registry bridge, Worker Service, and
+        Goal Executor.
+
+        This method does not confirm plans, approve proposals, authorize
+        active execution, create candidate bundles, or bypass transaction
+        boundaries. A Mission that reaches an operator-controlled phase is
+        returned as waiting rather than being advanced automatically.
+        """
+        from core.runtime.runtime_mission_execution_registry_bridge import (
+            sync_mission_execution_registry,
+        )
+        from core.runtime.runtime_mission_model import load_mission
+        from core.runtime.runtime_mission_orchestrator import (
+            advance_mission,
+        )
+        from core.runtime.runtime_session_scheduler import LEASE_SECONDS
+        from core.runtime.runtime_worker_service import (
+            run_worker_iteration,
+        )
+
+        limit = self.max_iterations if max_iterations is None else max_iterations
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("invalid_mission_max_iterations")
+
+        config = _mapping(runtime_config)
+        config["target_root"] = target_root
+        config["workspace_root"] = workspace_root
+        clock = now_provider or (
+            lambda: datetime.now(timezone.utc)
+        )
+        lifetime = LEASE_SECONDS if lease_seconds is None else lease_seconds
+
+        if isinstance(mission, Mapping):
+            current = _mapping(mission)
+        else:
+            current = load_mission(mission)
+
+        mission_path = _text(current.get("mission_path"))
+        if not mission_path:
+            raise ValueError("mission_path_required")
+        if not _text(current.get("scheduler_state_path")):
+            current["scheduler_state_path"] = str(
+                Path(scheduler_state_path).resolve(strict=False)
+            )
+
+        iterations: list[dict[str, Any]] = []
+        stopped_reason = "iteration_limit_reached"
+
+        terminal_statuses = {
+            "completed",
+            "partially_completed",
+            "failed",
+            "blocked",
+            "cancelled",
+            "expired",
+        }
+        operator_waiting_statuses = {
+            "waiting_for_plan_confirmation",
+            "waiting_for_replan_confirmation",
+        }
+
+        for index in range(1, limit + 1):
+            now = clock()
+
+            current = advance_mission(
+                current,
+                scheduler_state=scheduler_state_path,
+                now=now,
+                runtime_config=config,
+            )
+
+            status_before = _text(current.get("mission_status"))
+            if status_before in terminal_statuses:
+                stopped_reason = f"mission_{status_before}"
+                iterations.append(
+                    {
+                        "iteration": index,
+                        "mission_status_before": status_before,
+                        "mission_status_after": status_before,
+                        "registry_sync_performed": False,
+                        "worker_iteration_performed": False,
+                        "mission_projection": project_runtime_mission(
+                            current
+                        ),
+                    }
+                )
+                break
+
+            if status_before in operator_waiting_statuses:
+                stopped_reason = status_before
+                iterations.append(
+                    {
+                        "iteration": index,
+                        "mission_status_before": status_before,
+                        "mission_status_after": status_before,
+                        "registry_sync_performed": False,
+                        "worker_iteration_performed": False,
+                        "mission_projection": project_runtime_mission(
+                            current
+                        ),
+                    }
+                )
+                break
+
+            bridge = sync_mission_execution_registry(
+                current,
+                target_root=target_root,
+                workspace_root=workspace_root,
+                runtime_config=config,
+                now=now,
+            )
+            worker_config = _mapping(
+                bridge.get("runtime_config_overlay")
+            )
+
+            worker = run_worker_iteration(
+                scheduler_state_path=scheduler_state_path,
+                worker_state_path=worker_state_path,
+                worker_name=worker_name,
+                target_root=target_root,
+                workspace_root=workspace_root,
+                now=now,
+                lease_seconds=lifetime,
+                runtime_config=worker_config,
+            )
+
+            current = advance_mission(
+                current,
+                scheduler_state=scheduler_state_path,
+                now=now,
+                runtime_config=config,
+            )
+            status_after = _text(current.get("mission_status"))
+
+            iteration = {
+                "iteration": index,
+                "mission_status_before": status_before,
+                "mission_status_after": status_after,
+                "registry_sync_performed": True,
+                "registered_session_ids": deepcopy(
+                    bridge.get("registered_session_ids") or []
+                ),
+                "skipped_session_ids": deepcopy(
+                    bridge.get("skipped_session_ids") or []
+                ),
+                "blocked_sessions": deepcopy(
+                    bridge.get("blocked_sessions") or []
+                ),
+                "pending_request_count": int(
+                    bridge.get("pending_request_count") or 0
+                ),
+                "registry_fingerprint": bridge.get(
+                    "registry_fingerprint"
+                ),
+                "worker_iteration_performed": True,
+                "worker_status": worker.get("worker_status"),
+                "worker_last_result": deepcopy(
+                    worker.get("last_result")
+                ),
+                "worker_projection": project_runtime_worker(
+                    worker,
+                    now=now,
+                ),
+                "mission_projection": project_runtime_mission(
+                    current
+                ),
+            }
+            iterations.append(iteration)
+
+            if status_after in terminal_statuses:
+                stopped_reason = f"mission_{status_after}"
+                break
+            if status_after in operator_waiting_statuses:
+                stopped_reason = status_after
+                break
+            if worker.get("worker_status") == "failed":
+                stopped_reason = "worker_failed"
+                break
+
+            last_result = _mapping(worker.get("last_result"))
+            no_dispatch = (
+                last_result.get("reason")
+                == "no_dispatchable_session"
+            )
+            no_registry_work = (
+                int(bridge.get("pending_request_count") or 0) == 0
+                and not bridge.get("registered_session_ids")
+            )
+            if (
+                no_dispatch
+                and no_registry_work
+                and status_after == status_before
+            ):
+                stopped_reason = "mission_waiting_for_external_input"
+                break
+        else:
+            stopped_reason = "iteration_limit_reached"
+
+        final_status = _text(current.get("mission_status"))
+        completed = final_status == "completed"
+        waiting = (
+            final_status in operator_waiting_statuses
+            or final_status == "waiting_for_operator"
+            or stopped_reason == "mission_waiting_for_external_input"
+        )
+        return {
+            "schema": RUNTIME_AUTONOMOUS_MISSION_DRIVER_SCHEMA,
+            "ok": completed,
+            "driver_status": (
+                "completed"
+                if completed
+                else "waiting"
+                if waiting
+                else "stopped"
+            ),
+            "mission_id": current.get("mission_id"),
+            "mission_path": mission_path,
+            "mission_status": final_status,
+            "iterations_completed": len(iterations),
+            "max_iterations": limit,
+            "stopped_reason": stopped_reason,
+            "mission_completed": completed,
+            "mission_waiting": waiting,
+            "mission_terminal": final_status in terminal_statuses,
+            "mission": deepcopy(current),
+            "mission_projection": project_runtime_mission(current),
+            "iteration_results": iterations,
+            "runtime_loop_closed": True,
+            "operator_boundaries_preserved": True,
+            "autonomous_plan_confirmation": False,
+            "autonomous_operator_approval": False,
+            "autonomous_active_authorization": False,
+            "autonomous_transaction_bypass": False,
+        }
+
     def run_once(self, task: Any) -> dict[str, Any]:
         return self.run([task])
 
@@ -782,6 +1035,7 @@ class RuntimeAutonomousLoop:
 
 __all__ = [
     "RUNTIME_AUTONOMOUS_LOOP_SCHEMA",
+    "RUNTIME_AUTONOMOUS_MISSION_DRIVER_SCHEMA",
     "RuntimeAutonomousLoop",
     "project_runtime_session",
     "project_runtime_mission",

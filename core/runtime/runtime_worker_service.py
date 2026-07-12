@@ -56,7 +56,7 @@ def create_worker_state(*, scheduler_state_path: Any, worker_state_path: Any, wo
         "current_dispatch_id": None, "loop_iteration": 0, "successful_dispatches": 0, "waiting_dispatches": 0,
         "blocked_dispatches": 0, "failed_dispatches": 0, "critical_failures": 0, "recovered_leases": 0,
         "idle_iterations": 0, "last_result": None, "stop_requested": False, "pause_requested": False,
-        "failure": None, "audit_record": {"event_type": "runtime_worker_created", "created_at": at}})
+        "failure": None, "last_event_id": None, "audit_record": {"event_type": "runtime_worker_created", "created_at": at}})
 
 def save_worker_state(state: Mapping[str, Any], path: Any) -> dict[str, Any]:
     destination = Path(path)
@@ -83,6 +83,140 @@ def _heartbeat(state: Mapping[str, Any], status: str, now: Any) -> dict[str, Any
 def _scheduler_binding(worker: Mapping[str, Any], scheduler: Mapping[str, Any], scheduler_state_path: Any) -> None:
     if worker.get("scheduler_id") != scheduler.get("scheduler_id"): raise ValueError("worker_scheduler_identity_mismatch")
     if str(Path(worker.get("scheduler_state_path", "")).resolve(strict=False)).casefold() != str(Path(scheduler_state_path).resolve(strict=False)).casefold(): raise ValueError("scheduler_state_path_mismatch")
+
+
+def _publish_worker_event(
+    runtime_config: Mapping[str, Any] | None,
+    *,
+    topic: str,
+    source: str,
+    payload: Mapping[str, Any],
+    idempotency_key: str,
+    now: Any = None,
+) -> dict[str, Any] | None:
+    config = _mapping(runtime_config)
+    state_path_text = str(
+        config.get("event_bus_state_path") or ""
+    ).strip()
+    if not state_path_text:
+        return None
+
+    from core.runtime.runtime_event_bus import (
+        load_event_bus_state,
+        publish,
+        save_event_bus_state,
+    )
+
+    state_path = Path(state_path_text)
+    bus = load_event_bus_state(state_path)
+    bus, event = publish(
+        bus,
+        event_type="worker",
+        topic=topic,
+        source=source,
+        payload=payload,
+        idempotency_key=idempotency_key,
+        correlation_id=str(
+            payload.get("session_id")
+            or payload.get("worker_id")
+            or ""
+        )
+        or None,
+        causation_id=str(
+            payload.get(
+                "execution_request_fingerprint"
+            )
+            or ""
+        )
+        or None,
+        now=now,
+    )
+    save_event_bus_state(bus, state_path)
+    return event
+
+
+def _consume_goal_execution_registry_result(
+    *,
+    runtime_config: Mapping[str, Any] | None,
+    session_id: str,
+    execution_request_fingerprint: str,
+    execution_result_fingerprint: str,
+    now: Any,
+) -> dict[str, Any] | None:
+    config = _mapping(runtime_config)
+    registry_path_text = str(
+        config.get("goal_execution_registry_path") or ""
+    ).strip()
+    if not registry_path_text:
+        return None
+
+    from core.runtime.runtime_goal_execution_registry import (
+        load_goal_execution_registry,
+        mark_registry_entry_consumed,
+        save_goal_execution_registry,
+    )
+
+    registry_path = Path(registry_path_text)
+    registry = load_goal_execution_registry(registry_path)
+
+    expected_registry_fingerprint = str(
+        config.get("goal_execution_registry_fingerprint") or ""
+    ).strip()
+    if (
+        expected_registry_fingerprint
+        and registry.get("registry_fingerprint")
+        != expected_registry_fingerprint
+    ):
+        raise ValueError(
+            "goal_execution_registry_fingerprint_mismatch"
+        )
+
+    matching_entry_id = None
+    for entry_id in registry.get("entry_order", []):
+        entry = _mapping(
+            _mapping(registry.get("entries")).get(entry_id)
+        )
+        if entry.get("session_id") != session_id:
+            continue
+        if entry.get("execution_request_fingerprint") != (
+            execution_request_fingerprint
+        ):
+            continue
+        matching_entry_id = entry_id
+        break
+
+    if matching_entry_id is None:
+        raise ValueError(
+            "goal_execution_registry_entry_not_found"
+        )
+
+    registry = mark_registry_entry_consumed(
+        registry,
+        entry_id=matching_entry_id,
+        execution_result_fingerprint=(
+            execution_result_fingerprint
+        ),
+        now=now,
+    )
+    registry = save_goal_execution_registry(
+        registry,
+        registry_path,
+    )
+    return {
+        "registry_path": str(
+            registry_path.resolve(strict=False)
+        ),
+        "registry_id": registry.get("registry_id"),
+        "registry_fingerprint": registry.get(
+            "registry_fingerprint"
+        ),
+        "entry_id": matching_entry_id,
+        "entry_status": _mapping(
+            _mapping(registry.get("entries")).get(
+                matching_entry_id
+            )
+        ).get("entry_status"),
+    }
 
 def run_worker_iteration(*, scheduler_state_path: Any, worker_state_path: Any, worker_name: str,
                          target_root: Any, workspace_root: Any, now: Any = None,
@@ -133,13 +267,134 @@ def run_worker_iteration(*, scheduler_state_path: Any, worker_state_path: Any, w
                     from core.runtime.runtime_goal_executor import create_goal_execution_request, execute_goal
                     session = load_runtime_session(entry["session_path"], target_root=target_root, workspace_root=workspace_root, now=now)
                     request = create_goal_execution_request(specification.get("goal") or {}, session, operator_context=specification.get("operator_context") or {}, now=now)
+                    expected_request_fingerprint = str(
+                        specification.get(
+                            "execution_request_fingerprint"
+                        )
+                        or ""
+                    ).strip()
+                    if (
+                        expected_request_fingerprint
+                        and request.get(
+                            "execution_request_fingerprint"
+                        )
+                        != expected_request_fingerprint
+                    ):
+                        raise ValueError(
+                            "goal_execution_request_fingerprint_mismatch"
+                        )
                     result = execute_goal(request, workspace_root=target_root, artifact_root=specification.get("artifact_root"), now=now)
-                    pending_results[session_id] = result; worker["last_result"] = {"executor_delegated": True, "authoring_engine_delegated": result.get("authoring_output") is not None, "authoring_output_fingerprint": _mapping(result.get("authoring_output")).get("fingerprint"), "session_id": session_id, "execution_status": result.get("execution_status"), "execution_result_fingerprint": result.get("execution_result_fingerprint")}
+                    result_fingerprint = str(
+                        result.get(
+                            "execution_result_fingerprint"
+                        )
+                        or ""
+                    ).strip()
+                    if not result_fingerprint:
+                        raise ValueError(
+                            "execution_result_fingerprint_required"
+                        )
+                    registry_update = (
+                        _consume_goal_execution_registry_result(
+                            runtime_config=runtime_config,
+                            session_id=session_id,
+                            execution_request_fingerprint=str(
+                                request.get(
+                                    "execution_request_fingerprint"
+                                )
+                                or ""
+                            ),
+                            execution_result_fingerprint=(
+                                result_fingerprint
+                            ),
+                            now=now,
+                        )
+                    )
+                    pending_results[session_id] = result
+                    worker["last_result"] = {
+                        "executor_delegated": True,
+                        "authoring_engine_delegated": result.get("authoring_output") is not None,
+                        "authoring_output_fingerprint": _mapping(result.get("authoring_output")).get("fingerprint"),
+                        "session_id": session_id,
+                        "execution_status": result.get("execution_status"),
+                        "execution_result_fingerprint": result_fingerprint,
+                        "registry_consumed": registry_update is not None,
+                        "registry_update": registry_update,
+                    }
+                    event = _publish_worker_event(
+                        runtime_config,
+                        topic="worker.completed",
+                        source=worker["worker_id"],
+                        payload={
+                            "worker_id": worker["worker_id"],
+                            "worker_name": worker["worker_name"],
+                            "session_id": session_id,
+                            "execution_status": result.get(
+                                "execution_status"
+                            ),
+                            "execution_request_fingerprint": request.get(
+                                "execution_request_fingerprint"
+                            ),
+                            "execution_result_fingerprint": (
+                                result_fingerprint
+                            ),
+                            "registry_consumed": (
+                                registry_update is not None
+                            ),
+                            "registry_update": deepcopy(
+                                registry_update
+                            ),
+                        },
+                        idempotency_key=(
+                            f"{worker['worker_id']}:"
+                            f"worker.completed:{session_id}:"
+                            f"{result_fingerprint}"
+                        ),
+                        now=now,
+                    )
+                    if event:
+                        worker["last_event_id"] = event.get(
+                            "event_id"
+                        )
                 except (OSError, TypeError, ValueError) as exc:
-                    worker["blocked_dispatches"] += 1; worker["last_result"] = {"executor_delegated": False, "session_id": session_id, "reason": f"{type(exc).__name__}:{exc}"}
+                    worker["blocked_dispatches"] += 1
+                    reason = f"{type(exc).__name__}:{exc}"
+                    worker["last_result"] = {
+                        "executor_delegated": False,
+                        "session_id": session_id,
+                        "reason": reason,
+                    }
+                    event = _publish_worker_event(
+                        runtime_config,
+                        topic="worker.blocked",
+                        source=worker["worker_id"],
+                        payload={
+                            "worker_id": worker["worker_id"],
+                            "worker_name": worker["worker_name"],
+                            "session_id": session_id,
+                            "reason": reason,
+                        },
+                        idempotency_key=(
+                            f"{worker['worker_id']}:"
+                            f"worker.blocked:{session_id}:"
+                            f"{fingerprint({'reason': reason})[:20]}"
+                        ),
+                        now=now,
+                    )
+                    if event:
+                        worker["last_event_id"] = event.get(
+                            "event_id"
+                        )
             worker["pending_executor_results"] = pending_results
             worker["waiting_dispatches"] += 1 if scheduler.get("waiting_operator_sessions") else 0
-            worker["idle_iterations"] = int(worker.get("idle_iterations", 0)) + 1; worker["last_result"] = {"dispatched": False, "reason": "no_dispatchable_session"}
+            worker["idle_iterations"] = int(worker.get("idle_iterations", 0)) + 1
+            if not _mapping(worker.get("last_result")).get(
+                "executor_delegated"
+            ):
+                worker["last_result"] = {
+                    "dispatched": False,
+                    "reason": "no_dispatchable_session",
+                }
             save_scheduler_state(scheduler, scheduler_state_path); return save_worker_state(_heartbeat(worker, "idle", now), worker_state_path)
         current = lease; worker["current_lease"] = deepcopy(lease); worker["current_session_id"] = lease["session_id"]
         worker["current_dispatch_id"] = f"worker-dispatch-{fingerprint({'worker': worker['worker_id'], 'lease': lease['lease_id']})[:20]}"
@@ -150,10 +405,91 @@ def run_worker_iteration(*, scheduler_state_path: Any, worker_state_path: Any, w
         worker["last_result"] = deepcopy(result)
         if result.get("dispatched"):
             worker["successful_dispatches"] += 1
-        elif result.get("reason") == "no_dispatchable_session": worker["waiting_dispatches"] += 1
-        else: worker["blocked_dispatches"] += 1
+            event = _publish_worker_event(
+                runtime_config,
+                topic="worker.dispatched",
+                source=worker["worker_id"],
+                payload={
+                    "worker_id": worker["worker_id"],
+                    "worker_name": worker["worker_name"],
+                    "session_id": current.get("session_id"),
+                    "dispatch_id": worker.get(
+                        "current_dispatch_id"
+                    ),
+                    "result": deepcopy(result),
+                },
+                idempotency_key=(
+                    f"{worker['worker_id']}:"
+                    f"worker.dispatched:"
+                    f"{worker.get('current_dispatch_id')}"
+                ),
+                now=now,
+            )
+            if event:
+                worker["last_event_id"] = event.get(
+                    "event_id"
+                )
+        elif result.get("reason") == "no_dispatchable_session":
+            worker["waiting_dispatches"] += 1
+        else:
+            worker["blocked_dispatches"] += 1
+            event = _publish_worker_event(
+                runtime_config,
+                topic="worker.blocked",
+                source=worker["worker_id"],
+                payload={
+                    "worker_id": worker["worker_id"],
+                    "worker_name": worker["worker_name"],
+                    "session_id": current.get("session_id"),
+                    "dispatch_id": worker.get(
+                        "current_dispatch_id"
+                    ),
+                    "reason": result.get("reason"),
+                    "result": deepcopy(result),
+                },
+                idempotency_key=(
+                    f"{worker['worker_id']}:"
+                    f"worker.blocked:"
+                    f"{worker.get('current_dispatch_id')}:"
+                    f"{fingerprint(result)[:20]}"
+                ),
+                now=now,
+            )
+            if event:
+                worker["last_event_id"] = event.get(
+                    "event_id"
+                )
     except Exception as exc:
-        worker["failed_dispatches"] += 1; worker["failure"] = {"critical": False, "reasons": [f"{type(exc).__name__}:{exc}"]}
+        reason = f"{type(exc).__name__}:{exc}"
+        worker["failed_dispatches"] += 1
+        worker["failure"] = {
+            "critical": False,
+            "reasons": [reason],
+        }
+        event = _publish_worker_event(
+            runtime_config,
+            topic="worker.failed",
+            source=worker["worker_id"],
+            payload={
+                "worker_id": worker["worker_id"],
+                "worker_name": worker["worker_name"],
+                "session_id": current.get("session_id"),
+                "dispatch_id": worker.get(
+                    "current_dispatch_id"
+                ),
+                "reason": reason,
+            },
+            idempotency_key=(
+                f"{worker['worker_id']}:worker.failed:"
+                f"{worker.get('current_dispatch_id')}:"
+                f"{fingerprint({'reason': reason})[:20]}"
+            ),
+            now=now,
+        )
+        if event:
+            worker["last_event_id"] = event.get(
+                "event_id"
+            )
         try: scheduler = release_session_lease(scheduler, lease_id=current["lease_id"], owner=worker["worker_id"], session_id=current["session_id"], now=now)
         except ValueError: pass
     worker["current_lease"] = None; worker["current_session_id"] = None; worker["current_dispatch_id"] = None; worker["idle_iterations"] = 0
