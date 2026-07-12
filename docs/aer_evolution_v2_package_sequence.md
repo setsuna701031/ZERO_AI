@@ -2072,7 +2072,7 @@ Package 127 must not:
 
 Future packages own:
 
-- Package 128: Runtime Resume Validation / Consumer Boundary, if the Package 127 decision is GO
+- Package 128: Runtime Resume Consumer Contract, if the Package 127 decision is GO
 - one complete implementation correction package if the Package 127 decision is NO-GO
 - Runtime Resume Execution only after a future execution-domain package authorizes it
 
@@ -2108,25 +2108,33 @@ Package 128 owns:
 
 Package 128 must not:
 
-- implement Runtime Resume Execution
 - modify `core/runtime/aer_runtime_resume_plan.py`
+- create Runtime Resume Execution
 - create consumer behavior
 - execute a Resume Plan
-- wire Resume to Recovery, Scheduler, Dispatcher, Operator, Persistence, Audit, Journal, Replay, or any runtime loop
-- consume Snapshot Builder output
-- duplicate Snapshot validation
-- consume Runtime Snapshot Consumer private helpers
-- pass through unknown Resume Plan fields
-- authorize downstream execution
+- schedule
+- dispatch
+- recover
+- call operator
 - persist
 - audit
 - journal
 - replay
-- mutate runtime
+- mutate runtime state
+- allocate runtime sessions
+- allocate runtime identity
+- consume Snapshot Builder output directly
+- duplicate Snapshot validation
+- collapse Eligibility, Planning, Consumer Boundary, and Execution into one public API
+- wire Resume to Recovery, Scheduler, Dispatcher, Operator, Persistence, Audit, Journal, Replay, or any runtime loop
+- consume Runtime Snapshot Consumer private helpers
+- pass through unknown Resume Plan fields
+- authorize downstream execution
 
 Future packages own:
 
 - Package 129: Runtime Resume Integration Blueprint, if the Package 128 decision is GO
+- Package 130: Runtime Recovery Blueprint after Resume Integration Blueprint is sealed
 - future Runtime Resume Execution only after a dedicated execution-domain package authorizes it
 - future Recovery, Scheduler, Dispatcher, Operator, Persistence, Audit, Journal, and Replay integration only after their explicit domain contracts authorize them
 

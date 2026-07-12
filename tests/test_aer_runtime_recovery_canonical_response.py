@@ -194,16 +194,30 @@ def test_response_module_has_no_runtime_execution_imports_or_extra_apis() -> Non
         assert not hasattr(canonical_response, name)
 
 
-def test_existing_runtime_modules_do_not_import_or_call_canonical_response() -> None:
-    runtime_root = Path("core/runtime")
+def _canonical_response_callers(paths: list[Path]) -> list[Path]:
     forbidden = [
         "aer_runtime_recovery_canonical_response",
         "prepare_canonical_runtime_recovery_response",
     ]
-
-    for path in runtime_root.glob("*.py"):
-        if path.name == "aer_runtime_recovery_canonical_response.py":
+    allowed = {
+        "aer_runtime_recovery_canonical_response.py",
+        "aer_runtime_recovery_surface_integration.py",
+    }
+    callers = []
+    for path in paths:
+        if path.name in allowed:
             continue
         text = path.read_text(encoding="utf-8")
-        for phrase in forbidden:
-            assert phrase not in text, f"{path} must not import or call Package 247 response helper"
+        if any(phrase in text for phrase in forbidden):
+            callers.append(path)
+    return callers
+
+
+def test_only_package_251_integration_may_call_canonical_response() -> None:
+    assert _canonical_response_callers(list(Path("core/runtime").glob("*.py"))) == []
+
+
+def test_second_runtime_canonical_response_caller_is_rejected(tmp_path: Path) -> None:
+    second = tmp_path / "second_runtime_caller.py"
+    second.write_text("from core.runtime.aer_runtime_recovery_canonical_response import prepare_canonical_runtime_recovery_response\n", encoding="utf-8")
+    assert _canonical_response_callers([second]) == [second]

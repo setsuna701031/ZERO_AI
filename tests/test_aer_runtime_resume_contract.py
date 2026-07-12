@@ -213,17 +213,24 @@ def test_architecture_rules_forbid_runtime_behavior():
         assert token in text
 
 
-def test_no_runtime_resume_implementation_module_added():
+def test_package_126_added_no_runtime_resume_implementation_module():
     forbidden_paths = (
         Path("core/runtime/aer_runtime_resume.py"),
         Path("core/runtime/aer_runtime_resume_contract.py"),
-        Path("core/runtime/aer_runtime_resume_plan.py"),
         Path("core/runtime/aer_runtime_resume_execution.py"),
         Path("core/runtime/aer_runtime_resume_integration.py"),
     )
 
     for path in forbidden_paths:
         assert not path.exists()
+
+    sequence = PACKAGE_SEQUENCE.read_text(encoding="utf-8")
+    package_127 = sequence[sequence.index("## Package 127"):sequence.index("## Package 128")]
+    package_128 = sequence[sequence.index("## Package 128"):sequence.index("## Package 129")]
+    assert "Package 127: Runtime Resume Plan Implementation" in package_127
+    assert "`core/runtime/aer_runtime_resume_plan.py`" in package_127
+    assert "does not implement Runtime Resume Execution" in package_127
+    assert "modify `core/runtime/aer_runtime_resume_plan.py`" in package_128
 
 
 def test_inventory_marks_runtime_resume_contract_as_missing_implementation():
