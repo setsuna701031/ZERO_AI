@@ -238,6 +238,35 @@ def parser() -> argparse.ArgumentParser:
         required=True,
     )
 
+    command = sub.add_parser("start")
+    command.add_argument("mission")
+    command.add_argument("--session-state")
+    command.add_argument("--goal-id")
+    command.add_argument("--execution-id")
+    command.add_argument("--target-root")
+    command.add_argument("--workspace-root")
+    command.add_argument("--max-iterations", type=int, default=1)
+    command.add_argument("--now")
+
+    command = sub.add_parser("run")
+    command.add_argument("session_state")
+    command.add_argument("--max-iterations", type=int, default=1)
+    command.add_argument("--now")
+
+    command = sub.add_parser("resume")
+    command.add_argument("session_state")
+    command.add_argument("--max-iterations", type=int, default=1)
+    command.add_argument("--now")
+
+    command = sub.add_parser("health")
+    command.add_argument("session_state")
+    command.add_argument("--now")
+
+    for name in ("pause", "stop"):
+        command = sub.add_parser(name)
+        command.add_argument("session_state")
+        command.add_argument("--now")
+
     command = sub.add_parser("create")
     command.add_argument("mission_input")
     command.add_argument("--goal-plan", required=True)
@@ -521,6 +550,56 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "scheduler":
             return _scheduler_main(args)
 
+        if args.command in {"start", "run", "resume", "health", "pause", "stop"}:
+            from core.runtime.runtime_mission_session import (
+                create_mission_session_state, load_mission_session_state,
+                mission_session_health, resume_mission_session,
+                run_mission_session, save_mission_session_state,
+            )
+            if args.command == "start":
+                mission_path = Path(args.mission).resolve(strict=True)
+                mission = load_mission(mission_path, check_expiry=False)
+                base = mission_path.with_suffix("")
+                session_path = Path(args.session_state) if args.session_state else Path(str(base) + ".session.json")
+                goals = mission.get("goal_order") or list((mission.get("goals") or {}).keys())
+                goal_id = args.goal_id or (goals[0] if goals else None)
+                execution_id = args.execution_id or f"mission-execution-{mission['mission_id']}"
+                state = create_mission_session_state(
+                    mission_id=mission["mission_id"], goal_id=goal_id,
+                    execution_id=execution_id, session_state_path=session_path,
+                    mission_state_path=mission_path, goal_graph_state_path=mission_path,
+                    execution_registry_state_path=str(base) + ".execution-registry.json",
+                    scheduler_state_path=mission.get("scheduler_state_path") or str(base) + ".scheduler.json",
+                    worker_state_path=str(base) + ".worker.json",
+                    replanning_engine_state_path=str(base) + ".replanning.json",
+                    daemon_state_path=str(base) + ".daemon.json",
+                    event_bus_state_path=str(base) + ".events.json",
+                    target_root=args.target_root or mission.get("target_root"),
+                    workspace_root=args.workspace_root or mission.get("workspace_root"), now=args.now,
+                )
+                save_mission_session_state(state, session_path)
+                state = run_mission_session(session_path, max_iterations=args.max_iterations, now=args.now)
+                result = {**state, "session_state_path": str(session_path.resolve(strict=False))}
+            elif args.command == "run":
+                result = run_mission_session(args.session_state, max_iterations=args.max_iterations, now=args.now)
+            elif args.command == "resume":
+                result = resume_mission_session(args.session_state, explicit=True, max_iterations=args.max_iterations, now=args.now)
+            elif args.command == "health":
+                result = mission_session_health(args.session_state, now=args.now)
+            else:
+                from core.runtime.runtime_mission_daemon import load_mission_daemon_state, request_mission_daemon_action, save_mission_daemon_state
+                state = load_mission_session_state(args.session_state)
+                daemon_path = Path(state["daemon_state_path"])
+                if daemon_path.exists():
+                    daemon = request_mission_daemon_action(load_mission_daemon_state(daemon_path), args.command, now=args.now)
+                    save_mission_daemon_state(daemon, daemon_path)
+                state["session_status"] = "paused" if args.command == "pause" else "stopping"
+                state["updated_at"] = args.now or state.get("updated_at")
+                result = save_mission_session_state(state, args.session_state)
+            _print(result)
+            status = result.get("session_status") or result.get("status")
+            return 2 if status in {"failed", "invalid"} else 0
+
         if args.command == "create":
             result = create_mission(
                 _json(args.mission_input),
@@ -571,6 +650,12 @@ def main(argv: list[str] | None = None) -> int:
                 planner_output_path=artifact,
             )
         else:
+            if args.command == "status":
+                raw_status = _json(args.mission)
+                if raw_status.get("contract") == "zero.runtime.mission_session.v1":
+                    from core.runtime.runtime_mission_session import load_mission_session_state
+                    _print(load_mission_session_state(args.mission))
+                    return 0
             result = load_mission(
                 args.mission,
                 check_expiry=False,
