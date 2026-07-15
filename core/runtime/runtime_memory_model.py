@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
+import stat
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +16,7 @@ from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VER
 
 
 RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA = "zero.runtime.activity_memory_query.v1"
+RUNTIME_ACTIVITY_EXPERIENCE_SCHEMA = "zero.runtime.activity_experience.v1"
 
 
 def _utc_now() -> str:
@@ -403,6 +406,102 @@ class RuntimeActivityMemory:
             "log_path": str(self.log_path),
         }
 
+    def experience_records(
+        self,
+        *,
+        outcome: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        loaded = self.read_all()
+        records = [
+            copy.deepcopy(record)
+            for record in reversed(loaded["records"])
+            if record.get("contract") == RUNTIME_ACTIVITY_EXPERIENCE_SCHEMA
+            and (outcome is None or record.get("outcome") == outcome)
+        ]
+        return records if limit is None else records[:max(0, int(limit))]
+
+    def experience(self, experience_id: str) -> dict[str, Any]:
+        for record in self.experience_records():
+            if record.get("experience_id") == str(experience_id):
+                reasons = validate_runtime_activity_experience(record)
+                if reasons:
+                    raise ValueError(";".join(reasons))
+                return record
+        raise ValueError("experience_not_found")
+
+    def record_experience(
+        self,
+        experience: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        record = seal_runtime_activity_experience(experience)
+        reasons = validate_runtime_activity_experience(record)
+        if reasons:
+            raise ValueError(";".join(reasons))
+        for existing in self.experience_records():
+            if existing.get("reflection_id") == record.get("reflection_id"):
+                if existing.get("experience_id") != record.get("experience_id"):
+                    raise ValueError("experience_identity_mismatch")
+                return existing, False
+        path = Path(self.log_path).resolve(strict=False)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            attributes = getattr(path.lstat(), "st_file_attributes", 0)
+            if path.is_symlink() or attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                raise ValueError("unsafe_activity_memory_path")
+            existing_text = path.read_text(encoding="utf-8")
+        else:
+            existing_text = ""
+        temporary = path.with_name(f".{path.name}.tmp")
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            if existing_text:
+                handle.write(existing_text.rstrip("\r\n") + "\n")
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+            handle.flush(); os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        return record, True
+
+
+def _experience_unsigned(value: Mapping[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(dict(value)); result.pop("experience_fingerprint", None); return result
+
+
+def seal_runtime_activity_experience(value: Mapping[str, Any]) -> dict[str, Any]:
+    result = _experience_unsigned(value)
+    result["experience_fingerprint"] = _stable_hash(result)
+    return result
+
+
+def validate_runtime_activity_experience(value: Mapping[str, Any]) -> list[str]:
+    item = copy.deepcopy(dict(value)); reasons = []
+    if item.get("contract") != RUNTIME_ACTIVITY_EXPERIENCE_SCHEMA: reasons.append("invalid_activity_experience_contract")
+    if item.get("experience_fingerprint") != _stable_hash(_experience_unsigned(item)): reasons.append("activity_experience_fingerprint_mismatch")
+    for field in ("experience_id", "reflection_id", "task_text", "normalized_task", "outcome", "created_at"):
+        if not _text(item.get(field)): reasons.append(f"{field}_required")
+    for field in ("operation_types", "target_paths", "evidence_tokens", "matched_keywords", "success_factors", "failure_factors", "safety_constraints", "reusable_patterns", "avoid_patterns", "source_references"):
+        if not isinstance(item.get(field), list): reasons.append(f"{field}_required")
+    if not isinstance(item.get("reflection_index"), Mapping): reasons.append("reflection_index_required")
+    return sorted(set(reasons))
+
+
+def build_runtime_activity_experience(
+    reflection: Mapping[str, Any],
+    *,
+    entry: Mapping[str, Any] | None = None,
+    artifact: Mapping[str, Any] | None = None,
+    reflection_path: str | Path | None = None,
+) -> dict[str, Any]:
+    reflected = copy.deepcopy(dict(reflection)); entry_data = copy.deepcopy(dict(entry or {})); artifact_data = copy.deepcopy(dict(artifact or {}))
+    intents = artifact_data.get("structured_intents") or _mapping(entry_data.get("last_result")).get("structured_intents") or []
+    operations = sorted({_text(_mapping(intent).get("operation")) for intent in intents if _text(_mapping(intent).get("operation"))})
+    targets = sorted({_text(_mapping(intent).get("path")) for intent in intents if _text(_mapping(intent).get("path"))}) or list(reflected.get("committed_paths") or [])
+    identity = {"reflection_id": reflected.get("reflection_id"), "entry_id": reflected.get("entry_id"), "mission_id": reflected.get("mission_id")}
+    experience_id = "activity-experience-" + _stable_hash(identity)[:20]
+    tokens = sorted(_goal_tokens(" ".join([_text(reflected.get("normalized_input")), *operations, *targets])))[:80]
+    mutation = any(operation in {"create_file", "create_directory", "modify_file", "delete_file"} for operation in operations)
+    value = {"contract": RUNTIME_ACTIVITY_EXPERIENCE_SCHEMA, "experience_id": experience_id, "reflection_id": reflected.get("reflection_id"), "reflection_index": {"reflection_id": reflected.get("reflection_id"), "path": str(reflection_path) if reflection_path else None, "fingerprint": reflected.get("reflection_fingerprint")}, "task_text": reflected.get("original_input"), "normalized_task": reflected.get("normalized_input"), "goal": reflected.get("normalized_input"), "status": reflected.get("outcome"), "outcome": reflected.get("outcome"), "summary": reflected.get("summary"), "lessons": copy.deepcopy(reflected.get("lessons") or []), "operation_types": operations, "target_paths": targets, "changed_files": targets, "workspace_scope": entry_data.get("workspace_root"), "mutation_performed": mutation and reflected.get("outcome") == "completed", "read_only": not mutation, "goal_count": len(_mapping(artifact_data.get("graph_reference")).get("goal_order") or []), "completed_goal_count": 1 if reflected.get("outcome") == "completed" else 0, "failed_goal_count": 1 if reflected.get("outcome") == "failed" else 0, "blocked_goal_count": 1 if reflected.get("outcome") in {"blocked", "denied"} else 0, "evidence_tokens": list(reflected.get("key_evidence") or [])[:20], "matched_keywords": tokens, "success_factors": copy.deepcopy(reflected.get("reusable_patterns") or []), "failure_factors": copy.deepcopy(reflected.get("avoid_patterns") or []), "safety_constraints": ["controlled_execution", "path_containment", "operator_approval"], "approval_required": entry_data.get("approval_required"), "approval_outcome": reflected.get("approval_summary"), "validation_outcome": reflected.get("validation_summary"), "rollback_outcome": reflected.get("rollback_summary"), "attempt_metadata": {"attempt_count": entry_data.get("attempt_count"), "max_attempts": entry_data.get("max_attempts")}, "reusable_patterns": copy.deepcopy(reflected.get("reusable_patterns") or []), "avoid_patterns": copy.deepcopy(reflected.get("avoid_patterns") or []), "created_at": reflected.get("created_at"), "recorded_at": reflected.get("created_at"), "source_references": copy.deepcopy(reflected.get("source_artifact_references") or [])}
+    return seal_runtime_activity_experience(value)
+
 
 @dataclass(frozen=True)
 class RuntimeMemorySnapshot:
@@ -568,6 +667,7 @@ def build_runtime_memory_snapshot(
 
 
 __all__ = [
+    "RUNTIME_ACTIVITY_EXPERIENCE_SCHEMA",
     "RUNTIME_ACTIVITY_MEMORY_QUERY_SCHEMA",
     "RuntimeActivityExperience",
     "RuntimeActivityMemory",
@@ -575,5 +675,8 @@ __all__ = [
     "RuntimeMemoryView",
     "RuntimeStateView",
     "RuntimeTransactionView",
+    "build_runtime_activity_experience",
     "build_runtime_memory_snapshot",
+    "seal_runtime_activity_experience",
+    "validate_runtime_activity_experience",
 ]

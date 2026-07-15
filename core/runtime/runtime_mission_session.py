@@ -135,7 +135,8 @@ def _prepare(state: Mapping[str, Any], session_path: Any, *, now: Any = None) ->
     value = _save_transition(value, session_path, "scheduler_ready", now=now, scheduler_status=scheduler.get("scheduler_status"))
     from core.runtime.runtime_worker_service import create_worker_state, save_worker_state, load_worker_state
     value = _save_transition(value, session_path, "worker_ready", now=now, before=True); p = Path(value["worker_state_path"])
-    worker = load_worker_state(p) if p.exists() else save_worker_state(create_worker_state(scheduler_state_path=value["scheduler_state_path"], worker_state_path=p, worker_name=value["session_name"], target_root=value["target_root"], now=now), p)
+    worker_scheduler_path = mission.get("scheduler_state_path") or value["scheduler_state_path"]
+    worker = load_worker_state(p) if p.exists() else save_worker_state(create_worker_state(scheduler_state_path=worker_scheduler_path, worker_state_path=p, worker_name=value["session_name"], target_root=value["target_root"], now=now), p)
     value = _save_transition(value, session_path, "worker_ready", now=now, worker_status=worker.get("worker_status"))
     from core.runtime.runtime_event_bus import create_event_bus_state, save_event_bus_state, load_event_bus_state
     p = Path(value["event_bus_state_path"]); load_event_bus_state(p) if p.exists() else save_event_bus_state(create_event_bus_state(state_path=p, bus_name=value["session_name"], now=now), p)
@@ -171,6 +172,63 @@ def run_mission_session_iteration(session_state_path: Any, *, runtime_config: Ma
     evidence = {key: value[key] for key in PATH_FIELDS}; value["last_result"] = {"session_id": value["session_id"], "mission_id": value["mission_id"], "goal_id": value["goal_id"], "execution_id": value["execution_id"], "session_status": status, "mission_status": mission.get("mission_status"), "scheduler_status": daemon.get("last_scheduler_status"), "worker_status": None, "replanning_status": daemon.get("last_replanning_status"), "daemon_status": ds, "completed_phases": [value.get("last_completed_phase")], "resume_count": value["resume_count"], "recovery_count": value["recovery_count"], "started_at": value["started_at"], "completed_at": value["completed_at"], "failure": value.get("failure"), "evidence_paths": evidence}; value = save_mission_session_state(value, session_state_path)
     return _publish(value, topic, session_state_path, now=now)
 
+def converge_completed_mission_session(session_state_path: Any, *, now: Any = None) -> dict[str, Any]:
+    value = load_mission_session_state(session_state_path)
+    if value["session_status"] == "completed":
+        return value
+
+    from core.runtime.runtime_mission_model import load_mission
+    mission = load_mission(value["mission_state_path"], check_expiry=False)
+    if mission.get("mission_status") != "completed" or mission.get("failed_goal_ids") or mission.get("blocked_goal_ids"):
+        raise ValueError("mission_not_safely_completed")
+
+    value = run_mission_session_iteration(session_state_path, now=now)
+    if value.get("session_status") != "completed":
+        raise ValueError("mission_session_completion_failed")
+
+    sessions = {}
+    from core.runtime.runtime_operator_session import load_runtime_session
+    for goal_id in mission.get("goal_order") or []:
+        goal = _mapping(_mapping(mission.get("goals")).get(goal_id))
+        sessions[goal_id] = load_runtime_session(goal["session_path"], target_root=value["target_root"], now=now)
+
+    from core.runtime.runtime_goal_execution_registry import finalize_goal_execution_registry, load_goal_execution_registry, save_goal_execution_registry
+    registry = load_goal_execution_registry(value["execution_registry_state_path"])
+    registry = finalize_goal_execution_registry(registry, mission=mission, sessions=sessions, now=now)
+    save_goal_execution_registry(registry, value["execution_registry_state_path"])
+
+    from core.runtime.runtime_event_bus import load_event_bus_state, publish, save_event_bus_state
+    bus = load_event_bus_state(value["event_bus_state_path"])
+    for goal_id in mission.get("goal_order") or []:
+        session = sessions[goal_id]
+        tx = _mapping(_mapping(session.get("artifacts")).get("transaction_result"))
+        bus, _ = publish(bus, event_type="mission", topic="mission_execution.transaction_completed", source=value["session_id"], payload={"mission_id": mission["mission_id"], "goal_id": goal_id, "session_id": session.get("session_id"), "transaction_status": tx.get("transaction_status")}, idempotency_key=f"{mission['mission_id']}:{goal_id}:transaction_completed", correlation_id=mission["mission_id"], now=now)
+        bus, _ = publish(bus, event_type="mission", topic="mission_goal.completed", source=value["session_id"], payload={"mission_id": mission["mission_id"], "goal_id": goal_id, "session_id": session.get("session_id"), "goal_status": "completed"}, idempotency_key=f"{mission['mission_id']}:{goal_id}:completed", correlation_id=mission["mission_id"], now=now)
+    bus, _ = publish(bus, event_type="mission", topic="mission.completed", source=value["session_id"], payload={"mission_id": mission["mission_id"], "completed_goal_ids": deepcopy(mission.get("completed_goal_ids") or [])}, idempotency_key=f"{mission['mission_id']}:completed", correlation_id=mission["mission_id"], now=now)
+    save_event_bus_state(bus, value["event_bus_state_path"])
+
+    from core.runtime.runtime_mission_scheduler import load_mission_scheduler_state, request_mission_scheduler_action, run_mission_scheduler_iteration, save_mission_scheduler_state
+    scheduler = load_mission_scheduler_state(value["scheduler_state_path"])
+    scheduler = save_mission_scheduler_state(request_mission_scheduler_action(scheduler, "stop", now=now), value["scheduler_state_path"])
+    scheduler = run_mission_scheduler_iteration(scheduler_state_path=value["scheduler_state_path"], worker_state_path=value["worker_state_path"], worker_name=value["session_name"], target_root=value["target_root"], workspace_root=value["workspace_root"], runtime_config={"event_bus_state_path": value["event_bus_state_path"]}, now=now)
+
+    from core.runtime.runtime_worker_service import load_worker_state, request_worker_action, run_worker_iteration, save_worker_state
+    worker = load_worker_state(value["worker_state_path"])
+    worker = save_worker_state(request_worker_action(worker, "stop", now=now), value["worker_state_path"])
+    worker = run_worker_iteration(scheduler_state_path=worker["scheduler_state_path"], worker_state_path=value["worker_state_path"], worker_name=worker["worker_name"], target_root=value["target_root"], workspace_root=value["workspace_root"], now=now, runtime_config={"event_bus_state_path": value["event_bus_state_path"]})
+
+    from core.runtime.runtime_mission_daemon import load_mission_daemon_state, request_mission_daemon_action, run_mission_daemon_iteration, save_mission_daemon_state
+    daemon = load_mission_daemon_state(value["daemon_state_path"])
+    daemon = save_mission_daemon_state(request_mission_daemon_action(daemon, "stop", now=now), value["daemon_state_path"])
+    daemon = run_mission_daemon_iteration(daemon_state_path=value["daemon_state_path"], runtime_config={"event_bus_state_path": value["event_bus_state_path"], "replanning_engine_state_path": value["replanning_engine_state_path"]}, now=now)
+
+    checkpoint = _mapping(value.get("session_checkpoint"))
+    checkpoint.update(mission_status="completed", execution_status="completed", scheduler_status=scheduler.get("scheduler_status"), worker_status=worker.get("worker_status"), daemon_status=daemon.get("daemon_status"), resume_required=False, resume_reason=None)
+    evidence_paths = {key: value[key] for key in PATH_FIELDS}
+    value.update(session_status="completed", current_phase="runtime_completed", last_completed_phase="runtime_completed", next_phase=None, execution_status="completed", completed_at=value.get("completed_at") or time_text(now), failure=None, resume_required=False, stop_requested=False, status="completed", mutation_performed=False, replayed=False, session_checkpoint=checkpoint)
+    value["last_result"] = {"session_id": value["session_id"], "mission_id": value["mission_id"], "goal_id": value["goal_id"], "execution_id": value["execution_id"], "status": "completed", "session_status": "completed", "mission_status": "completed", "execution_status": "completed", "scheduler_status": scheduler.get("scheduler_status"), "worker_status": worker.get("worker_status"), "daemon_status": daemon.get("daemon_status"), "completed_goal_ids": deepcopy(mission.get("completed_goal_ids") or []), "completed_phases": ["runtime_completed"], "resume_count": value["resume_count"], "recovery_count": value["recovery_count"], "started_at": value["started_at"], "completed_at": value["completed_at"], "failure": None, "mutation_performed": False, "replayed": False, "evidence_paths": evidence_paths}
+    return save_mission_session_state(value, session_state_path)
+
 def run_mission_session(session_state_path: Any, *, max_iterations: int = 1, runtime_config: Mapping[str, Any] | None = None, now: Any = None) -> dict[str, Any]:
     if isinstance(max_iterations, bool) or max_iterations < 1: raise ValueError("invalid_mission_session_max_iterations")
     value = load_mission_session_state(session_state_path)
@@ -204,4 +262,4 @@ def mission_session_health(state_or_path: Any, *, now: Any = None, stale_after_s
     if value["session_status"] == "failed": reasons.append("failed_recovery")
     return {"healthy": not reasons, "status": value["session_status"], "session_id": value["session_id"], "current_phase": value["current_phase"], "resume_required": bool(_mapping(value.get("session_checkpoint")).get("resume_required")), "reasons": reasons}
 
-__all__ = ["create_mission_session_state", "load_mission_session_state", "mission_session_health", "normalize_mission_session_state", "resume_mission_session", "run_mission_session", "run_mission_session_iteration", "save_mission_session_state", "seal_mission_session_state", "validate_mission_session_state"]
+__all__ = ["converge_completed_mission_session", "create_mission_session_state", "load_mission_session_state", "mission_session_health", "normalize_mission_session_state", "resume_mission_session", "run_mission_session", "run_mission_session_iteration", "save_mission_session_state", "seal_mission_session_state", "validate_mission_session_state"]

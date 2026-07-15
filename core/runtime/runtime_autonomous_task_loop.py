@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Callable, Mapping
 
+from core.runtime.task_runtime import project_runtime_status
+
 
 RUNTIME_AUTONOMOUS_TASK_LOOP_SCHEMA = "zero.runtime.autonomous_task_loop.v1"
 
@@ -130,17 +132,17 @@ class RuntimeAutonomousTaskLoop:
                 "queue": self.queue.snapshot(),
             }
 
-        task["status"] = "running"
+        project_runtime_status(task, "running")
         task["attempts"] = int(task.get("attempts") or 0) + 1
 
         result = _mapping(self.runner(_text(task.get("goal"))))
         task["last_result"] = result
 
         if _result_ok(result):
-            task["status"] = "completed"
+            project_runtime_status(task, "completed")
             task["completed"] = True
         else:
-            task["status"] = "failed"
+            project_runtime_status(task, "failed")
             task["completed"] = False
             task["denial_reason"] = _text(result.get("denial_reason"))
 

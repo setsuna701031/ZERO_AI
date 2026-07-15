@@ -620,6 +620,65 @@ def mark_registry_entry_consumed(
     return seal_goal_execution_registry(value)
 
 
+def finalize_goal_execution_registry(
+    registry: Mapping[str, Any],
+    *,
+    mission: Mapping[str, Any],
+    sessions: Mapping[str, Mapping[str, Any]],
+    now: Any = None,
+) -> dict[str, Any]:
+    value = _mapping(registry)
+    reasons = validate_goal_execution_registry(value)
+    if reasons:
+        raise ValueError(";".join(reasons))
+    if mission.get("mission_status") != "completed":
+        raise ValueError("mission_not_completed")
+
+    records = _mapping(value.get("completion_records"))
+    entries = _mapping(value.get("entries"))
+    for goal_id in mission.get("goal_order") or []:
+        goal = _mapping(_mapping(mission.get("goals")).get(goal_id))
+        if goal.get("goal_status") != "completed":
+            raise ValueError("goal_not_completed")
+        session = _mapping(sessions.get(goal_id))
+        tx = _mapping(_mapping(session.get("artifacts")).get("transaction_result"))
+        evidence = _mapping(_mapping(session.get("artifacts")).get("final_evidence"))
+        identity = {"registry_id": value["registry_id"], "mission_id": mission.get("mission_id"), "goal_id": goal_id, "session_id": session.get("session_id")}
+        record_id = f"goal-execution-completion-{fingerprint(identity)[:20]}"
+        record = {
+            "record_id": record_id,
+            "mission_id": mission.get("mission_id"),
+            "goal_id": goal_id,
+            "session_id": session.get("session_id"),
+            "execution_status": "completed",
+            "transaction_status": tx.get("transaction_status"),
+            "transaction_fingerprint": _mapping(session.get("artifact_fingerprints")).get("transaction_result"),
+            "evidence_fingerprint": evidence.get("final_evidence_fingerprint"),
+            "completed_at": goal.get("completed_at") or time_text(now),
+        }
+        record["record_fingerprint"] = fingerprint(record)
+        existing = _mapping(records.get(record_id))
+        if existing and existing != record:
+            raise ValueError("goal_completion_record_mismatch")
+        records[record_id] = record
+        for entry_id, entry in list(entries.items()):
+            item = _mapping(entry)
+            if item.get("session_id") == session.get("session_id") and item.get("entry_status") == "registered":
+                item["entry_status"] = "consumed"
+                item["consumed_at"] = time_text(now)
+                item["execution_result_fingerprint"] = record["record_fingerprint"]
+                entries[entry_id] = seal_registry_entry(item)
+
+    value["entries"] = entries
+    value["completion_records"] = records
+    value["completion_record_order"] = sorted(records)
+    value["completion_count"] = len(records)
+    value["registry_status"] = "closed"
+    value["closed_at"] = value.get("closed_at") or time_text(now)
+    value["updated_at"] = time_text(now)
+    return seal_goal_execution_registry(value)
+
+
 def save_goal_execution_registry(
     registry: Mapping[str, Any],
     path: Any,
@@ -696,6 +755,7 @@ __all__ = [
     "ENTRY_CONTRACT",
     "SUPPORTED_GOAL_TYPES",
     "create_goal_execution_registry",
+    "finalize_goal_execution_registry",
     "load_goal_execution_registry",
     "mark_registry_entry_consumed",
     "pending_goal_execution_requests",

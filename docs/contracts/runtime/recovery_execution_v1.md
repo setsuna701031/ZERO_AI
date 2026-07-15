@@ -2,7 +2,10 @@
 
 ## Purpose
 
-Package 257 defines the first Runtime Recovery Execution Contract v1.
+Package 257: Runtime Recovery Execution Contract v1
+
+Contract/documentation only. No runtime behavior. No gateway behavior changes.
+No new public APIs. No imports or runtime wiring.
 
 This package is contract-only. It defines public contract names, public data shapes, ownership boundaries, lifecycle, failure taxonomy, compatibility policy, dependency graph, and future implementation ownership.
 

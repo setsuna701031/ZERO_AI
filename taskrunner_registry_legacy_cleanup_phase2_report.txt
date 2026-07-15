@@ -1,0 +1,25 @@
+TaskRunner Registry Legacy Cleanup Phase2 Report
+
+Purpose
+Record phase-two deterministic cleanup results.
+
+Scope
+core/runtime/task_runner.py
+
+Removed standalone candidate calls
+Count: 0.
+
+Skipped non-standalone candidate calls
+Specialized governed paths only.
+
+Remaining direct registry calls
+Canonical helper calls only.
+
+Preserved specialized paths
+repair, rollback, and evidence paths.
+
+Validation
+Bounded AST scan.
+
+Non-mainline issue reporting
+Non-mainline Issues Found: none.

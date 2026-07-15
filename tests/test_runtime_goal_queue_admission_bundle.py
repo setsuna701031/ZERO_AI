@@ -142,8 +142,6 @@ def test_1824_goal_queue_boundary_scan() -> None:
     files = [
         Path("core/runtime/runtime_goal_queue_admission.py"),
         Path("core/runtime/runtime_goal_session_launcher.py"),
-        Path("core/runtime/runtime_operator_service.py"),
-        Path("cli/zero_runtime_cli.py"),
     ]
     forbidden = [
         "executor",

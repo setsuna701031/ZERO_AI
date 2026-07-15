@@ -87,7 +87,8 @@ def test_readiness_review_forbids_runtime_behavior() -> None:
 
 def test_package_sequence_extends_239_through_242_only() -> None:
     text = SEQUENCE.read_text(encoding="utf-8")
-    section = text[text.index("## Package 239") :]
+    start = text.index("## Package 239")
+    section = text[start:text.index("## Package 243", start)]
 
     for package_id, title in PACKAGE_TITLES.items():
         assert f"## Package {package_id}" in section

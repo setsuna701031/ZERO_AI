@@ -144,14 +144,14 @@ def resume_runtime_session(session: Mapping[str, Any], *, operator_input: Any = 
             elif status == "blocked": value = _block(value, list(result.get("reasons") or [status]), now=now)
             else:
                 value = transition(value, "completed", phase="transaction_completed" if status == "committed" else "transaction_rolled_back", now=now); value["completed"] = True
-                evidence = _final_evidence(value); value = set_artifact(value, "final_evidence", evidence); value["required_action"] = "none"; value["required_input_contract"] = None; value["pause_reason"] = None
+                evidence = build_runtime_session_final_evidence(value); value = set_artifact(value, "final_evidence", evidence); value["required_action"] = "none"; value["required_input_contract"] = None; value["pause_reason"] = None
         else: raise ValueError("unsupported_required_action")
     finally:
         value.setdefault("processed_input_ids", []).append(envelope["input_id"])
         value.setdefault("operator_actions", []).append({"input_id": envelope["input_id"], "input_type": envelope["input_type"], "operator_id": operator, "submitted_at": envelope.get("submitted_at")})
     return seal_session(value)
 
-def _final_evidence(session: Mapping[str, Any]) -> dict[str, Any]:
+def build_runtime_session_final_evidence(session: Mapping[str, Any]) -> dict[str, Any]:
     artifacts = session.get("artifacts", {}); tx = artifacts.get("transaction_result") or {}
     value = {"contract": "zero.runtime.operator_session_final_evidence.v1", "session_id": session.get("session_id"), "task_id": session.get("task_id"),
         "natural_task_fingerprint": fingerprint(session.get("natural_task")), "identity_chain": deepcopy(session.get("identity_chain")),
@@ -167,4 +167,4 @@ def cancel_runtime_session(session: Mapping[str, Any], *, operator_id: str, now:
     value = transition(session, "cancelled", phase="cancelled", now=now); value["required_action"] = "none"; value["required_input_contract"] = None
     return seal_session(value)
 
-__all__ = ["cancel_runtime_session", "create_runtime_session", "load_runtime_session", "resume_runtime_session", "save_runtime_session"]
+__all__ = ["build_runtime_session_final_evidence", "cancel_runtime_session", "create_runtime_session", "load_runtime_session", "resume_runtime_session", "save_runtime_session"]

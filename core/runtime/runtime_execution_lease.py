@@ -85,7 +85,7 @@ class RuntimeExecutionLease:
     granted: bool = False
     trace_id: str = ""
     status: str = "lease_not_granted"
-    reason: str = ""
+    reason: str = "execution_not_granted"
     owner: Any = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -480,21 +480,6 @@ def build_runtime_execution_lease_milestone_seal(
     }
 
 
-__all__ = [
-    "RUNTIME_EXECUTION_LEASE_SCHEMA",
-    "AUTHORIZED_LEASE_DECISION",
-    "LEASE_STATUSES",
-    "REQUIRED_EXECUTION_LEASE_FIELDS",
-    "LEASE_BOUNDARY_LOCKS",
-    "REQUIRED_BLOCKERS",
-    "RuntimeExecutionLease",
-    "build_runtime_execution_lease_request",
-    "validate_runtime_execution_lease_request",
-    "build_runtime_execution_lease_record",
-    "expire_runtime_execution_lease",
-    "revoke_runtime_execution_lease",
-    "can_runtime_execution_lease_authorize_execution",
-    "build_runtime_execution_lease_heartbeat_projection",
-    "build_runtime_execution_lease_audit_record",
-    "build_runtime_execution_lease_milestone_seal",
-]
+# Preserve the original public import contract.  The package-level helpers are
+# intentionally available by explicit import without broadening wildcard API.
+__all__ = ["RuntimeExecutionLease"]

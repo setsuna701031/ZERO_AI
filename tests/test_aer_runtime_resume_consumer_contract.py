@@ -3,7 +3,7 @@ from pathlib import Path
 
 CONTRACT = Path("docs/contracts/runtime/resume_consumer_v1.md")
 RESUME_PLAN_MODULE = Path("core/runtime/aer_runtime_resume_plan.py")
-PACKAGE_SEQUENCE = Path("docs/aer_evolution_v2_package_sequence.md")
+PACKAGE_SEQUENCE = Path("docs/aer_evolution_v2_package_sequence_package128.md")
 
 
 def _text(path: Path) -> str:

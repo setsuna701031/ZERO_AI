@@ -1,0 +1,22 @@
+TaskRunner Registry Legacy Cleanup Phase1 Report
+
+Purpose
+Record phase-one compatibility guard closure.
+
+Scope
+core/runtime/task_runner.py
+
+Cleanup Guard
+_zero_taskrunner_registry_legacy_cleanup_guard_v28
+
+Remaining direct registry calls
+No removable standalone calls.
+
+Preserved specialized paths
+repair, rollback, and evidence paths.
+
+Validation
+Bounded AST scan.
+
+Non-mainline issue reporting
+Non-mainline Issues Found: none.

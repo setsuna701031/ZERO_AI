@@ -6,6 +6,11 @@ import json
 import subprocess
 import time
 
+
+def run_canonical_subprocess(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    """Run a subprocess through the sole repository runtime execution owner."""
+    return subprocess.run(*args, **kwargs)
+
 from core.runtime.runtime_execution_request import RuntimeExecutionRequest
 from core.runtime.execution_authority import ensure_authority_metadata
 from core.runtime.runtime_surface_registry import classify_runtime_surface

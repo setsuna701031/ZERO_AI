@@ -72,10 +72,23 @@ def _project_goal(goal: dict[str,Any], session: Mapping[str,Any], now: Any) -> N
     elif status in {"created","running","transaction_running"}: projected="running"
     elif status=="completed":
         tx=_mapping(_mapping(session.get("artifacts")).get("transaction_result")); transaction=tx.get("transaction_status")
-        projected="completed" if transaction=="committed" else "failed"
         validation_status=tx.get("validation_status") or ("passed" if tx.get("validation_passed") is True else "failed" if tx.get("validation_passed") is False else "not_run")
         rollback_status=tx.get("rollback_status") or ("verified" if tx.get("rollback_verified") is True else "failed" if tx.get("rollback_executed") and tx.get("rollback_verified") is False else "not_required")
+        evidence=_mapping(_mapping(session.get("artifacts")).get("final_evidence"))
+        evidence_claim=evidence.get("final_evidence_fingerprint")
+        evidence_unsigned=deepcopy(evidence); evidence_unsigned.pop("final_evidence_fingerprint",None)
+        evidence_valid=bool(evidence) and evidence.get("contract")=="zero.runtime.operator_session_final_evidence.v1" and evidence.get("session_id")==session.get("session_id") and evidence_claim==fingerprint(evidence_unsigned)
+        validation_ok=validation_status in {"passed","not_required"}
+        rollback_ok=rollback_status not in {"failed","rollback_failed"} and not (tx.get("rollback_executed") is True and tx.get("rollback_verified") is False)
+        projected="completed" if transaction=="committed" and validation_ok and rollback_ok and evidence_valid else "failed"
         goal["result_summary"]={"transaction_status":transaction,"validation_status":validation_status,"validation_evidence":deepcopy(tx.get("validation_result") or {}),"rollback_status":rollback_status,"rollback_evidence":deepcopy(tx.get("rollback_result") or {}),"committed_paths":deepcopy(tx.get("committed_paths") or tx.get("changed_files") or []),"rolled_back_paths":deepcopy(tx.get("rolled_back_paths") or [])}
+        if projected=="failed":
+            reasons=[]
+            if transaction!="committed": reasons.append(f"transaction_{transaction or 'missing'}")
+            if not validation_ok: reasons.append(f"validation_{validation_status}")
+            if not rollback_ok: reasons.append(f"rollback_{rollback_status}")
+            if not evidence_valid: reasons.append("completion_evidence_invalid")
+            goal["failure"]={"reasons":reasons}
     elif status=="blocked": projected="blocked"
     elif status in {"failed","expired"}: projected="failed"
     elif status=="cancelled": projected="cancelled"
@@ -83,7 +96,7 @@ def _project_goal(goal: dict[str,Any], session: Mapping[str,Any], now: Any) -> N
     old=goal.get("goal_status"); goal["goal_status"]=projected; goal["updated_at"]=at
     if projected=="running" and not goal.get("started_at"): goal["started_at"]=at
     if projected in {"completed","failed","blocked","cancelled"} and old not in {"completed","failed","blocked","cancelled"}: goal["completed_at"]=at
-    if projected in {"failed","blocked"}: goal["failure"]=_mapping(session.get("failure")) or {"reasons":[f"session_{status}"]}
+    if projected in {"failed","blocked"} and not goal.get("failure"): goal["failure"]=_mapping(session.get("failure")) or {"reasons":[f"session_{status}"]}
 
 def _rebuild_lists(value: dict[str,Any]) -> None:
     mapping={"ready":"ready_goal_ids","running":"running_goal_ids","waiting_for_operator":"waiting_goal_ids","completed":"completed_goal_ids","failed":"failed_goal_ids","blocked":"blocked_goal_ids","cancelled":"cancelled_goal_ids"}

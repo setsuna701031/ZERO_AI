@@ -726,43 +726,11 @@ class RuntimeOperatorService:
             or "runtime closure" in goal_phrase
             or "executor runtime closure" in goal_phrase
         )
-        executor_invoked_active = (
-            invocation_output_active
-            or (
-                executor_adapter_binding.get("executor_invoked") is True
-                if "executor_adapter_binding" in locals()
-                else False
-            )
-            or (
-                executor_invocation_record.get("executor_invocation_recorded") is True
-                if "executor_invocation_record" in locals()
-                else False
-            )
-            or (
-                executor_invocation_gate.get("executor_invocation_gate_open") is True
-                if "executor_invocation_gate" in locals()
-                else False
-            )
-        )
-        execution_started_active = (
-            executor_invoked_active
-            or (
-                executor_envelope.get("execution_started") is True
-                if "executor_envelope" in locals()
-                else False
-            )
-            or (
-                runtime_execution_result_capture.get("execution_completed") is True
-                if "runtime_execution_result_capture" in locals()
-                else False
-            )
-            or (
-                runtime_executor_closure.get("runtime_executor_closure_status")
-                == "dry_run_runtime_closed"
-                if "runtime_executor_closure" in locals()
-                else False
-            )
-        )
+        # Binding, attachment, gate, and dry-run records are metadata-only.
+        # They must not be projected as a live executor invocation.  Only the
+        # explicitly named later invocation/closure packages cross this flag.
+        executor_invoked_active = invocation_output_active
+        execution_started_active = invocation_output_active
         mutation_success_active = (
             "controlled_mutation_unlock" in locals()
             and controlled_mutation_unlock.get("controlled_mutation") is True

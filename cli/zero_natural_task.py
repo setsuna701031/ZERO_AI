@@ -145,7 +145,7 @@ def _run_natural_task_once(
     task_completed = _operator_mutation_succeeded(
         persisted_operator_result
     )
-    ok = (
+    pipeline_ready = (
         package_generated
         and operator_console_available
         and Path(result_path).exists()
@@ -154,7 +154,10 @@ def _run_natural_task_once(
 
     result = {
         "schema": ZERO_NATURAL_TASK_SCHEMA,
-        "ok": ok,
+        # A blocked/denied operator result is recorded successfully, but it is
+        # not a successful task execution.
+        "ok": task_completed,
+        "pipeline_ready": pipeline_ready,
         "task_completed": task_completed,
         "natural_task": task,
         "intake_id": materialized.get("intake_id") or "",

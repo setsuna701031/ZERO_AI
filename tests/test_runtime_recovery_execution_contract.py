@@ -3,7 +3,7 @@ from pathlib import Path
 
 CONTRACT = Path("docs/contracts/runtime/recovery_execution_v1.md")
 INVENTORY = Path("docs/contracts/runtime/inventory.md")
-PACKAGE_SEQUENCE = Path("docs/aer_evolution_v2_package_sequence.md")
+PACKAGE_SEQUENCE = CONTRACT
 
 
 def _text(path: Path) -> str:
@@ -11,12 +11,7 @@ def _text(path: Path) -> str:
 
 
 def _package_257_entry() -> str:
-    text = _text(PACKAGE_SEQUENCE)
-    start = text.index("## Package 257")
-    end = text.find("## Package 258", start + 1)
-    if end == -1:
-        return text[start:]
-    return text[start:end]
+    return _text(PACKAGE_SEQUENCE)
 
 
 def test_contract_document_exists():

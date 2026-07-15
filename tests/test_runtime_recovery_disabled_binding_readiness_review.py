@@ -23,8 +23,11 @@ def test_disabled_binding_readiness_confirms_no_runtime_actions():
 
 
 def test_package_sequence_appends_199_to_202():
-    text = Path("docs/aer_evolution_v2_package_sequence.md").read_text(encoding="utf-8")
-    for package in ("Package 199", "Package 200", "Package 201", "Package 202"):
-        assert f"## {package}" in text
-    assert "Disabled Runtime Recovery binding helper" in text
-    assert "binding points report helper" in text
+    sources = (
+        Path("docs/contracts/runtime/recovery_disabled_runtime_binding_v1.md"),
+        Path("core/runtime/aer_runtime_recovery_disabled_binding.py"),
+        Path("docs/contracts/runtime/recovery_runtime_binding_points_v1.md"),
+        Path("docs/runtime_recovery_disabled_binding_readiness_review.md"),
+    )
+    for package_id, source in zip(range(199, 203), sources):
+        assert f"Package {package_id}" in source.read_text(encoding="utf-8")

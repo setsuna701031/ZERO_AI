@@ -87,7 +87,9 @@ def _target_name(node: ast.AST) -> str:
 def _is_runtime_status_target(target: ast.Subscript) -> bool:
     name = _target_name(target)
     if not name:
-        return True
+        # Nested domain records (for example replanning_history[-1]["status"])
+        # are not canonical Runtime lifecycle projections.
+        return False
     if name.endswith(ALLOWED_NON_RUNTIME_STATUS_SUFFIXES):
         return False
     return name in {

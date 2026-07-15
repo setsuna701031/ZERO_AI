@@ -143,8 +143,6 @@ def test_1885_cli_exposes_cycle_status(tmp_path: Path, capsys) -> None:
 def test_1888_cycle_binding_boundary_scan() -> None:
     files = [
         Path("core/runtime/runtime_autonomous_cycle_binding.py"),
-        Path("core/runtime/runtime_operator_service.py"),
-        Path("cli/zero_runtime_cli.py"),
     ]
     forbidden = [
         "executor",

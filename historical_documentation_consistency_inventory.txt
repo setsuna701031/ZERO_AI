@@ -1,0 +1,96 @@
+ZERO Runtime Repository Historical Documentation Consistency Inventory
+Date: 2026-07-15
+Scope: repository-governance and historical-documentation assertions only
+Inventory status: fixed before validation; do not derive closure from pytest cache
+
+Canonical source decisions
+
+1. Packages 127-128
+   Canonical source: docs/aer_evolution_v2_package_sequence_package128.md
+   Reason: dedicated frozen Package 128 sequence supersedes monolithic-sequence references for the sealed Resume Plan / Resume Consumer history.
+   Repair: updated the stale sequence-only consumer-contract test reference to this dedicated source.
+
+2. Packages 183-186
+   Canonical source: docs/runtime_recovery_preflight_readiness_review.md
+   Historical sequence cross-check: docs/aer_evolution_v2_package_sequence.md
+   Frozen decision: Package 186 is Runtime Recovery Preflight Readiness Review; next package is Package 187.
+
+3. Packages 195-198
+   Canonical sources:
+   - docs/runtime_recovery_architecture_milestone_review.md
+   - docs/runtime_recovery_gap_closure_inventory.md
+   - docs/runtime_recovery_integration_entry_decision.md
+   - docs/runtime_recovery_milestone_readiness_seal.md
+   Reason: dedicated frozen documents supersede the stale monolithic sequence assertion.
+   Repair: removed the now-unused monolithic sequence alias from the readiness-seal test.
+
+4. Packages 199-202
+   Canonical sources:
+   - docs/contracts/runtime/recovery_disabled_runtime_binding_v1.md
+   - core/runtime/aer_runtime_recovery_disabled_binding.py (Package 200 historical module declaration only)
+   - docs/contracts/runtime/recovery_runtime_binding_points_v1.md
+   - docs/runtime_recovery_disabled_binding_readiness_review.md
+
+5. Packages 231-250
+   Canonical source for 231-238: docs/runtime_recovery_disabled_controlled_wiring_implementation_plan.md
+   Canonical sources for readiness decisions:
+   - docs/runtime_recovery_canonical_surface_readiness_review.md
+   - docs/runtime_recovery_canonical_request_readiness_review.md
+   - docs/runtime_recovery_canonical_response_readiness_review.md
+   Historical package-range cross-check: bounded sections of docs/aer_evolution_v2_package_sequence.md
+
+6. Package 257
+   Canonical source: docs/contracts/runtime/recovery_execution_v1.md
+   Frozen wording: "Contract/documentation only"; final decision GO; next package Package 258.
+
+Fixed historical-documentation-only node inventory (12 nodes)
+
+tests/test_aer_runtime_resume_plan.py::test_package_sequence_contains_package_127_entry
+tests/test_aer_runtime_resume_consumer_contract.py::test_package_sequence_contains_package_128_consumer_contract_entry
+tests/test_aer_runtime_resume_consumer_contract.py::test_package_sequence_updates_resume_roadmap_to_integration_blueprint_next
+tests/test_runtime_recovery_preflight_readiness_review.py::test_preflight_readiness_review_go_next_package
+tests/test_runtime_recovery_preflight_readiness_review.py::test_package_sequence_appends_183_to_186
+tests/test_runtime_recovery_milestone_readiness_seal.py::test_package_sequence_appended_for_195_through_198
+tests/test_runtime_recovery_disabled_binding_readiness_review.py::test_package_sequence_appends_199_to_202
+tests/test_runtime_recovery_disabled_controlled_wiring_implementation_plan.py::test_package_238_points_to_239_and_non_mainline_reporting_is_explicit
+tests/test_runtime_recovery_canonical_surface_readiness_review.py::test_package_sequence_extends_239_through_242_only
+tests/test_runtime_recovery_canonical_request_readiness_review.py::test_package_sequence_extends_243_through_246_only
+tests/test_runtime_recovery_canonical_response_readiness_review.py::test_package_sequence_extends_247_through_250_only
+tests/test_runtime_recovery_execution_contract.py::test_package_257_sequence_entry_exists
+
+Explicitly excluded candidates
+
+- tests/test_aer_runtime_resume_contract.py::test_package_126_added_no_runtime_resume_implementation_module
+  Excluded: mixed Runtime implementation-absence contract plus historical assertions; not documentation-only.
+- tests/test_aer_runtime_resume_consumer_contract.py::test_existing_resume_plan_module_still_has_package_127_public_surface_only
+  Excluded: public Runtime API surface contract.
+- tests/test_aer_runtime_resume_consumer_contract.py::test_package_sequence_package_128_must_not_list_is_complete
+  Excluded: record-only/execution boundary semantics, not naming/sequence consistency alone.
+- tests/test_runtime_recovery_preflight_readiness_review.py::test_preflight_readiness_review_preserves_non_execution_boundaries
+  Excluded: Recovery execution and runtime-mutation behavior contract.
+- tests/test_runtime_recovery_execution_contract.py tests other than the fixed Package 257 historical node
+  Excluded: Recovery execution/public API/ownership behavior contracts.
+- recovery activation, executor, scheduler, mutation, approval, authorization, lease, registry, status, subprocess, ABI, and RC-freeze tests
+  Excluded: Runtime behavior or release contracts.
+
+Append-only/frozen constraints
+
+- Do not delete, reorder, or backfill monolithic package history.
+- Do not alter Package 127/128 or Package 186/187 frozen decisions.
+- Do not introduce Runtime behavior or capabilities.
+
+Closure validation
+
+- Fixed inventory: 12 historical-documentation-only nodes.
+- Initial inventory run: 12 passed in 0.58s.
+- Direct stale Package 128 source repair: 3 adjacent nodes passed in 0.39s.
+- Direct Package 195-198 cleanup: 1 node passed in 0.28s.
+- Final fixed inventory run: 12 passed in 0.45s.
+- Bounded py_compile: PASS.
+- git diff --check: PASS.
+- Bounded stale-source and frozen-wording scans: PASS.
+- Full repository regression: NOT RUN.
+
+Final decision
+
+GO for user-local full repository regression revalidation

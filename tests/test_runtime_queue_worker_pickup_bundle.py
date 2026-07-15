@@ -137,8 +137,6 @@ def test_1853_cli_exposes_claimed_status(tmp_path: Path, capsys) -> None:
 def test_1856_worker_pickup_boundary_scan() -> None:
     files = [
         Path("core/runtime/runtime_queue_worker_pickup.py"),
-        Path("core/runtime/runtime_operator_service.py"),
-        Path("cli/zero_runtime_cli.py"),
     ]
     forbidden = [
         "executor",

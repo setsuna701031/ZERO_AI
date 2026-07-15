@@ -12,6 +12,7 @@ from core.runtime.runtime_operator_failure_evidence import write_operator_failur
 from core.runtime.runtime_operator_resume_evidence import write_operator_resume_evidence
 from core.runtime.runtime_operator_service import RuntimeOperatorService
 from core.runtime.runtime_journal import RuntimeJournal
+from core.runtime.runtime_governed_mutation_io import governed_put_text
 from cli.zero_controlled_execution import run_controlled_execution_cli
 from cli.zero_active_execution_authorization import run_active_execution_authorization_cli
 from cli.zero_transactional_execution import run_transactional_execution_cli
@@ -656,7 +657,7 @@ def _apply_console_filesystem_mutation(
         snapshot_path.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
         content = target.read_text(encoding="utf-8") if existed else ""
-        snapshot_path.write_text(content, encoding="utf-8")
+        governed_put_text(snapshot_path, content)
         record = {
             "path": relative,
             "target_path": str(target),
@@ -672,7 +673,7 @@ def _apply_console_filesystem_mutation(
             snapshot = Path(str(record["snapshot_path"]))
             target.parent.mkdir(parents=True, exist_ok=True)
             if record.get("existed_before") is True:
-                target.write_text(snapshot.read_text(encoding="utf-8"), encoding="utf-8")
+                governed_put_text(target, snapshot.read_text(encoding="utf-8"))
             elif target.exists():
                 target.unlink()
             rollback_restored_paths.append(str(record.get("path") or ""))
@@ -715,9 +716,9 @@ def _apply_console_filesystem_mutation(
                     existing = target.read_text(encoding="utf-8")
                 if existing and not existing.endswith("\n"):
                     existing = existing + "\n"
-                target.write_text(existing + text_content, encoding="utf-8")
+                governed_put_text(target, existing + text_content)
             else:
-                target.write_text(text_content, encoding="utf-8")
+                governed_put_text(target, text_content)
 
             changed_files.append(relative)
 
@@ -750,9 +751,9 @@ def _apply_console_filesystem_mutation(
         "non_mainline_issues": issues,
     }
     rollback_evidence_path = rollback_root / "rollback_evidence.json"
-    rollback_evidence_path.write_text(
+    governed_put_text(
+        rollback_evidence_path,
         json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
     )
 
     return {

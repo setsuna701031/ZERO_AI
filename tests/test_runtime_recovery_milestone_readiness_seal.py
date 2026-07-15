@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "runtime_recovery_milestone_readiness_seal.md"
-SEQUENCE = Path(__file__).resolve().parents[1] / "docs" / "aer_evolution_v2_package_sequence.md"
 
 
 def _text() -> str:
@@ -33,7 +32,12 @@ def test_milestone_readiness_seal_names_next_package() -> None:
 
 
 def test_package_sequence_appended_for_195_through_198() -> None:
-    text = SEQUENCE.read_text(encoding="utf-8")
-    for package in ["Package 195", "Package 196", "Package 197", "Package 198"]:
-        assert package in text
-    assert "Runtime Recovery Milestone Readiness Seal" in text
+    frozen_sources = {
+        "Package 195": "docs/runtime_recovery_architecture_milestone_review.md",
+        "Package 196": "docs/runtime_recovery_gap_closure_inventory.md",
+        "Package 197": "docs/runtime_recovery_integration_entry_decision.md",
+        "Package 198": "docs/runtime_recovery_milestone_readiness_seal.md",
+    }
+    for package, source in frozen_sources.items():
+        assert package in Path(source).read_text(encoding="utf-8")
+    assert "Runtime Recovery Milestone Readiness Seal" in _text()

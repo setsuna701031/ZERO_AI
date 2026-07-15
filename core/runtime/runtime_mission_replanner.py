@@ -13,7 +13,7 @@ OUTPUT_CONTRACT="zero.runtime.mission_replanner_output.v1"
 FORBIDDEN={"candidate_content","patch_text","diff","shell_command","command","argv","script","callable","executable_payload"}
 def _mapping(v:Any)->dict[str,Any]:return deepcopy(dict(v)) if isinstance(v,Mapping) else {}
 
-def create_replanning_request(mission:Mapping[str,Any],*,operator_instruction:str="",allowed_revision_scope:list[str]|None=None,memory_evidence:Any=None,now:Any=None)->dict[str,Any]:
+def create_replanning_request(mission:Mapping[str,Any],*,operator_instruction:str="",allowed_revision_scope:list[str]|None=None,memory_evidence:Any=None,planning_feedback_context:Mapping[str,Any]|None=None,now:Any=None)->dict[str,Any]:
     value=_mapping(mission);status=value.get("mission_status")
     if status in {"completed","cancelled","expired"}:raise ValueError("mission_not_replannable")
     critical=[g for g in value.get("goals",{}).values() if _mapping(g.get("failure")).get("critical")]
@@ -25,6 +25,8 @@ def create_replanning_request(mission:Mapping[str,Any],*,operator_instruction:st
     memory=[{"reference":m.get("reference"),"fingerprint":m.get("fingerprint")or fingerprint(m),"similarity":m.get("similarity"),"summary":str(m.get("summary")or"")[:500]} for m in map(_mapping,list(memory_evidence or [])[:20])]
     seed={"mission":value.get("mission_id"),"fingerprint":value.get("mission_fingerprint"),"revision":revision,"at":at,"instruction":operator_instruction}
     result={"contract":REQUEST_CONTRACT,"replanning_request_id":f"replanning-request-{fingerprint(seed)[:20]}","mission_id":value.get("mission_id"),"current_mission_fingerprint":value.get("mission_fingerprint"),"current_graph_fingerprint":_mapping(value.get("goal_graph")).get("graph_fingerprint"),"failed_goal_ids":failed,"blocked_goal_ids":blocked,"completed_goal_ids":list(value.get("completed_goal_ids")or[]),"immutable_completed_goals":{key:deepcopy(value["goals"][key]) for key in value.get("completed_goal_ids",[])},"failure_evidence_summaries":evidence,"activity_memory_summaries":memory,"operator_instruction":str(operator_instruction),"allowed_revision_scope":deepcopy(allowed_revision_scope or value.get("planner_output_scope",[])),"submitted_at":at,"expires_at":time_text(parse_time(at)+timedelta(days=7)),"revision_number":revision,"audit_record":{"event_type":"mission_replanning_requested","created_at":at}}
+    feedback=_mapping(planning_feedback_context)
+    result["planning_feedback_context"]={"planning_feedback_reference":feedback.get("feedback_id") or feedback.get("planning_feedback_reference"),"avoid_patterns":list(feedback.get("avoid_patterns")or[])[:12],"recommended_validations":list(feedback.get("recommended_validations")or[])[:12],"risk_notes":list(feedback.get("risk_notes")or[])[:12],"known_failed_operation_patterns":list(feedback.get("known_failed_operation_patterns")or[])[:12]}
     result["request_fingerprint"]=fingerprint(result);return result
 
 def deterministic_replanner(request:Mapping[str,Any],mission:Mapping[str,Any])->dict[str,Any]:

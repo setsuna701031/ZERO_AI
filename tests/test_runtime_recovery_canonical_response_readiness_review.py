@@ -68,7 +68,9 @@ def test_readiness_review_lists_hard_rules() -> None:
 
 def test_package_sequence_extends_247_through_250_only() -> None:
     text = SEQUENCE.read_text(encoding="utf-8")
-    section = text[text.index("## Package 247") :]
+    start = text.index("## Package 247")
+    end = text.find("## Package 251", start)
+    section = text[start:] if end == -1 else text[start:end]
 
     for package_id, title in PACKAGE_TITLES.items():
         assert f"## Package {package_id}" in section

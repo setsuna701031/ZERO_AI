@@ -39,6 +39,9 @@ def transition_mission(mission: Mapping[str, Any], status: str, *, now: Any = No
     at = time_text(now); value["mission_status"] = status; value["updated_at"] = at
     value.setdefault("phase_history", []).append({"from": current, "to": status, "at": at, "recovery": recovery})
     value["completed"] = status == "completed"
+    if status == "completed":
+        value["completed_at"] = value.get("completed_at") or at
+        value["failure"] = None
     return seal_mission(value)
 
 def create_mission_contract(mission_input: Mapping[str, Any], *, goal_plan: Any, target_root: Any, workspace_root: Any, now: Any = None, runtime_config: Mapping[str, Any] | None = None) -> dict[str, Any]:

@@ -1,0 +1,10 @@
+{
+  "contract": "zero.runtime.compatibility_fixture.v1",
+  "files": {
+    "goals/goal-index.json": "e4f8d59c7ab65d77f3b00cc0329eb9d7f1cf78588ec56d1426bdda896716c381",
+    "goals/long-goal-9fef6559a936832b38e4/goal.json": "e86ea0ea8bdcf7b5ac090c049d5f44656e2cf29ba61626daba144f6db565a8c1"
+  },
+  "fixture_version": "runtime-rc-v1",
+  "immutable": true,
+  "source_fixture": "runtime_upgrade_v1"
+}

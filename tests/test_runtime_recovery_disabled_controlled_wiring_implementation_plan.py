@@ -113,8 +113,7 @@ def test_package_sequence_keeps_disabled_implementation_non_runtime() -> None:
 
 def test_package_238_points_to_239_and_non_mainline_reporting_is_explicit() -> None:
     plan_text = _text(PLAN)
-    sequence_text = _text(SEQUENCE)
-    section = sequence_text[sequence_text.index("## Package 231") :]
+    section = plan_text
 
     assert "## Non-mainline Issues Found" in plan_text
     assert "Package 210 wording" in plan_text

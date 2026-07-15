@@ -1580,3 +1580,473 @@ Replan / Resume -> Completion,
 while preserving authority, ownership, status, AER, and inventory seals.
 ```
 
+
+---
+
+## 2026-07-10 - Controlled Autonomous Repair / Execution Stack v1
+
+Completed the first connected controlled-autonomy stack above the stabilized
+Runtime core.
+
+Purpose:
+
+```text
+autonomous task
+-> workspace observation
+-> repairability assessment
+-> bounded retry decision
+-> change proposal
+-> operator approval
+-> execution plan
+-> execution-plan review
+-> executor admission token
+-> controlled activation
+-> active execution authorization
+-> transactional execution orchestration
+```
+
+Completed capability layers:
+
+```text
+Runtime Workspace Observer v1
+Runtime Repair Advisor v1
+Runtime Bounded Repair Retry Loop v1
+Runtime Change Proposal Engine v1
+Runtime Operator Approval Gate v1
+Runtime Apply Execution Plan Builder v1
+Runtime Execution Plan Review Gate v1
+Runtime Executor Admission Token v1
+Runtime Controlled Execution Activation v1
+Runtime Active Execution Authorization v1
+Runtime Transactional Active Execution Orchestrator v1
+```
+
+Important boundary decisions:
+
+```text
+Observation does not grant mutation authority.
+Repair advice does not execute repairs.
+Retry admission remains bounded and policy-controlled.
+Proposal does not equal approval.
+Approval scope must remain a subset of proposal scope.
+Execution planning does not bypass review.
+Admission tokens and activation records are time-bounded.
+Transactional orchestration remains dry-run / mutation-disabled until the
+explicit active-execution boundary is opened.
+```
+
+Engineering verdict:
+
+```text
+Controlled Autonomous Repair / Execution Stack v1: CONNECTED
+Real mutation authority: STILL GOVERNED / NOT IMPLICIT
+```
+
+---
+
+## 2026-07-11 - Natural-Language Mission Bootstrap / Operator Runtime Surface
+
+Extended ZERO from JSON-first task submission toward a natural-language mission
+entry path while preserving the governed runtime contracts.
+
+Purpose:
+
+```text
+natural-language mission
+-> deterministic mission bootstrap
+-> persisted mission record
+-> goal graph
+-> planning
+-> scheduler / worker routing
+-> observer evidence
+-> reflection / replanning
+-> operator-visible runtime state
+```
+
+Direction sealed:
+
+```text
+Natural language is an intake surface, not an execution shortcut.
+Generated mission / goal structures must remain persisted and inspectable.
+Operator control remains available for review, approval, pause, stop, and
+runtime-status inspection.
+Long-running validation remains a local-machine responsibility.
+```
+
+Engineering verdict:
+
+```text
+Natural-Language Mission Bootstrap: MAINLINE DIRECTION CONFIRMED
+```
+
+---
+
+## 2026-07-12 - Mission Runtime Session Persistence / Autonomous Resume
+
+Implemented persistent mission runtime sessions and autonomous resume in the
+Windows mainline runtime.
+
+Purpose:
+
+```text
+mission bootstrap
+-> stable session identity
+-> persisted component paths
+-> transition checkpoints
+-> crash / process interruption
+-> state reload
+-> duplicate-registration / duplicate-enqueue protection
+-> policy-controlled resume
+-> deterministic lifecycle events
+```
+
+Completed:
+
+```text
+fingerprint-sealed UTF-8 session state
+atomic persistence
+stable deterministic session identity
+explicit mission / graph / registry / scheduler / worker / replanning /
+daemon / Event Bus state paths
+checkpoint-before / checkpoint-after component transitions
+existing-state reload instead of recreation
+registry and scheduler duplicate protection
+Event Bus idempotency reuse
+safe failure on ambiguous or critical recovery state
+resume handling for completed / paused / stopped / blocked / failed /
+critical-failure / stop-request / attempt-limit states
+```
+
+Boundary decision:
+
+```text
+Session persistence records and restores runtime state.
+It does not bypass approval, policy, stop requests, attempt limits, or critical
+failure boundaries.
+Resume must reuse canonical component state instead of silently recreating a
+second runtime lineage.
+```
+
+Engineering verdict:
+
+```text
+Mission Runtime Session Persistence / Autonomous Resume: IMPLEMENTED
+```
+
+---
+
+## 2026-07-13 - Agent Planning Feedback v1 / Memory-Guided Goal Planning Closure
+
+Completed the first sealed memory-guided planning feedback loop.
+
+Purpose:
+
+```text
+mission / goal planning
+-> retrieve prior planning feedback
+-> recommendation filtering
+-> bounded recommendation application
+-> deterministic goal identity
+-> execution outcome
+-> reflection feedback
+-> future planning guidance
+```
+
+Completed:
+
+```text
+sealed deterministic planning-feedback contract
+safe recommendation filtering
+memory-guided goal planner
+Natural Language Bootstrap integration
+Goal Graph integration
+Agent Controller integration
+Event Bus integration
+Reflection / Replanner integration
+crash-recovery integration
+planning CLI inspection and preview surfaces
+```
+
+Boundary decisions:
+
+```text
+Memory may recommend bounded planning patterns.
+Memory may add a create-then-verify goal only when admitted by policy.
+Memory cannot expand mission scope.
+Memory cannot change approval or policy.
+Memory cannot obtain execution authority.
+Invalid or unusable feedback must fall back to the baseline planner.
+Goal identity must include applied recommendations and planner version.
+Reflection records applied / effective / failed / ignored outcomes.
+```
+
+Engineering verdict:
+
+```text
+Agent Planning Feedback v1: SEALED
+```
+
+---
+
+## 2026-07-13 - ZERO Operator Dashboard v1.1 / UI Stability and Clean Shutdown
+
+Completed the Operator Dashboard stability and shutdown-hardening pass.
+
+Purpose:
+
+```text
+runtime polling
+-> incremental state comparison
+-> stable DOM identity
+-> bounded UI updates
+-> operator-visible health / goals / approvals / metrics
+-> coordinated server shutdown
+```
+
+Resolved:
+
+```text
+unconditional full render on every polling cycle
+replaceChildren()-driven layout / focus / text flicker
+indefinite main-thread server join on Windows
+unreliable Ctrl+C shutdown coordination
+```
+
+Boundary decisions:
+
+```text
+Polling must not imply full UI reconstruction.
+Stable runtime entities should preserve DOM identity across refreshes.
+Dashboard rendering must not become runtime state authority.
+Shutdown must coordinate the CLI main thread and server lifecycle without
+requiring forced process termination.
+```
+
+Engineering verdict:
+
+```text
+ZERO Operator Dashboard v1.1: HARDENED
+```
+
+---
+
+## 2026-07-13 - Runtime v1 RC Gate / Frozen-Source Consistency Repair
+
+Advanced ZERO into Runtime v1 Release Candidate validation and repaired a
+bounded repository-consistency failure without reopening frozen Runtime design.
+
+Root cause repaired:
+
+```text
+A test still expected the early Package 128 name:
+Runtime Resume Validation / Consumer Boundary
+
+The dedicated frozen source of truth had already sealed the final name:
+Runtime Resume Consumer Contract
+```
+
+Repair performed:
+
+```text
+tests/test_aer_runtime_resume_plan.py
+-> PACKAGE_SEQUENCE now reads the dedicated Package 128 frozen document
+-> Package 128 assertion now validates the sealed final name
+-> Package 127 eligibility / planning-only / no-resume-execution /
+   no-cross-runtime-domain / final-decision assertions remain preserved
+```
+
+Explicitly not modified:
+
+```text
+append-only monolithic package sequence
+Package 127 / 128 historical content
+Package 186 content
+Next package: Package 187 declaration
+Runtime code
+contracts
+schemas
+ABI
+Kernel authority
+RC fixtures
+frozen SHA values
+```
+
+Boundary decision:
+
+```text
+RC repair may restore repository consistency.
+RC repair must not rewrite frozen history or introduce new Runtime behavior.
+Dedicated frozen source-of-truth documents take precedence over stale test
+labels when the historical sequence remains intact.
+```
+
+Engineering verdict:
+
+```text
+Runtime v1 RC Gate: ACTIVE
+Bounded frozen-source consistency repair: COMPLETE
+```
+
+---
+
+## 2026-07-14 - Post-GA Adaptive Runtime Architecture Direction
+
+Recorded the next major architecture direction without inserting new behavior
+into the active RC / GA freeze.
+
+Long-term invariant:
+
+```text
+ZERO core runtime must remain:
+- model-agnostic
+- hardware-agnostic
+- operating-system / environment-agnostic
+- carrier / device-agnostic
+```
+
+Planned post-GA capability foundation:
+
+```text
+Environment / Capability Detection
+-> normalized Capability Profile
+-> Runtime Strategy Selection
+-> adaptive model / worker / memory / parallelism policy
+-> dynamic resource governance
+-> bounded cost governance
+-> long-running operational headroom protection
+```
+
+Capability Profile inputs should include:
+
+```text
+CPU
+GPU / accelerator / NPU
+RAM
+storage
+network availability
+power / thermal constraints
+operating system
+execution environment
+installed models
+available tools
+```
+
+Boundary decisions:
+
+```text
+Do not hard-code vendor or device identities into Runtime policy.
+Runtime decisions should consume normalized capabilities, not require a
+specific H200 / CUDA / ROCm / AI-box path.
+Capability detection observes and reports; it does not grant authority.
+Resource and cost governance must remain subordinate to operator policy.
+This work is post-GA and must not reopen the Runtime v1 RC freeze.
+```
+
+Engineering verdict:
+
+```text
+Adaptive Runtime direction: RECORDED
+Implementation timing: FIRST SUITABLE POST-GA EVOLUTION PACKAGE
+```
+
+---
+
+## 2026-07-14 - Full Regression Baseline Run
+
+A full repository regression run was started because the all-suite baseline had
+not been completed for an extended period.
+
+Command:
+
+```text
+python -m pytest -q
+```
+
+Current status at the time of this devlog update:
+
+```text
+run still in progress
+approximately 14% completed after about 1 hour
+no final pass / fail summary available yet
+```
+
+Interpretation rule:
+
+```text
+Do not declare Runtime v1 GA from partial progress.
+Do not assume all-green or failure before the final pytest summary exists.
+The completed run will become the new full-regression baseline for triage.
+Failures should be grouped by root cause instead of repaired as unrelated
+individual symptoms.
+```
+
+Engineering verdict:
+
+```text
+Full regression baseline: IN PROGRESS
+Final verdict: PENDING
+```
+
+---
+
+## 2026-07-15 - ZERO Runtime v1 RC Repository Regression Closure
+
+Full baseline inherited for this bounded closure:
+
+```text
+10066 passed / 43 failed / 6 skipped / 140 subtests passed / 11:51:03
+```
+
+Root-cause groups closed:
+
+- canonical subprocess ownership drift in release reporting and transactional validation;
+- Runtime lifecycle status writes outside `project_runtime_status(...)`;
+- portfolio CLI registry admission and command-contract drift;
+- execution-lease default/public compatibility drift;
+- metadata-only executor envelope/binding/attachment projected as live execution;
+- blocked natural-task operator results projected as success;
+- CLI filesystem mutation outside the governed mutation I/O primitive;
+- stale historical sequence assertions reading beyond their package range;
+- status/mutation/boundary scanner false positives;
+- missing deterministic Runtime-native and TaskRunner registry reports.
+
+Contract and implementation decisions:
+
+- `core.runtime.executor` remains the only Runtime subprocess owner.
+- Runtime status projection remains owned by the canonical task-runtime boundary.
+- Default execution leases grant no authority.
+- Historical record-only executor packages remain non-executing.
+- Blocked/denied operator work remains recorded but not successfully executed.
+- Recovery assertions use dedicated frozen sources where available and bounded
+  historical sections otherwise; Package 127/128 and Package 186/187 sources
+  were not modified.
+- No new Runtime capability, background loop, scheduler wake, daemon, automatic
+  retry, mutation authority, or execution authority was introduced.
+
+Generated deterministic reports:
+
+- `runtime_native_mainline_compatibility_inventory.txt`
+- `taskrunner_registry_closure_seal_report.txt`
+- `taskrunner_registry_legacy_cleanup_inventory.txt`
+- `taskrunner_registry_legacy_cleanup_phase1_report.txt`
+- `taskrunner_registry_legacy_cleanup_phase2_report.txt`
+
+Bounded validation result:
+
+```text
+Original baseline failing nodes: 43 passed in 25.62s
+Full repository regression: intentionally not run by Codex
+```
+
+Non-mainline Issues Found:
+
+- The status-authority seal emits Python 3.12 `ast.Str` deprecation warnings;
+  this is non-blocking and outside this bounded closure.
+- The inherited working tree contains unrelated modified and untracked work;
+  it was preserved without cleanup.
+
+Final Decision:
+
+```text
+GO for user-local long regression revalidation
+```

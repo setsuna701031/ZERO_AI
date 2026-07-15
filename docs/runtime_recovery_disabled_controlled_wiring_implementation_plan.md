@@ -76,6 +76,8 @@ NO-GO for Runtime behavior changes, Recovery execution, Recovery enablement, hoo
 
 Package 231 authorizes Package 232 to define the Disabled Controlled Wiring Contract as a documentation/governance surface only. The roadmap must not be extended beyond Package 238 in this phase. Package 239 begins the first disabled Runtime implementation surface, still non-executing and fully gated, and must introduce exactly one canonical Runtime implementation surface.
 
+Final decision: GO. Next package: Package 239.
+
 ## Non-mainline Issues Found
 
 - Existing `docs/runtime_recovery_binding_endpoint_readiness_review.md` and `tests/test_runtime_recovery_binding_endpoint_readiness_review.py` use Package 210 wording while the main package sequence identifies that readiness review as Package 222. This package preserves that unrelated numbering drift and does not modify those files.

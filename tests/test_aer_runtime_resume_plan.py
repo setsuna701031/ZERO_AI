@@ -19,7 +19,7 @@ from core.runtime.aer_runtime_snapshot_consumer import consume_snapshot
 
 
 RESUME_MODULE = Path("core/runtime/aer_runtime_resume_plan.py")
-PACKAGE_SEQUENCE = Path("docs/aer_evolution_v2_package_sequence.md")
+PACKAGE_SEQUENCE = Path("docs/aer_evolution_v2_package_sequence_package128.md")
 
 
 def _resume_summary(**overrides):
@@ -309,7 +309,7 @@ def test_package_sequence_contains_package_127_entry():
         "Eligibility and Planning only",
         "does not implement Runtime Resume Execution",
         "does not connect to Recovery, Scheduler, Dispatcher, Operator, Persistence, Audit, or Journal",
-        "Package 128: Runtime Resume Validation / Consumer Boundary",
+        "Package 128: Runtime Resume Consumer Contract",
         "Final decision: GO",
     ):
         assert token in text
