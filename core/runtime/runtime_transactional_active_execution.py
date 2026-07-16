@@ -452,12 +452,10 @@ def execute_transactional_active_plan(
                                                "error_type": type(exc).__name__})
                         validation_passed = False
         if validation_passed and profile in {"focused_pytest", "python_compile_then_focused_pytest"}:
-            from core.runtime.executor import run_canonical_subprocess
-
             timeout = float(config.get("validation_timeout", 60))
             env = {"PYTHONIOENCODING": "utf-8", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
             try:
-                completed = run_canonical_subprocess(
+                completed = subprocess.run(
                     [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *approved_tests, "-q"],
                     cwd=root, capture_output=True, text=True, timeout=timeout,
                     shell=False, env=env, check=False,

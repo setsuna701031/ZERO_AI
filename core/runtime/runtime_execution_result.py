@@ -814,7 +814,7 @@ def sanitize_runtime_execution_result(value: Any, *, drop_evidence: bool = True)
 def sanitize_runtime_execution_result_for_public(payload: Any) -> dict[str, Any]:
     """Return a public-safe nested runtime_execution_result mapping."""
 
-    return sanitize_runtime_execution_result(payload, drop_evidence=True)
+    return sanitize_runtime_execution_result(payload, drop_evidence=False)
 
 
 def sanitize_runtime_public_output(value: Any, *, drop_evidence: bool = True) -> Any:
@@ -827,7 +827,9 @@ def sanitize_runtime_public_output(value: Any, *, drop_evidence: bool = True) ->
             if key in internal_keys:
                 continue
             if key == "runtime_execution_result" and isinstance(item, dict):
-                sanitized[key] = sanitize_runtime_execution_result(item, drop_evidence=True)
+                # Canonical execution evidence is part of the public result ABI;
+                # adapter/hook implementation internals remain filtered.
+                sanitized[key] = sanitize_runtime_execution_result(item, drop_evidence=False)
             elif key == "raw" and isinstance(item, dict):
                 # adapter_payload.raw is a compatibility mirror. Keep it public-safe
                 # instead of letting it reintroduce evidence internals.

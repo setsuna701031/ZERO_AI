@@ -80,6 +80,12 @@ def _print_json(data: Any) -> None:
     print(json.dumps(project_result_for("cli", data), ensure_ascii=False, indent=2, sort_keys=True, default=str))
 
 
+def _print_goal_runtime_summary(data: Mapping[str, Any]) -> None:
+    """Emit the field-wise bounded goal adapter without projecting it twice."""
+
+    print(json.dumps(dict(data), ensure_ascii=False, indent=2, sort_keys=True))
+
+
 def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
     route_key = RuntimeRouteKeys.CLI_GOAL_LOOP if entrypoint.endswith(".loop") else RuntimeRouteKeys.CLI_GOAL_RUN
     registry = default_runtime_route_registry()
@@ -444,7 +450,7 @@ def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
         goal="goal run-next",
         request={"command": "run-next"},
     )
-    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
+    _print_goal_runtime_summary({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
     return True
 
 
@@ -458,7 +464,7 @@ def _handle_run(argv: list[str], repo_root: Path) -> bool:
         goal=argv[2],
         request={"command": "run", "goal_id": argv[2]},
     )
-    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
+    _print_goal_runtime_summary({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
     return True
 
 
@@ -479,7 +485,7 @@ def _handle_loop(argv: list[str], repo_root: Path) -> bool:
         goal=argv[2],
         request={"command": "loop", "goal_id": argv[2], "max_cycles": max_cycles},
     )
-    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "cycles_summary": _summarize_loop_result(result)})
+    _print_goal_runtime_summary({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "cycles_summary": _summarize_loop_result(result)})
     return True
 
 

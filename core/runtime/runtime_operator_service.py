@@ -718,19 +718,21 @@ class RuntimeOperatorService:
                     "controller_started": result.get("autonomous_start_requested") is True,
                 }
             )
-        goal_phrase = _text(goal_text).lower()
-        invocation_output_active = (
-            "invocation gate" in goal_phrase
-            or "invocation dispatch" in goal_phrase
-            or "real executor unlock" in goal_phrase
-            or "runtime closure" in goal_phrase
-            or "executor runtime closure" in goal_phrase
+        # These top-level fields summarize the canonical downstream records,
+        # not keywords in the operator's goal text.  Approval/record objects
+        # remain metadata-only; dispatch and dry-run session own these states.
+        invocation_dispatch_record = (
+            executor_invocation_dispatch.get("executor_invocation_dispatch", {})
+            if "executor_invocation_dispatch" in locals()
+            else {}
         )
-        # Binding, attachment, gate, and dry-run records are metadata-only.
-        # They must not be projected as a live executor invocation.  Only the
-        # explicitly named later invocation/closure packages cross this flag.
-        executor_invoked_active = invocation_output_active
-        execution_started_active = invocation_output_active
+        execution_session_record = (
+            runtime_execution_session_start.get("runtime_execution_session_start", {})
+            if "runtime_execution_session_start" in locals()
+            else {}
+        )
+        executor_invoked_active = invocation_dispatch_record.get("executor_invoked") is True
+        execution_started_active = execution_session_record.get("execution_started") is True
         mutation_success_active = (
             "controlled_mutation_unlock" in locals()
             and controlled_mutation_unlock.get("controlled_mutation") is True

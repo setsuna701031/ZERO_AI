@@ -46,6 +46,27 @@ def _as_mapping(value: Any) -> dict[str, Any]:
     return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
 
 
+def _normalize_persistence_value(value: Any) -> Any:
+    """Return the canonical JSON value accepted by the goal repository.
+
+    Authority objects remain opaque throughout execution and are converted only
+    here, immediately before repository serialization.
+    """
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, GoalCompletionResult):
+        return _normalize_persistence_value(value.to_dict())
+    if isinstance(value, Mapping):
+        return {
+            str(key): _normalize_persistence_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_persistence_value(item) for item in value]
+    raise TypeError(f"unsupported_engineering_goal_persistence_value:{type(value).__name__}")
+
+
 def _safe_goal_id(value: str) -> str:
     safe = []
     for char in value:
@@ -349,7 +370,7 @@ class EngineeringGoalRepository:
 
     def _write_records(self, records: Mapping[str, Mapping[str, Any]]) -> None:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        payload = {
+        payload = _normalize_persistence_value({
             "schema": ENGINEERING_GOAL_REPOSITORY_SCHEMA,
             "goals": [
                 copy.deepcopy(dict(record))
@@ -359,7 +380,7 @@ class EngineeringGoalRepository:
                 )
             ],
             "updated_at": time.time(),
-        }
+        })
         self.storage_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
