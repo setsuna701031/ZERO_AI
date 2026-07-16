@@ -15,7 +15,7 @@ import copy
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection, project_result_for
+from core.runtime.runtime_result_projection import detach_internal_result
 
 from core.evidence.decision_evidence import DecisionEvidenceRepository, build_decision_evidence
 from core.evidence.evidence_authority import EvidenceAuthority
@@ -33,7 +33,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
-    return mapping_projection(value, max_depth=6, max_items=50)
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 class AdaptivePersistenceGateway:
@@ -88,7 +88,7 @@ class AdaptivePersistenceGateway:
 
         self.persist_goal_adaptive_metadata(cycle, record)
         decision_evidence = self.register_decision_evidence(cycle)
-        cycle["decision_evidence"] = project_result_for("evidence", decision_evidence)
+        cycle["decision_evidence"] = detach_internal_result(decision_evidence)
         cycle["evidence_chain"] = self.evidence_chain_summary(
             _clean_text(cycle.get("goal_id")),
             goal_lineage=lineage,
@@ -123,7 +123,7 @@ class AdaptivePersistenceGateway:
         record.update({
             "schema": _clean_text(record.get("schema"), ADAPTIVE_PLANNING_RECORD_SCHEMA),
             "previous_goal": _clean_text(record.get("previous_goal"), _clean_text(cycle.get("goal_id"))),
-            "previous_step": bounded_json_projection(record.get("previous_step"), max_depth=4, max_items=30),
+            "previous_step": detach_internal_result(record.get("previous_step")),
             "outcome_class": _clean_text(record.get("outcome_class"), _clean_text(adaptive.get("outcome_class"))),
             "decision_reason": _clean_text(
                 record.get("decision_reason"),
@@ -159,17 +159,17 @@ class AdaptivePersistenceGateway:
                 raise ValueError("adaptive_persistence_goal_lineage_conflict")
             metadata = _as_mapping(_as_mapping(goal).get("metadata"))
             history = [
-                mapping_projection(item, max_depth=6, max_items=50)
+                detach_internal_result(item)
                 for item in metadata.get("adaptive_planning_history", [])
                 if isinstance(item, Mapping)
             ] if isinstance(metadata.get("adaptive_planning_history"), list) else []
-            history.append(mapping_projection(record, max_depth=6, max_items=50))
+            history.append(detach_internal_result(record))
             update_goal(
                 goal_id,
                 {
                     "metadata": {
-                        "goal_lineage": mapping_projection(extract_goal_lineage(cycle), max_depth=4, max_items=30),
-                        "adaptive_planning_record": mapping_projection(record, max_depth=6, max_items=50),
+                        "goal_lineage": detach_internal_result(extract_goal_lineage(cycle)),
+                        "adaptive_planning_record": detach_internal_result(record),
                         "adaptive_planning_history": history,
                     }
                 },
@@ -184,7 +184,7 @@ class AdaptivePersistenceGateway:
         )
         register_decision_evidence = getattr(self.evidence_authority, "register_decision_evidence", None)
         if callable(register_decision_evidence):
-            return mapping_projection(register_decision_evidence(decision_evidence), max_depth=6, max_items=50)
+            return detach_internal_result(register_decision_evidence(decision_evidence))
         raise TypeError("adaptive_persistence_requires_evidence_authority")
 
     def link_decision_evidence(self, cycle: dict[str, Any], decision_evidence: Mapping[str, Any]) -> None:
@@ -262,7 +262,7 @@ class AdaptivePersistenceGateway:
         except Exception:
             return {}
         to_dict = getattr(chain, "to_dict", None)
-        return mapping_projection(to_dict(), max_depth=6, max_items=50) if callable(to_dict) else {}
+        return detach_internal_result(to_dict()) if callable(to_dict) else {}
 
 
 __all__ = ["ADAPTIVE_PERSISTENCE_GATEWAY_SCHEMA", "AdaptivePersistenceGateway"]

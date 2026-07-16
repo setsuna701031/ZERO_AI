@@ -61,6 +61,55 @@ class RuntimeResultProjectionContract:
 DEFAULT_RUNTIME_RESULT_PROJECTION_CONTRACT = RuntimeResultProjectionContract()
 
 
+def detach_internal_result(value: Any, *, _memo: dict[int, Any] | None = None) -> Any:
+    """Detach internal execution structures without truncation or sentinels.
+
+    This is intentionally separate from public projection. It preserves every
+    mapping/list item and reconstructs cycles through a memoized target graph.
+    """
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return bytes(value)
+    if isinstance(value, bytearray):
+        return bytearray(value)
+
+    memo = _memo if _memo is not None else {}
+    identity = id(value)
+    if identity in memo:
+        return memo[identity]
+
+    if isinstance(value, Mapping):
+        detached: dict[Any, Any] = {}
+        memo[identity] = detached
+        for key, item in value.items():
+            detached[detach_internal_result(key, _memo=memo)] = detach_internal_result(item, _memo=memo)
+        return detached
+    if isinstance(value, list):
+        detached_list: list[Any] = []
+        memo[identity] = detached_list
+        detached_list.extend(detach_internal_result(item, _memo=memo) for item in value)
+        return detached_list
+    if isinstance(value, tuple):
+        # Runtime payload tuples are transported as JSON-compatible lists.
+        detached_tuple: list[Any] = []
+        memo[identity] = detached_tuple
+        detached_tuple.extend(detach_internal_result(item, _memo=memo) for item in value)
+        return detached_tuple
+    if isinstance(value, (set, frozenset)):
+        detached_set: list[Any] = []
+        memo[identity] = detached_set
+        detached_set.extend(
+            detach_internal_result(item, _memo=memo)
+            for item in sorted(value, key=lambda item: repr(item))
+        )
+        return detached_set
+    # Opaque authority/evidence objects retain their type and issuance identity;
+    # converting them through to_dict() would invalidate authority seals.
+    return value
+
+
 ProjectionAdapter = Callable[[Any], Any]
 
 
@@ -354,6 +403,7 @@ __all__ = [
     "RUNTIME_RESULT_PROJECTION_ADAPTERS",
     "RuntimeResultProjectionContract",
     "bounded_json_projection",
+    "detach_internal_result",
     "mapping_projection",
     "project_result_for",
 ]

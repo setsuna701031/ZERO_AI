@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection
+from core.runtime.runtime_result_projection import detach_internal_result
 
 from core.adaptive.replan_runtime import ReplanRuntime
 from core.goals.goal_lineage_contract import attach_goal_lineage, create_goal_branch_lineage, extract_goal_lineage, extract_runtime_identity
@@ -23,12 +23,16 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return mapping_projection(value, max_depth=6, max_items=50)
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 def _list(value: Any) -> list[Any]:
-    projected = bounded_json_projection(value, max_depth=5, max_items=50)
+    projected = detach_internal_result(value)
     return projected if isinstance(projected, list) else []
+
+
+def _view(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 class ReplanCoordinator:
@@ -49,7 +53,7 @@ class ReplanCoordinator:
     ) -> tuple[dict[str, Any], ReplanRuntime]:
         if runtime.limit_reached:
             raise RuntimeError("replan_limit_reached")
-        cycle_record = _mapping(cycle)
+        cycle_record = _view(cycle)
         request = _mapping(replan_request) or _mapping(cycle_record.get("replan_request"))
         source_goal_id = _text(goal_id or cycle_record.get("goal_id") or request.get("goal_id"))
         resolved_cycle_index = int(cycle_index if cycle_index is not None else cycle_record.get("cycle_index") or 0)
@@ -86,10 +90,10 @@ class ReplanCoordinator:
             "failed_step": _mapping(request.get("failed_step")),
             "missing_artifacts": _list(request.get("missing_artifacts")),
             "next_runtime_request": _mapping(request.get("next_runtime_request")),
-            "replan_request": mapping_projection(request, max_depth=6, max_items=50),
-            "runner_adaptive_decision": _mapping(_mapping(runner_result).get("adaptive_decision")),
+            "replan_request": detach_internal_result(request),
+            "runner_adaptive_decision": _mapping(_view(runner_result).get("adaptive_decision")),
             "adaptive_planning_record": _mapping(
-                _mapping(_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
+                _view(_view(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
             ),
             "root_cause_report": _mapping(request.get("root_cause_report")),
             "evidence_chain": _list(request.get("evidence_chain")),

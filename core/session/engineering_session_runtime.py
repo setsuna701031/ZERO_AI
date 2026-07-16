@@ -16,10 +16,11 @@ It does not execute tasks, create goals, persist records, mutate runtime, or
 write memory.
 """
 
-import copy
 import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
+
+from core.result_projection import detach_internal_result
 
 
 ENGINEERING_SESSION_RUNTIME_SCHEMA = "zero.engineering_session_runtime.v1"
@@ -39,7 +40,7 @@ def _limit(value: Any, default: int = 0) -> int:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 def _continuation_count_from_goal_id(goal_id: Any) -> int | None:
@@ -100,7 +101,7 @@ class EngineeringSessionRuntime:
         object.__setattr__(
             self,
             "cycles",
-            [copy.deepcopy(dict(cycle)) for cycle in self.cycles if isinstance(cycle, Mapping)],
+            [cycle for cycle in self.cycles if isinstance(cycle, Mapping)],
         )
 
     @classmethod
@@ -123,8 +124,8 @@ class EngineeringSessionRuntime:
         )
 
     def append_cycle(self, cycle: Mapping[str, Any]) -> "EngineeringSessionRuntime":
-        cycles = [copy.deepcopy(dict(item)) for item in self.cycles]
-        cycles.append(copy.deepcopy(dict(cycle)))
+        cycles = list(self.cycles)
+        cycles.append(detach_internal_result(cycle))
         return self.replace(cycles=cycles)
 
     def mirror_continuation_runtime(self, continuation_runtime: Any) -> "EngineeringSessionRuntime":
@@ -157,8 +158,8 @@ class EngineeringSessionRuntime:
             "refusal_reason": self.refusal_reason,
             "session_from_state": self.session_from_state,
             "program_from_state": self.program_from_state,
-            "previous_observation": copy.deepcopy(dict(self.previous_observation or {})),
-            "cycles": [copy.deepcopy(dict(cycle)) for cycle in self.cycles],
+            "previous_observation": self.previous_observation or {},
+            "cycles": list(self.cycles),
         }
 
         # Backward-compatible drift protection: legacy callers may only mirror
@@ -189,8 +190,10 @@ class EngineeringSessionRuntime:
             "refusal_reason": self.refusal_reason,
             "session_from_state": self.session_from_state,
             "program_from_state": self.program_from_state,
-            "previous_observation": copy.deepcopy(dict(self.previous_observation or {})),
-            "cycles": [copy.deepcopy(dict(cycle)) for cycle in self.cycles],
+            "previous_observation": detach_internal_result(self.previous_observation or {}),
+            # append_cycle is the ownership boundary; do not recursively detach
+            # the same complete cycle graph again for every internal hand-off.
+            "cycles": [dict(cycle) for cycle in self.cycles],
             "authority": {
                 "current_goal_id": "ContinuationRuntime",
                 "continuation_count": "ContinuationRuntime",

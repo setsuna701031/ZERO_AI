@@ -7,6 +7,7 @@ from core.result_projection import (
     RUNTIME_RESULT_PROJECTION_ADAPTERS,
     RuntimeResultProjectionContract,
     bounded_json_projection,
+    detach_internal_result,
     mapping_projection,
     project_result_for,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "RUNTIME_RESULT_PROJECTION_ADAPTERS",
     "RuntimeResultProjectionContract",
     "bounded_json_projection",
+    "detach_internal_result",
     "mapping_projection",
     "project_result_for",
 ]

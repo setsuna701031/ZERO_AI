@@ -26,7 +26,7 @@ ENGINEERING_GOAL_LOOP_SCHEMA = "zero.engineering_goal_loop.v1"
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _text(value: Any, default: str = "") -> str:
@@ -64,7 +64,10 @@ class GoalLoopTerminalCoordinator:
         continuation_runtime: Any | None = None,
         replan_runtime: Any | None = None,
     ) -> dict[str, Any]:
-        cycle_records = [copy.deepcopy(dict(cycle)) for cycle in cycles or [] if isinstance(cycle, Mapping)]
+        # Cycles were detached when admitted to EngineeringSessionRuntime.  The
+        # terminal builder only assembles that internal transport and must not
+        # clone the complete graph a second time.
+        cycle_records = [dict(cycle) for cycle in cycles or [] if isinstance(cycle, Mapping)]
         latest_cycle = _mapping(cycle_records[-1]) if cycle_records else {}
         latest_decision = _mapping(latest_cycle.get("adaptive_decision_record"))
         goal_completion_authority_result = self._goal_completion_authority_result(latest_cycle)
@@ -215,7 +218,7 @@ class GoalLoopTerminalCoordinator:
     def _to_dict(value: Any) -> dict[str, Any]:
         to_dict = getattr(value, "to_dict", None)
         if callable(to_dict):
-            return copy.deepcopy(dict(to_dict()))
+            return dict(to_dict())
         return _mapping(value)
 
 

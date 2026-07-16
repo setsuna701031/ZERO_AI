@@ -174,7 +174,9 @@ def apply_engineering_issue_summary(
     issue_reporter: EngineeringIssueReporter | Any | None = None,
     issue_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    updated = copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {}
+    # Result graphs are already detached by their owning runtime boundary.  Issue
+    # enrichment must not duplicate the complete execution chain.
+    updated = dict(result) if isinstance(result, Mapping) else {}
     issue_summary = (
         copy.deepcopy(dict(issue_summary))
         if isinstance(issue_summary, Mapping)

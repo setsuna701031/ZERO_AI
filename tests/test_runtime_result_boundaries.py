@@ -27,16 +27,19 @@ def test_bounded_projection_is_json_safe_and_recursive() -> None:
     json.dumps(projected)
 
 
-def test_registry_adds_metadata_to_detached_bounded_projection(tmp_path) -> None:
-    nested = {"large": object()}
+def test_registry_adds_metadata_to_detached_internal_result_without_public_sentinels(tmp_path) -> None:
+    opaque = object()
+    nested = {"large": opaque, "runtime": {"execution_path": {"owner": "runtime"}}}
     registry = RuntimeRouteRegistry()
     registry.register("bounded", lambda request, root, goal: lambda: {"ok": True, "nested": nested})
 
     result = registry.run("bounded", {}, tmp_path, "bounded route")
 
     assert result["nested"] is not nested
-    assert result["nested"]["large"] == "<object>"
-    assert nested == {"large": nested["large"]}
+    assert result["nested"]["large"] is opaque
+    assert result["nested"]["runtime"] is not nested["runtime"]
+    assert result["nested"]["runtime"]["execution_path"]["owner"] == "runtime"
+    assert "<max_depth_reached>" not in repr(result)
     assert result["runtime_route_registry_admission"] is True
     assert result["route"]["runtime_route_key"] == "bounded"
 

@@ -24,7 +24,9 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    # Program evaluation is an internal transport step.  Keep the cycle graph
+    # opaque and copy only the mapping shell; publication owns bounded projection.
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 @dataclass(frozen=True)

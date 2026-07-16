@@ -167,7 +167,9 @@ def normalize_engineering_result_contract(result: Mapping[str, Any]) -> dict[str
     if not isinstance(result, Mapping):
         raise EngineeringResultContractError("engineering_result_must_be_mapping")
 
-    updated = copy.deepcopy(dict(result))
+    # Contract normalization changes top-level summary fields only.  Preserve
+    # the detached internal payload instead of cloning the entire result graph.
+    updated = dict(result)
     issues_found = _as_issue_list(updated.get("issues_found", []))
 
     raw_deferred = updated.get("issues_deferred", updated.get("deferred_issues", []))

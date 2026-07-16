@@ -18,7 +18,7 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 @dataclass(frozen=True)
@@ -48,8 +48,8 @@ class EngineeringProgramTransition:
             "to_state": self.to_state,
             "action": self.action,
             "reason": self.reason,
-            "session_state": copy.deepcopy(dict(self.session_state or {})),
-            "cycle": copy.deepcopy(dict(self.cycle or {})),
+            "session_state": dict(self.session_state or {}),
+            "cycle": dict(self.cycle or {}),
             "goal_id": self.goal_id,
             "execution_path": {
                 "transition_only": True,

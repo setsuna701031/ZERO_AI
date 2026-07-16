@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection
+from core.runtime.runtime_result_projection import detach_internal_result
 
 from core.goals.goal_lineage_contract import extract_goal_lineage
 
@@ -36,7 +36,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
-    return mapping_projection(value, max_depth=6, max_items=50)
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 class EngineeringPortfolioCycle:
@@ -131,15 +131,15 @@ class EngineeringPortfolioCycle:
                     "ok": bool(loop_result.get("terminal")),
                     "portfolio_id": target_portfolio_id,
                     "goal_id": selected_goal_id,
-                    "selected_goal": mapping_projection(selection, max_depth=5, max_items=50),
+                    "selected_goal": detach_internal_result(selection),
                     "selected_goal_id": selected_goal_id,
-                    "selection": mapping_projection(selection, max_depth=5, max_items=50),
-                    "loop_result": mapping_projection(loop_result, max_depth=7, max_items=50),
-                    "adaptive_decision": mapping_projection(adaptive_decision, max_depth=5, max_items=50),
+                    "selection": detach_internal_result(selection),
+                    "loop_result": detach_internal_result(loop_result),
+                    "adaptive_decision": detach_internal_result(adaptive_decision),
                     "adaptive_reason": _clean_text(adaptive_decision.get("reason") or loop_result.get("adaptive_reason")),
                     "adaptive_confidence": adaptive_decision.get("confidence", loop_result.get("adaptive_confidence", 0.0)),
                     "adaptive_confidence_score": _as_mapping(adaptive_decision.get("confidence_score")),
-                    "adaptive_evidence_chain": bounded_json_projection(adaptive_decision.get("evidence_chain") or [], max_depth=5, max_items=50),
+                    "adaptive_evidence_chain": detach_internal_result(adaptive_decision.get("evidence_chain") or []),
                     "root_cause_report": _as_mapping(adaptive_decision.get("root_cause_report")),
                     "stop_reason": _clean_text(loop_result.get("stop_reason")),
                     "execution_path": {
@@ -152,7 +152,7 @@ class EngineeringPortfolioCycle:
                     },
                     "updated_goal": updated_goal,
                     "updated_portfolio": updated_portfolio,
-                    "portfolio_state": mapping_projection(current_state, max_depth=6, max_items=50),
+                    "portfolio_state": detach_internal_result(current_state),
                     "updated_at": time.time(),
                 }
             )
@@ -204,13 +204,13 @@ class EngineeringPortfolioCycle:
             "ok": _clean_text(stop_reason) not in {"portfolio_not_found"},
             "portfolio_id": _clean_text(portfolio_id),
             "goal_id": selected_goal_id,
-            "selected_goal": mapping_projection(selected_goal, max_depth=5, max_items=50),
+            "selected_goal": detach_internal_result(selected_goal),
             "stop_reason": _clean_text(stop_reason),
-            "adaptive_decision": mapping_projection(latest_adaptive_decision, max_depth=5, max_items=50),
+            "adaptive_decision": detach_internal_result(latest_adaptive_decision),
             "adaptive_reason": _clean_text(latest_run.get("adaptive_reason") or latest_adaptive_decision.get("reason")),
             "adaptive_confidence": latest_adaptive_decision.get("confidence", latest_run.get("adaptive_confidence", 0.0)),
             "adaptive_confidence_score": _as_mapping(latest_adaptive_decision.get("confidence_score")),
-            "adaptive_evidence_chain": bounded_json_projection(latest_adaptive_decision.get("evidence_chain") or [], max_depth=5, max_items=50),
+            "adaptive_evidence_chain": detach_internal_result(latest_adaptive_decision.get("evidence_chain") or []),
             "root_cause_report": _as_mapping(latest_adaptive_decision.get("root_cause_report")),
             "execution_path": {
                 "route": "Portfolio -> Goal -> Adaptive Planner -> Runtime",
@@ -226,9 +226,9 @@ class EngineeringPortfolioCycle:
             "completed_goal_count": int(progress.get("completed_goal_count") or 0),
             "blocked_goal_count": int(progress.get("blocked_goal_count") or 0),
             "skipped_goal_count": len(skipped_goal_ids),
-            "portfolio_state": mapping_projection(portfolio_state, max_depth=6, max_items=50),
-            "runs": [mapping_projection(run, max_depth=8, max_items=50) for run in runs],
-            "selections": [mapping_projection(selection, max_depth=5, max_items=50) for selection in selections],
+            "portfolio_state": detach_internal_result(portfolio_state),
+            "runs": detach_internal_result(runs),
+            "selections": detach_internal_result(selections),
             "updated_at": time.time(),
             },
             repo_root=self.repo_root,

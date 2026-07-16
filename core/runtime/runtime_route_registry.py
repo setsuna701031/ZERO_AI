@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
-from core.runtime.runtime_result_projection import mapping_projection
+from core.runtime.runtime_result_projection import detach_internal_result
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
 
@@ -82,7 +82,9 @@ class RuntimeRouteRegistry:
                 return raw_result
             # Build a detached, bounded envelope instead of deepcopying an
             # arbitrary object graph owned by the compatibility runner.
-            result = mapping_projection(raw_result, max_depth=6, max_items=50, max_string_chars=8192)
+            # Registry admission is an ownership boundary: callers receive a
+            # detached internal snapshot, still complete and unbounded.
+            result = detach_internal_result(raw_result)
             result.setdefault("runtime_route_registry_admission", True)
             result.setdefault("runtime_route_key", record.route_key)
             route = dict(result.get("route")) if isinstance(result.get("route"), dict) else {}

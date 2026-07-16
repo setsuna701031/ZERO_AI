@@ -16,7 +16,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from core.runtime.runtime_result_projection import mapping_projection
+from core.runtime.runtime_result_projection import detach_internal_result
 
 from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner, normalize_adaptive_decision
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
@@ -406,11 +406,11 @@ class EngineeringGoalRunner:
             "action": action,
             "goal_id": goal_id,
             "engineering_runtime_contract": runtime_contract,
-            "runtime_request": mapping_projection(runtime_request, max_depth=4, max_items=40, max_string_chars=4096),
-            "runtime_result": mapping_projection(runtime_result, max_depth=5, max_items=40, max_string_chars=4096),
+            "runtime_request": detach_internal_result(runtime_request),
+            "runtime_result": detach_internal_result(runtime_result),
             "runtime_stdout": str(runtime_stdout or "")[:8192],
-            "runtime_root_cause": mapping_projection(runtime_root_cause, max_depth=4, max_items=40),
-            "adaptive_decision": mapping_projection(adaptive_decision, max_depth=5, max_items=40),
+            "runtime_root_cause": detach_internal_result(runtime_root_cause),
+            "adaptive_decision": detach_internal_result(adaptive_decision),
             "execution_path": {
                 "repository_persists_only": True,
                 "goal_runner_bridges_only": True,
@@ -461,8 +461,8 @@ class EngineeringGoalRunner:
             "stop_reason": _clean_text(runtime_result.get("stop_reason")),
             "decision_state": _clean_text(runtime_result.get("decision_state")),
             "goal_state": _clean_text(lifecycle.get("goal_state")) if isinstance(lifecycle, Mapping) else "",
-            "failed_tasks": mapping_projection({"items": lifecycle.get("failed_tasks")}, max_depth=4, max_items=50).get("items", []) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("failed_tasks"), list) else [],
-            "blocked_tasks": mapping_projection({"items": lifecycle.get("blocked_tasks")}, max_depth=4, max_items=50).get("items", []) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("blocked_tasks"), list) else [],
+            "failed_tasks": detach_internal_result(lifecycle.get("failed_tasks")) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("failed_tasks"), list) else [],
+            "blocked_tasks": detach_internal_result(lifecycle.get("blocked_tasks")) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("blocked_tasks"), list) else [],
             "latest_observation": latest_observation,
         }
 

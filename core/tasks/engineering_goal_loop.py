@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.runtime_result_projection import mapping_projection
+from core.runtime.runtime_result_projection import detach_internal_result
 
 from core.evidence.decision_evidence import DecisionEvidenceRepository
 from core.evidence.evidence_authority import EvidenceAuthority
@@ -63,7 +63,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 class EngineeringGoalLoop:
@@ -264,7 +264,7 @@ class EngineeringGoalLoop:
                 continuation_runtime=continuation_runtime,
                 replan_runtime=replan_runtime,
             )
-            cycle = _as_mapping(dispatch_result.cycle)
+            cycle = dispatch_result.cycle if isinstance(dispatch_result.cycle, dict) else dict(dispatch_result.cycle)
             continuation_runtime = dispatch_result.continuation_runtime or continuation_runtime
             replan_runtime = dispatch_result.replan_runtime or replan_runtime
 
@@ -394,7 +394,7 @@ class EngineeringGoalLoop:
             "goal_id": _clean_text(runtime_contract.get("goal_id"), _clean_text(goal_id)),
             "ok": bool(runtime_contract.get("ok")),
             "runtime_state": _clean_text(runtime_result.get("state")),
-            "engineering_runtime_contract": mapping_projection(runtime_contract, max_depth=5, max_items=40),
+            "engineering_runtime_contract": detach_internal_result(runtime_contract),
             "adaptive_decision": decision,
             "adaptive_decision_record": copy.deepcopy(adaptive),
             "adaptive_reason": _clean_text(adaptive.get("reason")),
@@ -430,27 +430,14 @@ class EngineeringGoalLoop:
 
         if decision == "blocked":
             cycle["root_cause"] = root_cause
-        self._last_cycle = mapping_projection(cycle, max_depth=6, max_items=50)
+        self._last_cycle = detach_internal_result(cycle)
         return cycle
 
     @staticmethod
     def _runner_cycle_projection(runner_result: Any) -> dict[str, Any]:
         if not isinstance(runner_result, Mapping):
             return {}
-        return mapping_projection(
-            {
-                key: runner_result.get(key)
-                for key in (
-                    "schema", "ok", "action", "goal_id", "goal_lineage",
-                    "lineage_id", "parent_goal_id", "root_goal_id",
-                    "adaptive_decision", "runtime_root_cause", "execution_path",
-                    "issues_found", "blocking_issues", "deferred_issues",
-                )
-                if key in runner_result
-            },
-            max_depth=5,
-            max_items=40,
-        )
+        return dict(runner_result)
 
     def _refuse_adaptive_continuation(self, cycle: dict[str, Any], reason: str) -> None:
         record = _as_mapping(cycle.get("adaptive_planning_record"))

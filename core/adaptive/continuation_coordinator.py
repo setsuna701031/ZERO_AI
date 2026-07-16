@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection
+from core.runtime.runtime_result_projection import detach_internal_result
 
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.goals.goal_completion_authority import is_accepted_goal_completion_result
@@ -30,11 +30,15 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return mapping_projection(value, max_depth=6, max_items=50)
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 def _transport(value: Any) -> Any:
-    return bounded_json_projection(value, max_depth=6, max_items=50)
+    return detach_internal_result(value)
+
+
+def _view(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 class ContinuationCoordinator:
@@ -58,7 +62,7 @@ class ContinuationCoordinator:
 
         if runtime.limit_reached:
             raise RuntimeError("continuation_limit_reached")
-        cycle_record = _mapping(cycle)
+        cycle_record = _view(cycle)
         plan = _mapping(continuation_plan) or _mapping(cycle_record.get("continuation_plan"))
         next_request = _mapping(plan.get("next_runtime_request"))
         payload = _mapping(next_request.get("payload"))
@@ -128,9 +132,9 @@ class ContinuationCoordinator:
                     "continuation_plan": plan,
                     "work_item_template": work_item_template,
                     "adaptive_evidence_chain": _transport(plan.get("evidence_chain") or []),
-                    "runner_adaptive_decision": _transport(_mapping(_mapping(runner_result).get("adaptive_decision"))),
+                    "runner_adaptive_decision": _transport(_view(_view(runner_result).get("adaptive_decision"))),
                     "adaptive_planning_record": _transport(_mapping(
-                        _mapping(_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
+                        _view(_view(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
                     )),
                     "continuation_coordinator_schema": CONTINUATION_COORDINATOR_SCHEMA,
                 },

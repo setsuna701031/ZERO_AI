@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection, project_result_for
+from core.runtime.runtime_result_projection import bounded_json_projection, detach_internal_result, mapping_projection, project_result_for
 
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
@@ -103,7 +103,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
-    return mapping_projection(value, max_depth=6, max_items=50)
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 def _read_store(repo_root: Path) -> dict[str, Any]:

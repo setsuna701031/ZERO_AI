@@ -16,7 +16,7 @@ GOAL_LOOP_COORDINATOR_SCHEMA = "zero.goal_loop_coordinator.v1"
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _text(value: Any, default: str = "") -> str:

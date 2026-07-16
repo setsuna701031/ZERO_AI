@@ -26,7 +26,9 @@ SESSION_PROGRESSION_COORDINATOR_SCHEMA = "zero.session_progression_coordinator.v
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    # This coordinator enriches the same internal cycle.  A shallow shell avoids
+    # repeatedly cloning its complete execution-result graph.
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _text(value: Any, default: str = "") -> str:

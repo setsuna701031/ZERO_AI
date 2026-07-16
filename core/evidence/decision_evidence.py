@@ -13,7 +13,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Mapping
-from core.result_projection import bounded_json_projection, mapping_projection
+from core.result_projection import detach_internal_result, project_result_for
 
 
 from core.evidence.decision_evidence_models import DecisionEvidenceRecord
@@ -37,12 +37,17 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return mapping_projection(value, max_depth=8, max_items=50)
+    return detach_internal_result(value) if isinstance(value, Mapping) else {}
 
 
 def _list(value: Any) -> list[Any]:
-    projected = bounded_json_projection(value, max_depth=7, max_items=50)
+    projected = detach_internal_result(value)
     return projected if isinstance(projected, list) else []
+
+
+def _view(value: Any) -> Mapping[str, Any]:
+    """Read-only internal view used while reducing a full execution cycle."""
+    return value if isinstance(value, Mapping) else {}
 
 
 def build_decision_evidence(
@@ -51,15 +56,15 @@ def build_decision_evidence(
     continuation_work_item: Mapping[str, Any] | None = None,
     replan_record: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    cycle_record = _mapping(cycle)
-    adaptive = _mapping(cycle_record.get("adaptive_decision_record"))
-    planning = _mapping(cycle_record.get("adaptive_planning_record"))
-    runner = _mapping(cycle_record.get("runner_result"))
-    runtime = _mapping(runner.get("runtime_result"))
-    iterations = _list(runtime.get("iterations"))
-    latest_iteration = _mapping(iterations[-1]) if iterations else {}
-    continuation = _mapping(latest_iteration.get("continuation_result"))
-    latest_result = _mapping(continuation.get("latest_result"))
+    cycle_record = _view(cycle)
+    adaptive = _view(cycle_record.get("adaptive_decision_record"))
+    planning = _view(cycle_record.get("adaptive_planning_record"))
+    runner = _view(cycle_record.get("runner_result"))
+    runtime = _view(runner.get("runtime_result"))
+    iterations = runtime.get("iterations") if isinstance(runtime.get("iterations"), list) else []
+    latest_iteration = _view(iterations[-1]) if iterations else {}
+    continuation = _view(latest_iteration.get("continuation_result"))
+    latest_result = _view(continuation.get("latest_result"))
     task_id = _text(
         latest_result.get("task_id")
         or latest_result.get("task_name")
@@ -83,9 +88,9 @@ def build_decision_evidence(
     evidence_refs = []
     for item in _list(adaptive.get("evidence_chain")):
         if isinstance(item, Mapping):
-            evidence_refs.append(_text(item.get("evidence_id")) or mapping_projection(item, max_depth=4, max_items=20))
+            evidence_refs.append(_text(item.get("evidence_id")) or detach_internal_result(item))
         elif item not in (None, ""):
-            evidence_refs.append(bounded_json_projection(item, max_depth=3, max_items=20))
+            evidence_refs.append(detach_internal_result(item))
 
     links = {
         "continuation_goal_id": _text(_mapping(continuation_work_item).get("goal_id")),
@@ -125,7 +130,7 @@ def build_decision_evidence(
         outcome_class=outcome_class,
         decision=decision,
         decision_reason=reason,
-        confidence=bounded_json_projection(confidence, max_depth=2, max_items=10),
+        confidence=detach_internal_result(confidence),
         confidence_unavailable_reason="confidence_not_present_in_adaptive_decision",
         next_action=next_action,
         evidence_refs=evidence_refs,
@@ -165,7 +170,7 @@ class DecisionEvidenceRepository:
         )
 
     def save(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        normalized = mapping_projection(record, max_depth=8, max_items=50)
+        normalized = project_result_for("evidence", record)
         decision_id = _text(normalized.get("decision_id"))
         if not decision_id:
             raise ValueError("decision_evidence_requires_decision_id")
@@ -181,7 +186,7 @@ class DecisionEvidenceRepository:
         if stored is None:
             records = self.find_by_task_id(_text(normalized.get("task_id")))
             if records:
-                return mapping_projection(records[-1], max_depth=8, max_items=50)
+                return project_result_for("evidence", records[-1])
             return self._projection_from_decision_dict(normalized)
 
         return self._record_to_decision_dict(stored)
@@ -225,7 +230,7 @@ class DecisionEvidenceRepository:
             "outcome_class": _text(normalized.get("outcome_class")),
             "decision": _text(normalized.get("decision"), "unavailable"),
             "decision_reason": _text(normalized.get("decision_reason"), "decision_reason_unavailable"),
-            "confidence": bounded_json_projection(normalized.get("confidence"), max_depth=2, max_items=10),
+            "confidence": detach_internal_result(normalized.get("confidence")),
             "confidence_unavailable_reason": _text(normalized.get("confidence_unavailable_reason")),
             "next_action": _text(normalized.get("next_action")),
             "evidence_refs": _list(normalized.get("evidence_refs")),
@@ -265,7 +270,7 @@ class DecisionEvidenceRepository:
             "outcome_class": outcome_class,
             "decision": decision,
             "decision_reason": decision_reason,
-            "confidence": bounded_json_projection(metadata.get("confidence"), max_depth=2, max_items=10),
+            "confidence": detach_internal_result(metadata.get("confidence")),
             "confidence_unavailable_reason": _text(metadata.get("confidence_unavailable_reason")),
             "next_action": metadata.get("next_action", ""),
             "evidence_refs": _list(metadata.get("evidence_refs")),

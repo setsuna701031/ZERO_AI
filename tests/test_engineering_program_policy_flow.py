@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -99,28 +96,24 @@ def test_program_run_next_cli_includes_selection_summary(tmp_path, monkeypatch, 
     assert payload["program_run"]["selection"]["selection_summary"]["runnable_portfolio_ids"] == ["portfolio_2"]
 
 
-def test_program_cycle_cli_smoke_keeps_policy_selection(tmp_path) -> None:
+def test_program_cycle_cli_smoke_keeps_policy_selection(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
     program_store = tmp_path / "programs.json"
     portfolio_store = tmp_path / "portfolios.json"
+    monkeypatch.setenv("ZERO_PROGRAM_STORE", str(program_store))
+    monkeypatch.setenv("ZERO_PORTFOLIO_STORE", str(portfolio_store))
     _repos(tmp_path, program_store=program_store, portfolio_store=portfolio_store)
-    env = {
-        **dict(os.environ),
-        "ZERO_PROGRAM_STORE": str(program_store),
-        "ZERO_PORTFOLIO_STORE": str(portfolio_store),
-        "PYTHONPATH": str(REPO_ROOT),
-    }
-    python = sys.executable
 
-    result = subprocess.run(
-        [python, str(REPO_ROOT / "app.py"), "program", "cycle", "program_1"],
-        cwd=REPO_ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
+    handled = program_cli.try_handle_program_command(
+        ["program", "cycle", "program_1"],
+        repo_root=REPO_ROOT,
     )
+    payload = json.loads(capsys.readouterr().out)
 
-    payload = json.loads(result.stdout)
+    assert handled is True
     run = payload["program_cycle"]["runs"][0]
     assert run["selected_portfolio_id"] == "portfolio_2"
     assert run["selection"]["selection_summary"]["runnable_portfolio_ids"] == ["portfolio_2"]

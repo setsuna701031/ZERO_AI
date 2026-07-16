@@ -54,9 +54,12 @@ class EngineeringProgramValidationResult:
 class EngineeringProgramValidator:
     def validate(self, transition: EngineeringProgramTransition | Mapping[str, Any]) -> EngineeringProgramValidationResult:
         if isinstance(transition, EngineeringProgramTransition):
-            record = transition.to_dict()
+            record = {
+                "from_state": transition.from_state,
+                "to_state": transition.to_state,
+            }
         elif isinstance(transition, Mapping):
-            record = copy.deepcopy(dict(transition))
+            record = dict(transition)
         else:
             raise TypeError("engineering_program_transition_must_be_mapping_or_transition")
         try:

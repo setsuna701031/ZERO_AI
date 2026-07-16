@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from core.runtime.runtime_result_projection import project_result_for
+from core.runtime.runtime_result_projection import detach_internal_result, project_result_for
 
 from core.runtime.aer_runtime_integration import AERRuntimeIntegration
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
