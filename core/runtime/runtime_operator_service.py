@@ -128,6 +128,21 @@ from core.runtime.runtime_operator_package_dispatch_bridge import (
 RUNTIME_OPERATOR_SERVICE_SCHEMA = "zero.runtime.operator_service.v1"
 
 
+def _derive_completed_service_flags(
+    invocation_dispatch_record: Mapping[str, Any],
+    execution_session_record: Mapping[str, Any],
+) -> tuple[bool, bool]:
+    executor_invoked = (
+        invocation_dispatch_record.get("dispatch_status") == "dispatch_bound"
+        and invocation_dispatch_record.get("executor_invoked") is True
+    )
+    execution_started = (
+        execution_session_record.get("execution_status") == "dry_run_started"
+        and execution_session_record.get("execution_started") is True
+    )
+    return executor_invoked, execution_started
+
+
 def _mapping(value: Any) -> dict[str, Any]:
     return deepcopy(value) if isinstance(value, Mapping) else {}
 
@@ -731,8 +746,12 @@ class RuntimeOperatorService:
             if "runtime_execution_session_start" in locals()
             else {}
         )
-        executor_invoked_active = invocation_dispatch_record.get("executor_invoked") is True
-        execution_started_active = execution_session_record.get("execution_started") is True
+        executor_invoked_active, execution_started_active = (
+            _derive_completed_service_flags(
+                invocation_dispatch_record,
+                execution_session_record,
+            )
+        )
         mutation_success_active = (
             "controlled_mutation_unlock" in locals()
             and controlled_mutation_unlock.get("controlled_mutation") is True

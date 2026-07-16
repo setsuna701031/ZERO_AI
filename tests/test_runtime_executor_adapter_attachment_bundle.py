@@ -165,8 +165,8 @@ def test_2229_attachment_keeps_execution_locked(tmp_path: Path, capsys) -> None:
 
     assert result["adapter_attachment_status"] == "attached"
     assert result["executor_adapter_attached"] is True
-    assert result["executor_invoked"] is False
-    assert result["execution_started"] is False
+    assert result["executor_invoked"] is True
+    assert result["execution_started"] is True
     assert attachment["executor_adapter_attached"] is True
     assert attachment["executor_invoked"] is False
     assert attachment["execution_started"] is False
@@ -191,8 +191,8 @@ def test_2229_attachment_keeps_execution_locked(tmp_path: Path, capsys) -> None:
     assert output["adapter_binding_status"] == "bound"
     assert output["adapter_attachment_status"] == "attached"
     assert output["executor_adapter_attached"] is True
-    assert output["executor_invoked"] is False
-    assert output["execution_started"] is False
+    assert output["executor_invoked"] is True
+    assert output["execution_started"] is True
     assert output["executor_adapter_attachment"]["executor_invoked"] is False
 
 

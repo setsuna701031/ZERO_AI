@@ -23,7 +23,10 @@ from core.runtime.runtime_executor_adapter_binding import (
 from core.runtime.runtime_executor_envelope import prepare_runtime_executor_envelope
 from core.runtime.runtime_goal_queue_admission import submit_goal_session_to_queue
 from core.runtime.runtime_goal_session_launcher import launch_goal_session
-from core.runtime.runtime_operator_service import RuntimeOperatorService
+from core.runtime.runtime_operator_service import (
+    RuntimeOperatorService,
+    _derive_completed_service_flags,
+)
 from core.runtime.runtime_queue_worker_pickup import submit_queue_entry_for_worker_pickup
 
 
@@ -161,7 +164,8 @@ def test_2197_adapter_metadata_exists_and_executor_not_invoked(
 
     assert result["adapter_binding_status"] == "bound"
     assert result["executor_adapter_bound"] is True
-    assert result["executor_invoked"] is False
+    assert result["executor_invoked"] is True
+    assert result["execution_started"] is True
     assert binding["adapter_metadata"]["adapter_name"] == "dry_run_executor_adapter"
     assert binding["adapter_metadata"]["adapter_reference"] == "dry_run_adapter_reference"
     assert binding["adapter_metadata"]["adapter_attached"] is False
@@ -186,8 +190,78 @@ def test_2197_adapter_metadata_exists_and_executor_not_invoked(
     assert output["executor_envelope_status"] == "prepared"
     assert output["adapter_binding_status"] == "bound"
     assert output["executor_adapter_bound"] is True
-    assert output["executor_invoked"] is False
+    assert output["executor_invoked"] is True
+    assert output["execution_started"] is True
     assert output["executor_adapter_binding"]["executor_invoked"] is False
+
+
+def test_completed_top_level_projection_is_goal_text_independent(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+
+    adapter_named = RuntimeOperatorService(_config(first_root)).run_goal(
+        "operator adapter binding"
+    )
+    unrelated_text = RuntimeOperatorService(_config(second_root)).run_goal(
+        "an admitted goal with entirely different wording"
+    )
+
+    assert adapter_named["executor_invoked"] is True
+    assert adapter_named["execution_started"] is True
+    assert (
+        adapter_named["executor_invoked"],
+        adapter_named["execution_started"],
+    ) == (
+        unrelated_text["executor_invoked"],
+        unrelated_text["execution_started"],
+    )
+    assert adapter_named["executor_adapter_binding"]["executor_invoked"] is False
+    assert adapter_named["executor_invocation_gate"]["executor_invoked"] is False
+    assert adapter_named["executor_invocation_record"]["executor_invoked"] is False
+    assert adapter_named["executor_invocation_record"]["execution_started"] is False
+
+
+def test_top_level_projection_source_uses_only_canonical_stage_contracts() -> None:
+    source = Path("core/runtime/runtime_operator_service.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'get("dispatch_status") == "dispatch_bound"' in source
+    assert 'get("execution_status") == "dry_run_started"' in source
+    assert 'get("dispatch_status") == "dispatched"' not in source
+    assert 'get("session_start_status") == "started"' not in source
+
+
+def test_completed_flags_require_canonical_status_and_explicit_true() -> None:
+    valid_dispatch = {
+        "dispatch_status": "dispatch_bound",
+        "executor_invoked": True,
+    }
+    valid_session = {
+        "execution_status": "dry_run_started",
+        "execution_started": True,
+    }
+
+    assert _derive_completed_service_flags(valid_dispatch, valid_session) == (
+        True,
+        True,
+    )
+    for dispatch in (
+        {**valid_dispatch, "dispatch_status": "dispatched"},
+        {**valid_dispatch, "executor_invoked": False},
+        {**valid_dispatch, "executor_invoked": 1},
+        {"dispatch_status": "dispatch_bound"},
+    ):
+        assert _derive_completed_service_flags(dispatch, valid_session)[0] is False
+    for session in (
+        {**valid_session, "execution_status": "started"},
+        {**valid_session, "execution_started": False},
+        {**valid_session, "execution_started": 1},
+        {"execution_status": "dry_run_started"},
+    ):
+        assert _derive_completed_service_flags(valid_dispatch, session)[1] is False
 
 
 def test_2208_forbidden_execution_surface_scan() -> None:

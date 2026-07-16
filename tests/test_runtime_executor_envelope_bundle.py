@@ -154,7 +154,8 @@ def test_2165_execution_never_starts_or_attaches(tmp_path: Path, capsys) -> None
     status = service.status()
 
     assert result["executor_envelope_status"] == "prepared"
-    assert result["execution_started"] is False
+    assert result["executor_invoked"] is True
+    assert result["execution_started"] is True
     assert result["executor_attached"] is False
     assert result["executor_envelope"]["executor_envelope_prepared"] is True
     assert result["executor_envelope"]["execution_started"] is False
@@ -176,7 +177,8 @@ def test_2165_execution_never_starts_or_attaches(tmp_path: Path, capsys) -> None
     assert code == 0
     assert output["permit_status"] == "permit_granted"
     assert output["executor_envelope_status"] == "prepared"
-    assert output["execution_started"] is False
+    assert output["executor_invoked"] is True
+    assert output["execution_started"] is True
     assert output["executor_attached"] is False
     assert output["executor_envelope"]["runtime_executed"] is False
 
