@@ -733,15 +733,18 @@ def attach_runtime_execution_result(
     )
     return normalized
 
+# ZERO v7.3.33 - Canonical public runtime output sanitization
+#
+# Contract:
+# - RuntimeExecutionResult.to_dict() and build_runtime_execution_result()
+#   preserve canonical execution evidence.
+# - Public container outputs remove evidence adapter/hook/boundary internals.
+# - A nested ``runtime_execution_result`` is a canonical public ABI object,
+#   so its ``evidence`` field remains present by value.
+# - No hidden-key mappings, monkeypatching, or duplicate builder definitions.
 
-# ZERO v7.3.32 - Public runtime output sanitizer
-# Keep evidence adapter/hook/boundary implementation internals private.
-# Important compatibility split:
-# - RuntimeExecutionResult.to_dict() must preserve the canonical "evidence" key
-#   for governed mutation gateway contracts.
-# - Public nested runtime_execution_result mirrors attached to StepExecutor outputs
-#   must not expose evidence internals.
-def _zero_v7332_public_internal_keys(*, include_evidence: bool = True) -> set[str]:
+
+def _public_runtime_internal_keys(*, include_canonical_evidence: bool) -> set[str]:
     try:
         from core.runtime.runtime_execution_result_fields import (
             public_runtime_output_internal_keys,
@@ -759,143 +762,118 @@ def _zero_v7332_public_internal_keys(*, include_evidence: bool = True) -> set[st
             "hook",
             "hook_fingerprint",
         }
-    if not include_evidence:
+
+    if include_canonical_evidence:
         keys.discard("evidence")
     return keys
 
 
-class _PublicRuntimeExecutionResultDict(dict):
-    """Public-key-safe dict with legacy indexed evidence access."""
-
-    def __init__(self, *args: Any, legacy_evidence: Any = None, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._legacy_evidence = copy.deepcopy(legacy_evidence) if legacy_evidence else None
-
-    def __getitem__(self, key: str) -> Any:
-        if key == "evidence" and key not in self:
-            if self._legacy_evidence is None:
-                raise KeyError(key)
-            return copy.deepcopy(self._legacy_evidence)
-        return super().__getitem__(key)
-
-
-def sanitize_runtime_execution_result(value: Any, *, drop_evidence: bool = True) -> dict[str, Any]:
-    """Return a public RuntimeExecutionResult mapping.
-
-    ``drop_evidence=True`` is used for nested public runtime output mirrors.
-    ``drop_evidence=False`` is used by RuntimeExecutionResult.to_dict() to keep
-    legacy/canonical gateway evidence payloads such as stdout/stderr.
-    """
+def sanitize_runtime_execution_result(
+    value: Any,
+    *,
+    preserve_evidence: bool = True,
+) -> dict[str, Any]:
+    """Return a detached, public-safe canonical execution-result mapping."""
 
     if not isinstance(value, dict):
         return {}
-    legacy_evidence = value.get("evidence") if drop_evidence else None
-    if drop_evidence and not legacy_evidence and isinstance(value.get("metadata"), dict):
-        legacy_evidence = {"metadata": copy.deepcopy(value["metadata"])}
-    internal_keys = _zero_v7332_public_internal_keys(include_evidence=drop_evidence)
+
+    internal_keys = _public_runtime_internal_keys(
+        include_canonical_evidence=preserve_evidence,
+    )
     sanitized: dict[str, Any] = {}
+
     for key, item in value.items():
         if key in internal_keys:
             continue
+
         if key == "metadata" and isinstance(item, dict):
-            metadata = sanitize_runtime_public_output(item, drop_evidence=drop_evidence)
-            if isinstance(metadata, dict):
-                sanitized[key] = metadata
+            sanitized[key] = sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=False,
+            )
             continue
-        sanitized[key] = sanitize_runtime_public_output(item, drop_evidence=drop_evidence)
-    if drop_evidence:
-        return _PublicRuntimeExecutionResultDict(
-            sanitized,
-            legacy_evidence=legacy_evidence,
+
+        sanitized[key] = sanitize_runtime_public_output(
+            item,
+            preserve_canonical_evidence=preserve_evidence,
         )
+
     return sanitized
 
 
 def sanitize_runtime_execution_result_for_public(payload: Any) -> dict[str, Any]:
-    """Return a public-safe nested runtime_execution_result mapping."""
+    """Preserve canonical evidence while removing implementation internals."""
 
-    return sanitize_runtime_execution_result(payload, drop_evidence=False)
+    return sanitize_runtime_execution_result(
+        payload,
+        preserve_evidence=True,
+    )
 
 
-def sanitize_runtime_public_output(value: Any, *, drop_evidence: bool = True) -> Any:
-    """Recursively remove evidence internals from public runtime output."""
+def sanitize_runtime_public_output(
+    value: Any,
+    *,
+    preserve_canonical_evidence: bool = False,
+) -> Any:
+    """Recursively detach public runtime output and remove private internals.
 
-    internal_keys = _zero_v7332_public_internal_keys(include_evidence=drop_evidence)
+    Canonical evidence is preserved only inside a nested
+    ``runtime_execution_result`` or when explicitly requested.
+    """
+
+    internal_keys = _public_runtime_internal_keys(
+        include_canonical_evidence=preserve_canonical_evidence,
+    )
+
     if isinstance(value, dict):
         sanitized: dict[str, Any] = {}
         for key, item in value.items():
             if key in internal_keys:
                 continue
+
             if key == "runtime_execution_result" and isinstance(item, dict):
-                # Canonical execution evidence is part of the public result ABI;
-                # adapter/hook implementation internals remain filtered.
-                sanitized[key] = sanitize_runtime_execution_result(item, drop_evidence=False)
-            elif key == "raw" and isinstance(item, dict):
-                # adapter_payload.raw is a compatibility mirror. Keep it public-safe
-                # instead of letting it reintroduce evidence internals.
-                sanitized[key] = sanitize_runtime_public_output(item, drop_evidence=True)
-            else:
-                sanitized[key] = sanitize_runtime_public_output(item, drop_evidence=drop_evidence)
+                sanitized[key] = sanitize_runtime_execution_result_for_public(item)
+                continue
+
+            if key == "raw" and isinstance(item, dict):
+                sanitized[key] = sanitize_runtime_public_output(
+                    item,
+                    preserve_canonical_evidence=False,
+                )
+                continue
+
+            sanitized[key] = sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
         return sanitized
+
     if isinstance(value, list):
-        return [sanitize_runtime_public_output(item, drop_evidence=drop_evidence) for item in value]
+        return [
+            sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+            for item in value
+        ]
+
     if isinstance(value, tuple):
-        return tuple(sanitize_runtime_public_output(item, drop_evidence=drop_evidence) for item in value)
+        return tuple(
+            sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+            for item in value
+        )
+
     if isinstance(value, set):
-        return {sanitize_runtime_public_output(item, drop_evidence=drop_evidence) for item in value}
+        return {
+            sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+            for item in value
+        }
+
     return copy.deepcopy(value)
-
-
-_ZERO_V7332_ORIGINAL_RUNTIME_EXECUTION_RESULT_TO_DICT = RuntimeExecutionResult.to_dict
-
-
-def _zero_v7332_runtime_execution_result_to_dict(self: RuntimeExecutionResult) -> dict[str, Any]:
-    return sanitize_runtime_execution_result(
-        _ZERO_V7332_ORIGINAL_RUNTIME_EXECUTION_RESULT_TO_DICT(self),
-        drop_evidence=False,
-    )
-
-
-RuntimeExecutionResult.to_dict = _zero_v7332_runtime_execution_result_to_dict
-
-_ZERO_V7332_ORIGINAL_BUILD_RUNTIME_EXECUTION_RESULT = build_runtime_execution_result
-
-
-def build_runtime_execution_result(
-    payload: Any,
-    *,
-    task: dict[str, Any] | None = None,
-    step: dict[str, Any] | None = None,
-    step_index: int | None = None,
-    step_count: int | None = None,
-) -> dict[str, Any]:
-    return sanitize_runtime_execution_result(
-        _ZERO_V7332_ORIGINAL_BUILD_RUNTIME_EXECUTION_RESULT(
-            payload,
-            task=task,
-            step=step,
-            step_index=step_index,
-            step_count=step_count,
-        ),
-        drop_evidence=False,
-    )
-
-
-def attach_runtime_execution_result(
-    payload: dict[str, Any] | None,
-    *,
-    task: dict[str, Any] | None = None,
-    step: dict[str, Any] | None = None,
-    step_index: int | None = None,
-    step_count: int | None = None,
-) -> dict[str, Any]:
-    normalized = payload if isinstance(payload, dict) else {}
-    normalized["runtime_execution_result"] = build_runtime_execution_result(
-        normalized,
-        task=task,
-        step=step,
-        step_index=step_index,
-        step_count=step_count,
-    )
-    # Compatibility contract: mutate and return the same payload object.
-    return normalized
