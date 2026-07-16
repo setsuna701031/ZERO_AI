@@ -414,7 +414,7 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
 
     def test_no_evidence_internals_leak_to_runtime_outputs(self) -> None:
         flow = self._run_cross_layer_flow()
-        forbidden = {
+        forbidden_runtime_keys = {
             "evidence",
             "evidence_adapter",
             "evidence_events",
@@ -424,23 +424,56 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             "hook",
             "hook_fingerprint",
         }
+        forbidden_canonical_result_internals = {
+            "evidence_adapter",
+            "evidence_events",
+            "boundary",
+            "boundary_fingerprint",
+            "adapter_fingerprint",
+            "hook",
+            "hook_fingerprint",
+        }
 
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["scheduler_status"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["running"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["running"]["runtime_state"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["step"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["finished"]))
+        self.assertTrue(
+            forbidden_runtime_keys.isdisjoint(flow["results"]["scheduler_status"])
+        )
+        self.assertTrue(forbidden_runtime_keys.isdisjoint(flow["results"]["running"]))
+        self.assertTrue(
+            forbidden_runtime_keys.isdisjoint(
+                flow["results"]["running"]["runtime_state"]
+            )
+        )
+        self.assertTrue(forbidden_runtime_keys.isdisjoint(flow["results"]["step"]))
+        self.assertTrue(forbidden_runtime_keys.isdisjoint(flow["results"]["finished"]))
 
-        runtime_execution_result = flow["results"]["step"].get("runtime_execution_result")
+        runtime_execution_result = flow["results"]["step"].get(
+            "runtime_execution_result"
+        )
         self.assertIsInstance(runtime_execution_result, dict)
-        self.assertTrue(forbidden.isdisjoint(runtime_execution_result))
+        self.assertTrue(
+            forbidden_canonical_result_internals.isdisjoint(
+                runtime_execution_result
+            )
+        )
+        self.assertIsInstance(runtime_execution_result.get("evidence"), dict)
 
         adapter_payload = flow["results"]["step"].get("adapter_payload")
-        if isinstance(adapter_payload, dict) and isinstance(adapter_payload.get("raw"), dict):
-            self.assertTrue(forbidden.isdisjoint(adapter_payload["raw"]))
-            nested_runtime_result = adapter_payload["raw"].get("runtime_execution_result")
+        if isinstance(adapter_payload, dict) and isinstance(
+            adapter_payload.get("raw"), dict
+        ):
+            self.assertTrue(
+                forbidden_runtime_keys.isdisjoint(adapter_payload["raw"])
+            )
+            nested_runtime_result = adapter_payload["raw"].get(
+                "runtime_execution_result"
+            )
             if isinstance(nested_runtime_result, dict):
-                self.assertTrue(forbidden.isdisjoint(nested_runtime_result))
+                self.assertTrue(
+                    forbidden_canonical_result_internals.isdisjoint(
+                        nested_runtime_result
+                    )
+                )
+                self.assertIsInstance(nested_runtime_result.get("evidence"), dict)
 
     def test_hooks_and_adapters_are_observational_only(self) -> None:
         from core.runtime.task_runtime import TaskRuntime

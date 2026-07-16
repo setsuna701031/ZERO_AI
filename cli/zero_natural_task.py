@@ -55,6 +55,39 @@ def _normalized_operator_result(operator_result: Any) -> dict[str, Any]:
     return normalized
 
 
+def _operator_blocked(
+    operator_result: Any,
+    *,
+    controlled: bool,
+) -> bool:
+    payload = operator_result if isinstance(operator_result, dict) else {}
+
+    raw = payload.get("raw_operator_result")
+    raw = raw if isinstance(raw, dict) else payload
+
+    # A controlled bridge may legitimately complete as a governed dry-run
+    # without mutation. That remains bridge success. An explicit denial on
+    # the manual/uncontrolled path is a blocked operator outcome.
+    if controlled:
+        return False
+
+    controlled_mutation_result = raw.get("controlled_mutation_result")
+    if isinstance(controlled_mutation_result, dict):
+        denial_reason = str(
+            controlled_mutation_result.get("denial_reason")
+            or raw.get("denial_reason")
+            or ""
+        ).strip()
+        return (
+            controlled_mutation_result.get("ok") is False
+            and controlled_mutation_result.get("mutation_completed") is not True
+            and bool(denial_reason)
+        )
+
+    denial_reason = str(raw.get("denial_reason") or "").strip()
+    return raw.get("ok") is False and bool(denial_reason)
+
+
 def _operator_mutation_succeeded(operator_result: Any) -> bool:
     payload = operator_result if isinstance(operator_result, dict) else {}
 
@@ -145,20 +178,27 @@ def _run_natural_task_once(
     task_completed = _operator_mutation_succeeded(
         persisted_operator_result
     )
+    operator_blocked = _operator_blocked(
+        persisted_operator_result,
+        controlled=controlled,
+    )
     pipeline_ready = (
         package_generated
         and operator_console_available
         and Path(result_path).exists()
         and persisted_operator_result.get("ok") is True
     )
+    operation_ok = pipeline_ready and not operator_blocked
 
     result = {
         "schema": ZERO_NATURAL_TASK_SCHEMA,
-        # Bridge success means the governed operator pipeline completed and
-        # persisted its result. Mutation completion remains a separate field.
-        "ok": pipeline_ready,
+        # Bridge readiness, operator outcome, and mutation completion are
+        # separate contracts. A safely blocked operator run can complete and
+        # persist the bridge while still reporting top-level ok=False.
+        "ok": operation_ok,
         "bridge_ok": pipeline_ready,
         "pipeline_ready": pipeline_ready,
+        "operator_blocked": operator_blocked,
         "task_completed": task_completed,
         "natural_task": task,
         "intake_id": materialized.get("intake_id") or "",
