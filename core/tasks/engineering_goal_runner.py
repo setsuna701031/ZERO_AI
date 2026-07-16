@@ -16,6 +16,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.runtime.runtime_result_projection import mapping_projection
+
 from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner, normalize_adaptive_decision
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
@@ -220,13 +222,9 @@ class EngineeringGoalRunner:
         goals = self.repository.list_goals()
         request = self.build_runtime_request(goals)
         runtime_result, runtime_stdout = self._run_runtime(request, scheduler_goals=goals)
-        selected_goal_id = _clean_text(
-            (
-                copy.deepcopy(runtime_result.get("iterations", [{}])[0])
-                if isinstance(runtime_result, Mapping) and runtime_result.get("iterations")
-                else {}
-            ).get("goal_id")
-        )
+        iterations = runtime_result.get("iterations") if isinstance(runtime_result, Mapping) else None
+        first_iteration = iterations[0] if isinstance(iterations, list) and iterations and isinstance(iterations[0], Mapping) else {}
+        selected_goal_id = _clean_text(first_iteration.get("goal_id"))
         selected_goal = self._goal_for_adaptive_decision(goals, selected_goal_id)
         runtime_root_cause = self._runtime_root_cause(runtime_result) if not bool(runtime_result.get("ok")) else {}
         issue_summary = build_engineering_issue_summary(self.repo_root, issue_reporter=self.issue_reporter)
@@ -408,11 +406,11 @@ class EngineeringGoalRunner:
             "action": action,
             "goal_id": goal_id,
             "engineering_runtime_contract": runtime_contract,
-            "runtime_request": copy.deepcopy(dict(runtime_request)),
-            "runtime_result": copy.deepcopy(dict(runtime_result)) if isinstance(runtime_result, Mapping) else {},
-            "runtime_stdout": str(runtime_stdout or ""),
-            "runtime_root_cause": copy.deepcopy(dict(runtime_root_cause)),
-            "adaptive_decision": copy.deepcopy(dict(adaptive_decision)),
+            "runtime_request": mapping_projection(runtime_request, max_depth=4, max_items=40, max_string_chars=4096),
+            "runtime_result": mapping_projection(runtime_result, max_depth=5, max_items=40, max_string_chars=4096),
+            "runtime_stdout": str(runtime_stdout or "")[:8192],
+            "runtime_root_cause": mapping_projection(runtime_root_cause, max_depth=4, max_items=40),
+            "adaptive_decision": mapping_projection(adaptive_decision, max_depth=5, max_items=40),
             "execution_path": {
                 "repository_persists_only": True,
                 "goal_runner_bridges_only": True,
@@ -463,8 +461,8 @@ class EngineeringGoalRunner:
             "stop_reason": _clean_text(runtime_result.get("stop_reason")),
             "decision_state": _clean_text(runtime_result.get("decision_state")),
             "goal_state": _clean_text(lifecycle.get("goal_state")) if isinstance(lifecycle, Mapping) else "",
-            "failed_tasks": copy.deepcopy(lifecycle.get("failed_tasks")) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("failed_tasks"), list) else [],
-            "blocked_tasks": copy.deepcopy(lifecycle.get("blocked_tasks")) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("blocked_tasks"), list) else [],
+            "failed_tasks": mapping_projection({"items": lifecycle.get("failed_tasks")}, max_depth=4, max_items=50).get("items", []) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("failed_tasks"), list) else [],
+            "blocked_tasks": mapping_projection({"items": lifecycle.get("blocked_tasks")}, max_depth=4, max_items=50).get("items", []) if isinstance(lifecycle, Mapping) and isinstance(lifecycle.get("blocked_tasks"), list) else [],
             "latest_observation": latest_observation,
         }
 

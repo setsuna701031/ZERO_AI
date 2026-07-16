@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection, project_result_for
+
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_issue_reporter import EngineeringIssueReporter
@@ -28,7 +30,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _print_json(data: Any) -> None:
-    print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+    print(json.dumps(project_result_for("cli", data), ensure_ascii=False, indent=2, sort_keys=True, default=str))
 
 
 def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
@@ -143,7 +145,7 @@ def _portfolio_summary(portfolio: Mapping[str, Any]) -> dict[str, Any]:
         "portfolio_id": _clean_text(portfolio.get("portfolio_id")),
         "name": _clean_text(portfolio.get("name")),
         "goal_count": len(goal_ids),
-        "goal_ids": copy.deepcopy(goal_ids),
+        "goal_ids": bounded_json_projection(goal_ids, max_depth=2, max_items=50),
     }
 
 
@@ -158,7 +160,7 @@ def _coordinator_summary(result: Mapping[str, Any]) -> dict[str, Any]:
         "portfolio_id": _clean_text(result.get("portfolio_id")),
         "selected_goal_id": _clean_text(result.get("selected_goal_id")),
         "reason": _clean_text(result.get("reason")),
-        "selection": copy.deepcopy(result.get("selection")) if isinstance(result.get("selection"), Mapping) else {},
+        "selection": mapping_projection(result.get("selection"), max_depth=5, max_items=50),
         "loop_result": {
             "ok": bool(loop_result.get("ok")),
             "goal_id": _clean_text(loop_result.get("goal_id")),
@@ -177,7 +179,7 @@ def _coordinator_summary(result: Mapping[str, Any]) -> dict[str, Any]:
                 if isinstance(cycle, Mapping)
             ],
         },
-        "updated_goal": copy.deepcopy(result.get("updated_goal")) if isinstance(result.get("updated_goal"), Mapping) else {},
+        "updated_goal": mapping_projection(result.get("updated_goal"), max_depth=5, max_items=50),
         "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
         "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
         "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
@@ -199,8 +201,8 @@ def _cycle_summary(result: Mapping[str, Any]) -> dict[str, Any]:
         "completed_goal_count": int(result.get("completed_goal_count") or 0),
         "blocked_goal_count": int(result.get("blocked_goal_count") or 0),
         "skipped_goal_count": int(result.get("skipped_goal_count") or 0),
-        "runs": [copy.deepcopy(dict(run)) for run in runs if isinstance(run, Mapping)],
-        "portfolio_state": copy.deepcopy(result.get("portfolio_state")) if isinstance(result.get("portfolio_state"), Mapping) else {},
+        "runs": [mapping_projection(run, max_depth=8, max_items=50) for run in runs if isinstance(run, Mapping)],
+        "portfolio_state": mapping_projection(result.get("portfolio_state"), max_depth=6, max_items=50),
         "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
         "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
         "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],

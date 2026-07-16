@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
+from core.runtime.runtime_result_projection import mapping_projection
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
 
@@ -79,12 +80,12 @@ class RuntimeRouteRegistry:
             raw_result = runner()
             if not isinstance(raw_result, dict):
                 return raw_result
-            result = copy.deepcopy(raw_result)
+            # Build a detached, bounded envelope instead of deepcopying an
+            # arbitrary object graph owned by the compatibility runner.
+            result = mapping_projection(raw_result, max_depth=6, max_items=50, max_string_chars=8192)
             result.setdefault("runtime_route_registry_admission", True)
             result.setdefault("runtime_route_key", record.route_key)
-            route = result.get("route")
-            if not isinstance(route, dict):
-                route = {}
+            route = dict(result.get("route")) if isinstance(result.get("route"), dict) else {}
             route.setdefault("runtime_route_registry_admission", True)
             route.setdefault("runtime_route_key", record.route_key)
             result["route"] = route

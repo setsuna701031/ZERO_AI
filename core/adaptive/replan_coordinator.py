@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection
+
 from core.adaptive.replan_runtime import ReplanRuntime
 from core.goals.goal_lineage_contract import attach_goal_lineage, create_goal_branch_lineage, extract_goal_lineage, extract_runtime_identity
 
@@ -21,11 +23,12 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return mapping_projection(value, max_depth=6, max_items=50)
 
 
 def _list(value: Any) -> list[Any]:
-    return copy.deepcopy(list(value)) if isinstance(value, list) else []
+    projected = bounded_json_projection(value, max_depth=5, max_items=50)
+    return projected if isinstance(projected, list) else []
 
 
 class ReplanCoordinator:
@@ -83,13 +86,13 @@ class ReplanCoordinator:
             "failed_step": _mapping(request.get("failed_step")),
             "missing_artifacts": _list(request.get("missing_artifacts")),
             "next_runtime_request": _mapping(request.get("next_runtime_request")),
-            "replan_request": copy.deepcopy(request),
+            "replan_request": mapping_projection(request, max_depth=6, max_items=50),
             "runner_adaptive_decision": _mapping(_mapping(runner_result).get("adaptive_decision")),
             "adaptive_planning_record": _mapping(
                 _mapping(_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
             ),
             "root_cause_report": _mapping(request.get("root_cause_report")),
-            "evidence_chain": copy.deepcopy(request.get("evidence_chain") or []),
+            "evidence_chain": _list(request.get("evidence_chain")),
             "replan_coordinator": {
                 "schema": REPLAN_COORDINATOR_SCHEMA,
                 "created_replan_record": True,

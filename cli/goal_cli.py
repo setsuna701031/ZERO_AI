@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection, project_result_for
+
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_portfolio import EngineeringGoalPortfolio
@@ -75,7 +77,7 @@ def _goal_loop(repo_root: Path) -> EngineeringGoalLoop:
 
 
 def _print_json(data: Any) -> None:
-    print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+    print(json.dumps(project_result_for("cli", data), ensure_ascii=False, indent=2, sort_keys=True, default=str))
 
 
 def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
@@ -101,7 +103,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+    return mapping_projection(value, max_depth=6, max_items=50)
 
 
 def _read_store(repo_root: Path) -> dict[str, Any]:
@@ -284,10 +286,10 @@ def _summarize_runner_result(result: Mapping[str, Any]) -> dict[str, Any]:
                             "cycle": cycle.get("cycle"),
                             "goal_state": _clean_text(cycle.get("goal_state")),
                             "submitted_to": _clean_text(cycle.get("submitted_to")),
-                            "completed_tasks": copy.deepcopy(cycle.get("completed_tasks"))
+                            "completed_tasks": bounded_json_projection(cycle.get("completed_tasks"), max_depth=3, max_items=50)
                             if isinstance(cycle.get("completed_tasks"), list)
                             else [],
-                            "remaining_tasks": copy.deepcopy(cycle.get("remaining_tasks"))
+                            "remaining_tasks": bounded_json_projection(cycle.get("remaining_tasks"), max_depth=3, max_items=50)
                             if isinstance(cycle.get("remaining_tasks"), list)
                             else [],
                         }
@@ -297,13 +299,13 @@ def _summarize_runner_result(result: Mapping[str, Any]) -> dict[str, Any]:
                     "goal_lifecycle": {
                         "goal_id": _clean_text(lifecycle.get("goal_id")),
                         "goal_state": _clean_text(lifecycle.get("goal_state")),
-                        "completed_tasks": copy.deepcopy(lifecycle.get("completed_tasks"))
+                        "completed_tasks": bounded_json_projection(lifecycle.get("completed_tasks"), max_depth=3, max_items=50)
                         if isinstance(lifecycle.get("completed_tasks"), list)
                         else [],
-                        "remaining_tasks": copy.deepcopy(lifecycle.get("remaining_tasks"))
+                        "remaining_tasks": bounded_json_projection(lifecycle.get("remaining_tasks"), max_depth=3, max_items=50)
                         if isinstance(lifecycle.get("remaining_tasks"), list)
                         else [],
-                        "failed_tasks": copy.deepcopy(lifecycle.get("failed_tasks"))
+                        "failed_tasks": bounded_json_projection(lifecycle.get("failed_tasks"), max_depth=3, max_items=50)
                         if isinstance(lifecycle.get("failed_tasks"), list)
                         else [],
                     },
@@ -333,7 +335,7 @@ def _summarize_runner_result(result: Mapping[str, Any]) -> dict[str, Any]:
                 for goal in request_goals
                 if isinstance(goal, Mapping)
             ],
-            "execution_path": copy.deepcopy(request.get("execution_path")) if isinstance(request.get("execution_path"), Mapping) else {},
+            "execution_path": mapping_projection(request.get("execution_path"), max_depth=4, max_items=50),
         },
         "runtime_result": {
             "schema": _clean_text(runtime.get("schema")),
@@ -344,12 +346,12 @@ def _summarize_runner_result(result: Mapping[str, Any]) -> dict[str, Any]:
             "stop_reason": _clean_text(runtime.get("stop_reason")),
             "terminal": bool(runtime.get("terminal")),
             "iterations": summarized_iterations,
-            "execution_path": copy.deepcopy(runtime.get("execution_path")) if isinstance(runtime.get("execution_path"), Mapping) else {},
+            "execution_path": mapping_projection(runtime.get("execution_path"), max_depth=4, max_items=50),
         },
-        "runtime_root_cause": copy.deepcopy(result.get("runtime_root_cause")) if isinstance(result.get("runtime_root_cause"), Mapping) else {},
-        "adaptive_decision": copy.deepcopy(result.get("adaptive_decision")) if isinstance(result.get("adaptive_decision"), Mapping) else {},
+        "runtime_root_cause": mapping_projection(result.get("runtime_root_cause"), max_depth=5, max_items=50),
+        "adaptive_decision": mapping_projection(result.get("adaptive_decision"), max_depth=5, max_items=50),
         "runtime_stdout": _clean_text(result.get("runtime_stdout")),
-        "execution_path": copy.deepcopy(result.get("execution_path")) if isinstance(result.get("execution_path"), Mapping) else {},
+        "execution_path": mapping_projection(result.get("execution_path"), max_depth=4, max_items=50),
         "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
         "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
         "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
@@ -376,7 +378,7 @@ def _summarize_loop_result(result: Mapping[str, Any]) -> dict[str, Any]:
                 "runtime_state": _clean_text(cycle.get("runtime_state")),
                 "adaptive_decision": _clean_text(cycle.get("adaptive_decision")),
                 "adaptive_reason": _clean_text(cycle.get("adaptive_reason")),
-                "continuation_plan": copy.deepcopy(cycle.get("continuation_plan")) if isinstance(cycle.get("continuation_plan"), Mapping) else {},
+                "continuation_plan": mapping_projection(cycle.get("continuation_plan"), max_depth=5, max_items=50),
                 "continuation_work_item": {
                     "goal_id": _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("goal_id")),
                     "source_goal_id": _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("source_goal_id")),
@@ -385,12 +387,12 @@ def _summarize_loop_result(result: Mapping[str, Any]) -> dict[str, Any]:
                 if isinstance(cycle.get("continuation_work_item"), Mapping)
                 and _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("goal_id"))
                 else {},
-                "root_cause": copy.deepcopy(cycle.get("root_cause")) if isinstance(cycle.get("root_cause"), Mapping) else {},
+                "root_cause": mapping_projection(cycle.get("root_cause"), max_depth=5, max_items=50),
             }
             for cycle in cycles
             if isinstance(cycle, Mapping)
         ],
-        "execution_path": copy.deepcopy(result.get("execution_path")) if isinstance(result.get("execution_path"), Mapping) else {},
+        "execution_path": mapping_projection(result.get("execution_path"), max_depth=4, max_items=50),
         "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
         "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
         "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],

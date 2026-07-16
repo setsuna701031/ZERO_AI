@@ -13,6 +13,8 @@ import json
 import time
 from pathlib import Path
 from typing import Any, Mapping
+from core.result_projection import bounded_json_projection, mapping_projection
+
 
 from core.evidence.decision_evidence_models import DecisionEvidenceRecord
 from core.evidence.evidence_authority import (
@@ -35,11 +37,12 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return mapping_projection(value, max_depth=8, max_items=50)
 
 
 def _list(value: Any) -> list[Any]:
-    return copy.deepcopy(value) if isinstance(value, list) else []
+    projected = bounded_json_projection(value, max_depth=7, max_items=50)
+    return projected if isinstance(projected, list) else []
 
 
 def build_decision_evidence(
@@ -80,9 +83,9 @@ def build_decision_evidence(
     evidence_refs = []
     for item in _list(adaptive.get("evidence_chain")):
         if isinstance(item, Mapping):
-            evidence_refs.append(_text(item.get("evidence_id")) or copy.deepcopy(dict(item)))
+            evidence_refs.append(_text(item.get("evidence_id")) or mapping_projection(item, max_depth=4, max_items=20))
         elif item not in (None, ""):
-            evidence_refs.append(copy.deepcopy(item))
+            evidence_refs.append(bounded_json_projection(item, max_depth=3, max_items=20))
 
     links = {
         "continuation_goal_id": _text(_mapping(continuation_work_item).get("goal_id")),
@@ -122,7 +125,7 @@ def build_decision_evidence(
         outcome_class=outcome_class,
         decision=decision,
         decision_reason=reason,
-        confidence=copy.deepcopy(confidence),
+        confidence=bounded_json_projection(confidence, max_depth=2, max_items=10),
         confidence_unavailable_reason="confidence_not_present_in_adaptive_decision",
         next_action=next_action,
         evidence_refs=evidence_refs,
@@ -162,7 +165,7 @@ class DecisionEvidenceRepository:
         )
 
     def save(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        normalized = copy.deepcopy(dict(record))
+        normalized = mapping_projection(record, max_depth=8, max_items=50)
         decision_id = _text(normalized.get("decision_id"))
         if not decision_id:
             raise ValueError("decision_evidence_requires_decision_id")
@@ -178,7 +181,7 @@ class DecisionEvidenceRepository:
         if stored is None:
             records = self.find_by_task_id(_text(normalized.get("task_id")))
             if records:
-                return copy.deepcopy(records[-1])
+                return mapping_projection(records[-1], max_depth=8, max_items=50)
             return self._projection_from_decision_dict(normalized)
 
         return self._record_to_decision_dict(stored)
@@ -222,7 +225,7 @@ class DecisionEvidenceRepository:
             "outcome_class": _text(normalized.get("outcome_class")),
             "decision": _text(normalized.get("decision"), "unavailable"),
             "decision_reason": _text(normalized.get("decision_reason"), "decision_reason_unavailable"),
-            "confidence": copy.deepcopy(normalized.get("confidence")),
+            "confidence": bounded_json_projection(normalized.get("confidence"), max_depth=2, max_items=10),
             "confidence_unavailable_reason": _text(normalized.get("confidence_unavailable_reason")),
             "next_action": _text(normalized.get("next_action")),
             "evidence_refs": _list(normalized.get("evidence_refs")),
@@ -262,7 +265,7 @@ class DecisionEvidenceRepository:
             "outcome_class": outcome_class,
             "decision": decision,
             "decision_reason": decision_reason,
-            "confidence": copy.deepcopy(metadata.get("confidence")),
+            "confidence": bounded_json_projection(metadata.get("confidence"), max_depth=2, max_items=10),
             "confidence_unavailable_reason": _text(metadata.get("confidence_unavailable_reason")),
             "next_action": metadata.get("next_action", ""),
             "evidence_refs": _list(metadata.get("evidence_refs")),

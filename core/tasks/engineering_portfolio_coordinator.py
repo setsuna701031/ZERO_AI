@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.runtime.runtime_result_projection import mapping_projection
+
 from core.goals.goal_lineage_contract import extract_goal_lineage
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
@@ -126,7 +128,7 @@ class EngineeringPortfolioCoordinator:
             "selected_goal_id": selected_goal_id,
             "reason": _clean_text(loop_result.get("stop_reason"), "goal_loop_finished"),
             "selection": selection,
-            "loop_result": copy.deepcopy(dict(loop_result)),
+            "loop_result": mapping_projection(loop_result, max_depth=7, max_items=50),
             "updated_goal": updated_goal,
             "updated_at": time.time(),
         }
@@ -282,8 +284,8 @@ class EngineeringPortfolioCoordinator:
             "stop_reason": stop_reason,
             "max_goals": int(max_goals),
             "run_count": len(runs),
-            "runs": copy.deepcopy(runs),
-            "no_runnable_result": copy.deepcopy(dict(no_runnable)) if isinstance(no_runnable, Mapping) else {},
+            "runs": mapping_projection({"items": runs}, max_depth=8, max_items=50).get("items", []),
+            "no_runnable_result": mapping_projection(no_runnable, max_depth=6, max_items=50),
             "portfolio_state": self.summarize_portfolio_state(portfolio_id),
             "updated_at": time.time(),
         }

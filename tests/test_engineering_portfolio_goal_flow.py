@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 
+from cli import goal_cli, portfolio_cli
 from core.evidence import EvidenceRecord, EvidenceValidator
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
@@ -77,80 +75,60 @@ def test_real_portfolio_cycle_reports_no_runnable_goal_after_complete(tmp_path) 
     assert result["run_count"] == 0
 
 
-def test_portfolio_run_next_and_cycle_cli_smoke(tmp_path) -> None:
+def test_portfolio_run_next_and_cycle_cli_smoke(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
     portfolio_store = tmp_path / "portfolios.json"
     goal_store = tmp_path / "goals.json"
-    env = {
-        **dict(os.environ),
-        "ZERO_PORTFOLIO_STORE": str(portfolio_store),
-        "ZERO_GOAL_STORE": str(goal_store),
-        "PYTHONPATH": str(REPO_ROOT),
-    }
-    python = sys.executable
+    monkeypatch.setenv("ZERO_PORTFOLIO_STORE", str(portfolio_store))
+    monkeypatch.setenv("ZERO_GOAL_STORE", str(goal_store))
 
-    first_goal = subprocess.run(
-        [python, str(REPO_ROOT / "app.py"), "goal", "add", "Build demo system"],
-        cwd=REPO_ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    second_goal = subprocess.run(
-        [python, str(REPO_ROOT / "app.py"), "goal", "add", "Build demo system"],
-        cwd=REPO_ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    first_goal_id = json.loads(first_goal.stdout)["goal"]["goal_id"]
-    second_goal_id = json.loads(second_goal.stdout)["goal"]["goal_id"]
+    assert goal_cli.try_handle_goal_command(
+        ["goal", "add", "Build demo system"],
+        repo_root=REPO_ROOT,
+    ) is True
+    first_goal_payload = json.loads(capsys.readouterr().out)
 
-    created_portfolio = subprocess.run(
-        [python, str(REPO_ROOT / "app.py"), "portfolio", "create", "Coordinator smoke"],
-        cwd=REPO_ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    portfolio_id = json.loads(created_portfolio.stdout)["portfolio"]["portfolio_id"]
+    assert goal_cli.try_handle_goal_command(
+        ["goal", "add", "Build demo system"],
+        repo_root=REPO_ROOT,
+    ) is True
+    second_goal_payload = json.loads(capsys.readouterr().out)
+
+    first_goal_id = first_goal_payload["goal"]["goal_id"]
+    second_goal_id = second_goal_payload["goal"]["goal_id"]
+
+    assert portfolio_cli.try_handle_portfolio_command(
+        ["portfolio", "create", "Coordinator smoke"],
+        repo_root=REPO_ROOT,
+    ) is True
+    created_portfolio_payload = json.loads(capsys.readouterr().out)
+    portfolio_id = created_portfolio_payload["portfolio"]["portfolio_id"]
+
     for goal_id in (first_goal_id, second_goal_id):
-        subprocess.run(
-            [python, str(REPO_ROOT / "app.py"), "portfolio", "add-goal", portfolio_id, goal_id],
-            cwd=REPO_ROOT,
-            env=env,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        assert portfolio_cli.try_handle_portfolio_command(
+            ["portfolio", "add-goal", portfolio_id, goal_id],
+            repo_root=REPO_ROOT,
+        ) is True
+        assert json.loads(capsys.readouterr().out)["ok"] is True
 
-    run_next = subprocess.run(
-        [python, str(REPO_ROOT / "app.py"), "portfolio", "run-next", portfolio_id],
-        cwd=REPO_ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    cycle = subprocess.run(
-        [python, str(REPO_ROOT / "app.py"), "portfolio", "cycle", portfolio_id],
-        cwd=REPO_ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    run_next_payload = json.loads(run_next.stdout)
-    cycle_payload = json.loads(cycle.stdout)
+    assert portfolio_cli.try_handle_portfolio_command(
+        ["portfolio", "run-next", portfolio_id],
+        repo_root=REPO_ROOT,
+    ) is True
+    run_next_payload = json.loads(capsys.readouterr().out)
+
+    assert portfolio_cli.try_handle_portfolio_command(
+        ["portfolio", "cycle", portfolio_id],
+        repo_root=REPO_ROOT,
+    ) is True
+    cycle_payload = json.loads(capsys.readouterr().out)
 
     assert run_next_payload["coordinator_result"]["selected_goal_id"] == first_goal_id
     assert run_next_payload["coordinator_result"]["loop_result"]["cycle_count"] == 1
     assert run_next_payload["coordinator_result"]["loop_result"]["cycles"][0]["adaptive_decision"] == "replan"
     assert cycle_payload["ok"] is True
     assert cycle_payload["cycle_summary"]["runs"][0]["selected_goal_id"] == first_goal_id
-    assert (
-        cycle_payload["cycle_summary"]["runs"][0]["loop_result"]["stop_reason"]
-        == "replan"
-    )
+    assert cycle_payload["cycle_summary"]["runs"][0]["loop_result"]["stop_reason"] == "replan"

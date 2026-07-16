@@ -12,6 +12,8 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from core.runtime.runtime_result_projection import mapping_projection
+
 
 ENGINEERING_RUNTIME_CONTRACT_SCHEMA = "zero.engineering_runtime_contract.v1"
 
@@ -22,7 +24,7 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return mapping_projection(value, max_depth=5, max_items=40, max_string_chars=4096)
 
 
 @dataclass(frozen=True)

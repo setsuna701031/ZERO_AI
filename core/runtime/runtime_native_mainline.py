@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_result_projection import project_result_for
+
 from core.runtime.aer_runtime_integration import AERRuntimeIntegration
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_native_agent_loop import RuntimeNativeAgentLoop
@@ -36,6 +38,20 @@ MAINLINE_STATUS_BLOCKED = "blocked"
 
 MAINLINE_MODE_RUNTIME_NATIVE = "runtime_native"
 MAINLINE_MODE_LEGACY_ADAPTER = "legacy_adapter"
+
+MAX_PERSISTED_RUNS = 50
+MAX_PERSISTED_EVENTS = 200
+MAX_PERSISTENCE_FILE_BYTES = 50 * 1024 * 1024
+MAX_PERSISTENCE_PAYLOAD_BYTES = 1024 * 1024
+MAX_PERSISTED_DEPTH = 6
+MAX_PERSISTED_ITEMS = 50
+MAX_PERSISTED_STRING_CHARS = 8192
+
+
+def _bounded_persistence_value(value: Any) -> Any:
+    """Compatibility wrapper around the shared runtime result boundary."""
+
+    return project_result_for("persistence", value)
 
 
 def utc_timestamp() -> str:
@@ -161,6 +177,24 @@ class RuntimeNativeMainlineRunResult:
             "created_at": self.created_at,
         }
 
+    def to_persisted_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "status": self.status,
+            "goal": self.goal,
+            "runtime_id": self.runtime_id,
+            "source_session_id": self.source_session_id,
+            "loop_id": self.loop_id,
+            "task_id": self.task_id,
+            "execution_id": self.execution_id,
+            "final_result": _bounded_persistence_value(self.final_result),
+            "loop_record": _bounded_persistence_value(self.loop_record),
+            "authority_decision": _bounded_persistence_value(self.authority_decision),
+            "recovery_tickets": _bounded_persistence_value(self.recovery_tickets),
+            "metadata": _bounded_persistence_value(self.metadata),
+            "created_at": self.created_at,
+        }
+
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "RuntimeNativeMainlineRunResult":
         data = payload if isinstance(payload, dict) else {}
@@ -198,6 +232,17 @@ class RuntimeNativeMainlineEvent:
             "run_id": self.run_id,
             "payload": copy.deepcopy(self.payload),
             "metadata": copy.deepcopy(self.metadata),
+            "timestamp": self.timestamp,
+            "source": "runtime_native_mainline",
+        }
+
+    def to_persisted_dict(self) -> dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "run_id": self.run_id,
+            "payload": _bounded_persistence_value(self.payload),
+            "metadata": _bounded_persistence_value(self.metadata),
             "timestamp": self.timestamp,
             "source": "runtime_native_mainline",
         }
@@ -261,12 +306,16 @@ class RuntimeNativeMainline:
         else:
             self.config = RuntimeNativeMainlineConfig.from_dict(config or {})
 
-        self.workspace_root = Path(self.config.workspace_root)
-        self.storage_path = Path(storage_path) if storage_path is not None else self.workspace_root / "runtime_native_mainline" / "runtime_native_mainline.json"
+        self.workspace_root = Path(self.config.workspace_root).resolve()
+        self.storage_path = (
+            Path(storage_path).resolve()
+            if storage_path is not None
+            else self.workspace_root / "runtime_native_mainline" / "runtime_native_mainline.json"
+        )
         self.journal = journal
         self.audit = audit
         self.persistence_service = RuntimePersistenceService(
-            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            workspace_root=self.workspace_root,
             source="runtime_native_mainline",
         )
 
@@ -439,7 +488,8 @@ class RuntimeNativeMainline:
                 metadata=copy.deepcopy(metadata or {}),
             )
             self._store_result(result)
-            self._append_event("runtime_native_mainline_blocked", run_id=run_id, payload={"result": result.to_dict()})
+            self._append_event("runtime_native_mainline_blocked", run_id=run_id, payload=self._result_event_summary(result))
+            self.save()
             return result
 
         loop = self.runtime_loop.create_loop(
@@ -497,7 +547,7 @@ class RuntimeNativeMainline:
             )
 
         self._store_result(result)
-        self._append_event("runtime_native_mainline_run_completed", run_id=run_id, payload={"result": result.to_dict()})
+        self._append_event("runtime_native_mainline_run_completed", run_id=run_id, payload=self._result_event_summary(result))
         self.save()
         return copy.deepcopy(result)
 
@@ -567,7 +617,9 @@ class RuntimeNativeMainline:
 
         try:
             raw_result = runner()
-            result_payload = copy.deepcopy(raw_result) if isinstance(raw_result, dict) else {"ok": bool(raw_result), "result": copy.deepcopy(raw_result)}
+            # Keep the caller-owned nested payload intact; only the public envelope
+            # is copied so admission metadata can be added without mutation.
+            result_payload = dict(raw_result) if isinstance(raw_result, dict) else {"ok": bool(raw_result), "result": raw_result}
             ok = bool(result_payload.get("ok", True))
             status = MAINLINE_STATUS_COMPLETED if ok else MAINLINE_STATUS_FAILED
         except Exception as exc:
@@ -585,9 +637,7 @@ class RuntimeNativeMainline:
             result_payload.setdefault("runtime_native_mainline_entrypoint", entrypoint)
             result_payload.setdefault("runtime_native_mainline_compatibility_wrapper", True)
             result_payload.setdefault("runtime_native_mainline_canonical_entry", True)
-            path = result_payload.get("execution_path")
-            if not isinstance(path, dict):
-                path = {}
+            path = dict(result_payload.get("execution_path")) if isinstance(result_payload.get("execution_path"), dict) else {}
             path.setdefault("runtime_native_mainline_entrypoint", entrypoint)
             path.setdefault("runtime_native_mainline_canonical_entry", True)
             path.setdefault("legacy_behavior_preserved", True)
@@ -612,7 +662,7 @@ class RuntimeNativeMainline:
                 else "runtime_native_mainline_compatibility_entry_completed"
             ),
             run_id=run_id,
-            payload={"entrypoint": entrypoint, "result": result.to_dict()},
+            payload={"entrypoint": entrypoint, **self._result_event_summary(result)},
         )
         self.save()
         if raised_exception is not None:
@@ -653,11 +703,42 @@ class RuntimeNativeMainline:
             "runtime_phase": "runtime_native_mainline",
             "config": self.config.to_dict(),
             "runs": [self._runs[run_id].to_dict() for run_id in self._run_order if run_id in self._runs],
-            "events": [event.to_dict() for event in self._events[-500:]],
+            "events": [event.to_dict() for event in self._events[-MAX_PERSISTED_EVENTS:]],
+        }
+
+    def to_persisted_dict(self) -> dict[str, Any]:
+        persisted_run_ids = [
+            run_id
+            for run_id in self._run_order[-MAX_PERSISTED_RUNS:]
+            if run_id in self._runs
+        ]
+        return {
+            "runtime_phase": "runtime_native_mainline",
+            "persistence_schema": "zero.runtime_native_mainline.bounded.v1",
+            "config": _bounded_persistence_value(self.config.to_dict()),
+            "runs": [
+                self._runs[run_id].to_persisted_dict()
+                for run_id in persisted_run_ids
+            ],
+            "events": [
+                event.to_persisted_dict()
+                for event in self._events[-MAX_PERSISTED_EVENTS:]
+            ],
+            "retention": {
+                "max_runs": MAX_PERSISTED_RUNS,
+                "max_events": MAX_PERSISTED_EVENTS,
+                "total_runs_seen": len(self._run_order),
+                "total_events_seen": len(self._events),
+            },
         }
 
     def load(self) -> None:
         if self.storage_path is None or not self.storage_path.exists():
+            return
+        try:
+            if self.storage_path.stat().st_size > MAX_PERSISTENCE_FILE_BYTES:
+                return
+        except OSError:
             return
         try:
             payload = self.persistence_service.read_json(
@@ -693,11 +774,40 @@ class RuntimeNativeMainline:
     def save(self) -> None:
         if self.storage_path is None:
             return
+        payload = self.to_persisted_dict()
+        if len(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")) > MAX_PERSISTENCE_PAYLOAD_BYTES:
+            payload = {
+                "runtime_phase": "runtime_native_mainline",
+                "persistence_schema": "zero.runtime_native_mainline.bounded.v1",
+                "config": _bounded_persistence_value(self.config.to_dict()),
+                "runs": [self._result_event_summary(self._runs[run_id])["result"] for run_id in self._run_order[-MAX_PERSISTED_RUNS:] if run_id in self._runs],
+                "events": [
+                    {
+                        "event_id": event.event_id,
+                        "event_type": event.event_type,
+                        "run_id": event.run_id,
+                        "timestamp": event.timestamp,
+                        "source": "runtime_native_mainline",
+                    }
+                    for event in self._events[-MAX_PERSISTED_EVENTS:]
+                ],
+                "retention": {
+                    "max_runs": MAX_PERSISTED_RUNS,
+                    "max_events": MAX_PERSISTED_EVENTS,
+                    "payload_compacted": True,
+                    "reason": "persistence_payload_limit_exceeded",
+                },
+            }
         self.persistence_service.write_json(
-            self.storage_path,
-            self.to_dict(),
+            self._storage_write_target(),
+            payload,
             reason="runtime_native_mainline_save",
-            metadata={"runtime_native_mainline": True},
+            metadata={
+                "runtime_native_mainline": True,
+                "bounded_persistence": True,
+                "max_runs": MAX_PERSISTED_RUNS,
+                "max_events": MAX_PERSISTED_EVENTS,
+            },
         )
 
     def _ensure_runtime_registered(self) -> None:
@@ -736,7 +846,42 @@ class RuntimeNativeMainline:
         self._runs[result.run_id] = result
         if result.run_id not in self._run_order:
             self._run_order.append(result.run_id)
-        self.save()
+        self._prune_in_memory_history()
+
+    def _prune_in_memory_history(self) -> None:
+        if len(self._run_order) > MAX_PERSISTED_RUNS:
+            expired = self._run_order[:-MAX_PERSISTED_RUNS]
+            self._run_order = self._run_order[-MAX_PERSISTED_RUNS:]
+            for run_id in expired:
+                self._runs.pop(run_id, None)
+        if len(self._events) > MAX_PERSISTED_EVENTS:
+            self._events = self._events[-MAX_PERSISTED_EVENTS:]
+
+    def _result_event_summary(
+        self,
+        result: RuntimeNativeMainlineRunResult,
+    ) -> dict[str, Any]:
+        final_result = result.final_result if isinstance(result.final_result, dict) else {}
+        return {
+            "result": {
+                "run_id": result.run_id,
+                "status": result.status,
+                "goal": result.goal,
+                "runtime_id": result.runtime_id,
+                "source_session_id": result.source_session_id,
+                "loop_id": result.loop_id,
+                "task_id": result.task_id,
+                "execution_id": result.execution_id,
+                "ok": bool(final_result.get("ok", result.status == MAINLINE_STATUS_COMPLETED)),
+                "created_at": result.created_at,
+            }
+        }
+
+    def _storage_write_target(self) -> Path:
+        try:
+            return self.storage_path.resolve().relative_to(self.workspace_root)
+        except (OSError, ValueError):
+            return self.storage_path
 
     def _append_event(self, event_type: str, *, run_id: str = "", payload: dict[str, Any] | None = None, metadata: dict[str, Any] | None = None) -> None:
         event_id = "runtime-native-mainline-event-" + stable_mainline_fingerprint(
@@ -750,6 +895,7 @@ class RuntimeNativeMainline:
             metadata=copy.deepcopy(metadata or {}),
         )
         self._events.append(event)
+        self._prune_in_memory_history()
 
         for target in (self.audit, self.journal):
             if target is None:

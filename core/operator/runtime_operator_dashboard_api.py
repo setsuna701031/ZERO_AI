@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from core.agent.runtime_goal_operations import GoalOperationsService
+from core.result_projection import RUNTIME_RESULT_PROJECTION_ADAPTERS, project_result_for
 
 
 class OperatorDashboardReadService:
@@ -22,7 +23,9 @@ class OperatorDashboardReadService:
         return self.operations.timeline(goal_id).to_dict()
 
     def health(self) -> dict[str, Any]:
-        return self.operations.health().to_dict()
+        health = self.operations.health().to_dict()
+        health["projection_adapter_registry"] = RUNTIME_RESULT_PROJECTION_ADAPTERS.health()
+        return project_result_for("dashboard", health)
 
     def pending_approvals(self) -> dict[str, Any]:
         return self.operations.pending_approvals().to_dict()

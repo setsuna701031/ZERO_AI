@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.runtime.runtime_result_projection import bounded_json_projection, mapping_projection
+
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 from core.goals.goal_lineage_contract import attach_goal_lineage, create_goal_branch_lineage, extract_goal_lineage, extract_runtime_identity
@@ -28,20 +30,11 @@ def _text(value: Any, default: str = "") -> str:
 
 
 def _mapping(value: Any) -> dict[str, Any]:
-    return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+    return mapping_projection(value, max_depth=6, max_items=50)
 
 
 def _transport(value: Any) -> Any:
-    to_dict = getattr(value, "to_dict", None)
-    if callable(to_dict):
-        return _transport(to_dict())
-    if isinstance(value, Mapping):
-        return {str(key): _transport(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_transport(item) for item in value]
-    if isinstance(value, tuple):
-        return [_transport(item) for item in value]
-    return copy.deepcopy(value)
+    return bounded_json_projection(value, max_depth=6, max_items=50)
 
 
 class ContinuationCoordinator:
@@ -117,7 +110,7 @@ class ContinuationCoordinator:
             payload["session_id"] = session_id
         payload["continuation_objective"] = _text(work_item_template.get("objective"), summary)
         payload["continuation_acceptance"] = _mapping(work_item_template.get("acceptance"))
-        payload["adaptive_evidence_chain"] = copy.deepcopy(plan.get("evidence_chain") or [])
+        payload["adaptive_evidence_chain"] = _transport(plan.get("evidence_chain") or [])
 
         record = self.repository.save_goal(
             attach_goal_lineage({
@@ -134,7 +127,7 @@ class ContinuationCoordinator:
                     **({"session_id": session_id} if session_id else {}),
                     "continuation_plan": plan,
                     "work_item_template": work_item_template,
-                    "adaptive_evidence_chain": copy.deepcopy(plan.get("evidence_chain") or []),
+                    "adaptive_evidence_chain": _transport(plan.get("evidence_chain") or []),
                     "runner_adaptive_decision": _transport(_mapping(_mapping(runner_result).get("adaptive_decision"))),
                     "adaptive_planning_record": _transport(_mapping(
                         _mapping(_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
