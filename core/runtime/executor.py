@@ -4,12 +4,67 @@ from typing import Any, Dict, List, Optional
 from pathlib import Path
 import json
 import subprocess
+import sys
 import time
 
 
 def run_canonical_subprocess(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     """Run a subprocess through the sole repository runtime execution owner."""
     return subprocess.run(*args, **kwargs)
+
+
+def run_canonical_focused_pytest(
+    test_files: List[str],
+    *,
+    working_directory: Path,
+    timeout: float,
+) -> Dict[str, Any]:
+    """Execute an approved focused pytest selection at the canonical boundary."""
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-p",
+        "no:cacheprovider",
+        *test_files,
+        "-q",
+    ]
+    environment = {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    }
+    try:
+        completed = run_canonical_subprocess(
+            command,
+            cwd=working_directory,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            env=environment,
+            check=False,
+        )
+        return {
+            "exit_status": completed.returncode,
+            "stdout": completed.stdout or "",
+            "stderr": completed.stderr or "",
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "exit_status": "timeout",
+            "stdout": exc.stdout if isinstance(exc.stdout, str) else "",
+            "stderr": (
+                exc.stderr
+                if isinstance(exc.stderr, str) and exc.stderr
+                else "validation_timeout"
+            ),
+        }
+    except Exception as exc:
+        return {
+            "exit_status": "crash",
+            "stdout": "",
+            "stderr": type(exc).__name__,
+        }
 
 from core.runtime.runtime_execution_request import RuntimeExecutionRequest
 from core.runtime.execution_authority import ensure_authority_metadata

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from core.runtime.step_executor import StepExecutor
 from tests.authority_test_support import owned_step_executor
-from core.runtime.runtime_execution_result import RuntimeExecutionResult
+from core.runtime.runtime_execution_result import (
+    RuntimeExecutionResult,
+    sanitize_runtime_execution_result_for_public,
+    sanitize_runtime_public_output,
+)
 from core.runtime.repair_transaction_execution_bridge import (
     execute_committed_runtime_repair_transaction_mainline,
 )
@@ -67,6 +72,47 @@ def test_step_executor_attaches_canonical_runtime_execution_result(
     assert runtime_result["verification_passed"] is True
     assert runtime_result["evidence"]
     assert "rollback_snapshot" in runtime_result
+
+
+def test_public_runtime_execution_result_preserves_serializable_evidence() -> None:
+    canonical = {
+        "executed": True,
+        "failed": False,
+        "verification_passed": True,
+        "evidence": {
+            "mutation_summary": {"changed_files": ["shared/out.txt"]},
+            "verification": {"ok": True},
+        },
+    }
+
+    public = sanitize_runtime_execution_result_for_public(canonical)
+    nested = sanitize_runtime_public_output({"runtime_execution_result": canonical})
+
+    assert public["evidence"] == canonical["evidence"]
+    assert nested["runtime_execution_result"]["evidence"] == canonical["evidence"]
+    assert json.loads(json.dumps(nested))["runtime_execution_result"]["evidence"] == (
+        canonical["evidence"]
+    )
+    assert sanitize_runtime_public_output(nested) == nested
+
+
+def test_public_failed_result_preserves_verification_failure_evidence() -> None:
+    canonical = {
+        "executed": True,
+        "failed": True,
+        "verification_passed": False,
+        "evidence": {
+            "verification": {"ok": False, "reason": "focused_tests_failed"}
+        },
+    }
+
+    public = sanitize_runtime_execution_result_for_public(canonical)
+
+    assert public["executed"] is True
+    assert public["failed"] is True
+    assert public["verification_passed"] is False
+    assert public["evidence"]["verification"]["ok"] is False
+    assert public["evidence"]["verification"]["reason"] == "focused_tests_failed"
 
 
 def test_repair_transaction_mainline_returns_runtime_execution_result(

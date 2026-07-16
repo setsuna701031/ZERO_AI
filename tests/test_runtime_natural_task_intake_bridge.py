@@ -53,6 +53,9 @@ def test_zero_natural_task_cli_bridge_runs_operator_console(tmp_path: Path) -> N
 
     assert result["schema"] == "zero.natural_task_cli.v1"
     assert result["ok"] is True
+    assert result["bridge_ok"] is True
+    assert result["pipeline_ready"] is True
+    assert result["task_completed"] is False
     assert result["package_generated"] is True
     assert result["validation_required"] is True
     assert result["rollback_required"] is True

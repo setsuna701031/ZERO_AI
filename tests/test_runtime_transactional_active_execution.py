@@ -468,7 +468,7 @@ def test_runtime_source_has_only_bounded_subprocess_and_no_forbidden_operations(
     assert "git commit" not in source and "git checkout" not in source and "git reset" not in source
     assert "pip install" not in source and "requests." not in source
     assert "eval(" not in source
-    assert "subprocess.run" in source
+    assert "run_canonical_focused_pytest" in source
     assert "timeout=timeout" in source
 
 

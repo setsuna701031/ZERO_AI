@@ -7,9 +7,9 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import stat
-import subprocess
-import sys
 from typing import Any, Mapping
+
+from core.runtime.executor import run_canonical_focused_pytest
 
 
 
@@ -453,29 +453,19 @@ def execute_transactional_active_plan(
                         validation_passed = False
         if validation_passed and profile in {"focused_pytest", "python_compile_then_focused_pytest"}:
             timeout = float(config.get("validation_timeout", 60))
-            env = {"PYTHONIOENCODING": "utf-8", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
-            try:
-                completed = subprocess.run(
-                    [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *approved_tests, "-q"],
-                    cwd=root, capture_output=True, text=True, timeout=timeout,
-                    shell=False, env=env, check=False,
-                )
-                stdout, stderr = completed.stdout[-4000:], completed.stderr[-4000:]
-                test_evidence = {"focused_test_files": deepcopy(approved_tests),
-                                 "exit_status": completed.returncode, "stdout_summary": stdout,
-                                 "stderr_summary": stderr,
-                                 "output_truncated": len(completed.stdout) > 4000 or len(completed.stderr) > 4000}
-                validation_passed = completed.returncode == 0
-            except subprocess.TimeoutExpired:
-                test_evidence = {"focused_test_files": deepcopy(approved_tests),
-                                 "exit_status": "timeout", "stdout_summary": "",
-                                 "stderr_summary": "validation_timeout", "output_truncated": False}
-                validation_passed = False
-            except Exception as exc:
-                test_evidence = {"focused_test_files": deepcopy(approved_tests),
-                                 "exit_status": "crash", "stdout_summary": "",
-                                 "stderr_summary": type(exc).__name__, "output_truncated": False}
-                validation_passed = False
+            focused = run_canonical_focused_pytest(
+                approved_tests,
+                working_directory=root,
+                timeout=timeout,
+            )
+            stdout = focused["stdout"]
+            stderr = focused["stderr"]
+            test_evidence = {"focused_test_files": deepcopy(approved_tests),
+                             "exit_status": focused["exit_status"],
+                             "stdout_summary": stdout[-4000:],
+                             "stderr_summary": stderr[-4000:],
+                             "output_truncated": len(stdout) > 4000 or len(stderr) > 4000}
+            validation_passed = focused["exit_status"] == 0
         validation_result = {"validation_profile_id": profile,
                              "validation_started_at": current.replace(microsecond=0).isoformat(),
                              "validation_finished_at": current.replace(microsecond=0).isoformat(),

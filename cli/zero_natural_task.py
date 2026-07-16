@@ -155,8 +155,9 @@ def _run_natural_task_once(
     result = {
         "schema": ZERO_NATURAL_TASK_SCHEMA,
         # Bridge success means the governed operator pipeline completed and
-        # persisted its result.  Mutation completion remains a separate field.
+        # persisted its result. Mutation completion remains a separate field.
         "ok": pipeline_ready,
+        "bridge_ok": pipeline_ready,
         "pipeline_ready": pipeline_ready,
         "task_completed": task_completed,
         "natural_task": task,
