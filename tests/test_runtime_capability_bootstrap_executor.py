@@ -32,4 +32,3 @@ def test_required_provider_unbound_blocks_and_does_not_run_later_steps():
     result = execute_capability_bootstrap(request)
     assert result["overall_status"] == "blocked"
     assert result["ordered_step_results"][-1]["step_type"] == "verify_provider_bindings"
-

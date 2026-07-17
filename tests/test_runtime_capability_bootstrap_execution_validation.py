@@ -26,4 +26,3 @@ def test_result_rejects_handoff_consumer_and_nonzero_invocations():
     assert not validate_execution_result(result).valid
     _, result = _values(); result["invocation_evidence"]["network_invocations"] = 1
     assert not validate_execution_result(result).valid
-

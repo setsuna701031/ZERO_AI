@@ -17,4 +17,3 @@ def test_execute_validate_and_explain(tmp_path):
     result_path = tmp_path / "result.json"; result_path.write_text(json.dumps(result), encoding="utf-8")
     assert run(["validate-result", str(result_path)])[0]["valid"] is True
     assert run(["explain", str(result_path)])[0]["overall_status"] == "completed"
-
