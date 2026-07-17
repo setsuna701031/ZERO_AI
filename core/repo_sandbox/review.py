@@ -313,9 +313,11 @@ def apply_review(review_id: str) -> dict[str, Any]:
 
     sandbox_file = _find_sandbox_file(repo_root, str(file_path), record.payload)
     if sandbox_file is None:
+        reason = f"sandbox file not found for: {file_path}"
         return {
             "status": "error",
-            "error": f"sandbox file missing for: {file_path}",
+            "error": reason,
+            "reason": reason,
             "review_id": review_id,
         }
 

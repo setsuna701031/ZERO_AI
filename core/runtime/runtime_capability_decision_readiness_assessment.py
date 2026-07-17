@@ -1,0 +1,16 @@
+from __future__ import annotations
+from copy import deepcopy
+from typing import Any,Mapping
+from core.runtime.runtime_capability_execution_session_admission import _hash
+CONTRACT="zero.runtime.capability_decision_readiness_assessment.v1";SCHEMA_VERSION="1";STATUSES=frozenset({"ready","not_ready","blocked","invalid"});NEXT_STAGES=frozenset({"bounded_decision_review","additional_observation_required","no_further_action","blocked","invalid"})
+def build_capability_decision_readiness_assessment(acceptance:Any,relevance:Any,sufficiency:Any,closure:Any)->dict[str,Any]:
+ a,r,s,c=[deepcopy(dict(v)) if isinstance(v,Mapping) else {} for v in (acceptance,relevance,sufficiency,closure)];question=r.get("decision_question",{}) if isinstance(r.get("decision_question"),Mapping) else {};links=r.get("consumer_acceptance_id")==a.get("consumer_acceptance_id") and s.get("consumer_acceptance_id")==a.get("consumer_acceptance_id") and s.get("relevance_assessment_id")==r.get("relevance_assessment_id") and a.get("observation_closure_id")==c.get("observation_closure_id")==r.get("observation_closure_id")==s.get("observation_closure_id") and s.get("decision_question")==question
+ states=(a.get("acceptance_status"),r.get("relevance_status"),s.get("sufficiency_status"))
+ if "invalid" in states or not links or c.get("verification_status")!="verified_closed":status="invalid";stage="invalid";why="invalid_readiness_chain"
+ elif "blocked" in states:status="blocked";stage="blocked";why="readiness_blocked"
+ elif states==("accepted","relevant","sufficient"):status="ready";stage="bounded_decision_review";why="bounded_decision_ready"
+ elif r.get("relevance_status")=="not_relevant":status="not_ready";stage="no_further_action";why="evidence_not_relevant"
+ else:status="not_ready";stage="additional_observation_required";why="additional_observation_required"
+ checks={"consumer_accepted":a.get("acceptance_status")=="accepted","evidence_relevant":r.get("relevance_status")=="relevant","evidence_sufficient":s.get("sufficiency_status")=="sufficient","linkage_valid":links,"closure_verified":c.get("verification_status")=="verified_closed"}
+ b={"contract":CONTRACT,"schema_version":SCHEMA_VERSION,"consumer_acceptance_id":a.get("consumer_acceptance_id",""),"consumer_acceptance_fingerprint":a.get("consumer_acceptance_fingerprint",""),"relevance_assessment_id":r.get("relevance_assessment_id",""),"relevance_assessment_fingerprint":r.get("relevance_assessment_fingerprint",""),"sufficiency_assessment_id":s.get("sufficiency_assessment_id",""),"sufficiency_assessment_fingerprint":s.get("sufficiency_assessment_fingerprint",""),"observation_closure_id":c.get("observation_closure_id",""),"observation_closure_fingerprint":c.get("observation_closure_fingerprint",""),"decision_question":deepcopy(question),"readiness_checks":checks,"decision_status":status,"ready":status=="ready","execution_completion_claim":False,"authorization_claim":False,"recommended_next_stage":stage,"limitations":deepcopy(s.get("limitations",[])) if isinstance(s.get("limitations"),list) else [],"reasons":[why],"blocked_reasons":[why] if status=="blocked" else []};f=_hash(b);return {**b,"decision_readiness_id":"capability-decision-readiness-assessment-"+f[:24],"decision_readiness_fingerprint":f}
+assess_capability_decision_readiness=build_capability_decision_readiness_assessment

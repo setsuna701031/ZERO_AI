@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import hashlib
 import json
 import os
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -211,7 +212,7 @@ class MutationBoundary:
         if state.get("status") == MUTATION_STATUS_REJECTED:
             raise MutationBoundaryError(f"cannot approve rejected mutation: {mutation_id}")
 
-        state["status"] = MUTATION_STATUS_APPROVED
+        project_runtime_status(state, MUTATION_STATUS_APPROVED, owner="core/runtime/mutation_boundary.py")
         approval = state.setdefault("approval", {})
         approval["approved"] = True
         approval["approved_by"] = str(approved_by or "user")
@@ -230,7 +231,7 @@ class MutationBoundary:
         reason: str = "",
     ) -> Dict[str, Any]:
         state = self.get_mutation(mutation_id)
-        state["status"] = MUTATION_STATUS_REJECTED
+        project_runtime_status(state, MUTATION_STATUS_REJECTED, owner="core/runtime/mutation_boundary.py")
         approval = state.setdefault("approval", {})
         approval["approved"] = False
         approval["rejected_by"] = str(rejected_by or "user")
@@ -288,7 +289,7 @@ class MutationBoundary:
 
             snapshot_records.append(record)
 
-        state["status"] = MUTATION_STATUS_SNAPSHOT_CREATED
+        project_runtime_status(state, MUTATION_STATUS_SNAPSHOT_CREATED, owner="core/runtime/mutation_boundary.py")
         state["rollback"] = {
             "snapshot_created": True,
             "snapshot_id": snapshot_id,
@@ -327,7 +328,7 @@ class MutationBoundary:
         normalized_changed = self._normalize_target_files(changed_files or list(state.get("target_files") or []))
         ok = bool(apply_result.get("ok")) if isinstance(apply_result, dict) else False
 
-        state["status"] = MUTATION_STATUS_APPLIED if ok else MUTATION_STATUS_APPLY_FAILED
+        project_runtime_status(state, MUTATION_STATUS_APPLIED if ok else MUTATION_STATUS_APPLY_FAILED, owner="core/runtime/mutation_boundary.py")
         state["apply"] = {
             "applied": ok,
             "ok": ok,
@@ -366,7 +367,7 @@ class MutationBoundary:
         replay_ok = bool(replay_payload.get("ok")) if replay_payload else verification_ok
 
         final_ok = verification_ok and replay_ok
-        state["status"] = MUTATION_STATUS_VERIFIED if final_ok else MUTATION_STATUS_VERIFICATION_FAILED
+        project_runtime_status(state, MUTATION_STATUS_VERIFIED if final_ok else MUTATION_STATUS_VERIFICATION_FAILED, owner="core/runtime/mutation_boundary.py")
         state["verification"] = {
             "verified": verification_ok,
             "replay_verified": replay_ok,
@@ -422,7 +423,7 @@ class MutationBoundary:
                     os.remove(abs_target)
                 restored.append({"path": rel_path, "restored": True, "mode": "remove_new_file"})
 
-        state["status"] = MUTATION_STATUS_ROLLED_BACK
+        project_runtime_status(state, MUTATION_STATUS_ROLLED_BACK, owner="core/runtime/mutation_boundary.py")
         state["rollback"]["rolled_back"] = True
         state["rollback"]["rolled_back_at"] = self._now()
         state["rollback"]["rolled_back_by"] = str(actor or "zero")
@@ -450,7 +451,7 @@ class MutationBoundary:
             "finalized_at": self._now(),
             "actor": str(actor or "zero"),
         }
-        state["status"] = status if status != MUTATION_STATUS_FINALIZED else MUTATION_STATUS_FINALIZED
+        project_runtime_status(state, status if status != MUTATION_STATUS_FINALIZED else MUTATION_STATUS_FINALIZED, owner="core/runtime/mutation_boundary.py")
         self._add_event(state, "finalized", actor=actor, payload={"status": status, "summary": summary})
         self._write_mutation_state(mutation_id, state)
         self._append_audit("finalized", state)
@@ -830,10 +831,10 @@ class MutationBoundary:
             return False
 
     def _new_mutation_id(self) -> str:
-        return f"mutation_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"mutation_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _new_snapshot_id(self) -> str:
-        return f"snapshot_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"snapshot_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _normalize_mutation_id(self, mutation_id: str) -> str:
         text = str(mutation_id or "").strip()
@@ -844,7 +845,7 @@ class MutationBoundary:
         return text
 
     def _now(self) -> str:
-        return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def create_mutation_boundary(

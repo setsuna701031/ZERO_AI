@@ -1,0 +1,403 @@
+{
+  "stage": "Stage15A.2 — Gate Failure Closure Planning",
+  "scope": "closure_planning_only",
+  "production_runtime_modified": false,
+  "tests_modified": false,
+  "blockers_fixed": false,
+  "inputs": [
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json",
+      "sha256": "60e99964d161db2dc165a7422c3b908d39642ab5e6615fb59b3a4f6f18a24853"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+      "sha256": "e98e2ce7d0d059f57ef9d5b67c5cb00384d02d421b8820c9407231b29596706e"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json",
+      "sha256": "495b01cabe2099788a3ff7c489e8f9e711c3a88482387cff7190cbad2e58e774"
+    }
+  ],
+  "closure_plans": [
+    {
+      "failure_id": "S15A1-GF-001",
+      "root_cause": {
+        "established": "The scheduler ownership AST scan finds six direct StepExecutor.execute_step calls where the delegation-boundary contract requires an empty direct-call set.",
+        "implementation_cause_status": "fully localized by pytest and Stage14 direct-call evidence",
+        "evidence": [
+          "execute_step:_zero_scheduler_run_one_step_v2:10551",
+          "execute_step:_zero_scheduler_run_one_step_v3:10620",
+          "execute_step:_zero_scheduler_run_one_step_v4:10686",
+          "execute_step:_zero_scheduler_run_one_step_v1:10478",
+          "execute_step:_zero_scheduler_run_one_step_v1:10481",
+          "execute_step:_zero_scheduler_run_one_step_v1:10483"
+        ]
+      },
+      "owner": "core.tasks.scheduler.Scheduler",
+      "affected_symbols": [
+        "_zero_scheduler_run_one_step_v1",
+        "_zero_scheduler_run_one_step_v2",
+        "_zero_scheduler_run_one_step_v3",
+        "_zero_scheduler_run_one_step_v4",
+        "Scheduler.run_one_step",
+        "StepExecutor.execute_step"
+      ],
+      "affected_locations": [
+        "core/tasks/scheduler.py:10478",
+        "core/tasks/scheduler.py:10481",
+        "core/tasks/scheduler.py:10483",
+        "core/tasks/scheduler.py:10551",
+        "core/tasks/scheduler.py:10620",
+        "core/tasks/scheduler.py:10686"
+      ],
+      "affected_blockers": [
+        "S13A-SCHED-001",
+        "S13A-SCHED-002",
+        "S13A-SCHED-003",
+        "S13A-SCHED-004",
+        "S13A-SCHED-005",
+        "S13A-SCHED-006",
+        "S13A-SCHED-007",
+        "S13A-SCHED-008",
+        "S13A-SCHED-009",
+        "S13A-SCHED-011",
+        "S13A-SCHED-012",
+        "S13A-SCHED-015",
+        "S13A-SCHED-016",
+        "S13A-SCHED-017",
+        "S13A-SCHED-018",
+        "S13A-SCHED-019",
+        "S13A-SCHED-020",
+        "S13A-SCHED-022",
+        "S13A-SCHED-023",
+        "S13A-SCHED-027",
+        "S13A-SCHED-028",
+        "S13A-SCHED-029",
+        "S13A-SCHED-030",
+        "S13A-SCHED-031",
+        "S13A-SCHED-032",
+        "S13A-SCHED-033",
+        "S13A-SCHED-034",
+        "S13A-SCHED-035",
+        "S13A-SCHED-036",
+        "S13A-SCHED-037",
+        "S13A-SCHED-038",
+        "S13A-SCHED-039",
+        "S13A-SCHED-040",
+        "S13A-SCHED-041",
+        "S13A-SCHED-042",
+        "S13A-SCHED-043",
+        "S13A-SCHED-044",
+        "S13A-SCHED-045",
+        "S13A-SCHED-046",
+        "S13A-SCHED-047",
+        "S13A-SCHED-048",
+        "S13A-SCHED-049",
+        "S13A-SCHED-050",
+        "S13A-SCHED-051",
+        "S13A-SCHED-052"
+      ],
+      "affected_waves": [
+        "Wave 3: scheduler direct-call seal",
+        "Wave 4–10 downstream",
+        "Wave 1 authorization through the failed Wave 0 aggregate gate"
+      ],
+      "migration_dependencies": {
+        "cannot_start_until": [
+          "wave_2_complete"
+        ],
+        "required_upstream_waves": [
+          "Wave 1: authority context migration",
+          "Wave 2: planner goal overlay migration"
+        ],
+        "expected_unlocks": [
+          "wave_4"
+        ],
+        "ownership_boundary": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor"
+      },
+      "minimum_remediation_scope": {
+        "package_id": "S15A2-RP-001",
+        "scope": "One scheduler ownership package covering the six evidenced call sites in core/tasks/scheduler.py and their single delegation-boundary validation contract.",
+        "out_of_scope": [
+          "authority-context migration",
+          "repair-chain handler behavior",
+          "status inventory reconciliation",
+          "test changes"
+        ],
+        "execution_status": "not currently executable: Stage14 assigns it to Wave 3, while failed Wave 0 currently prevents Wave 1 and Wave 2 from starting"
+      },
+      "rollback_risk": {
+        "level": "critical",
+        "condition": "Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.",
+        "specific_risks": [
+          "scheduler dispatch result drift",
+          "task finalization drift",
+          "retry handoff drift",
+          "delegation-boundary regression"
+        ]
+      },
+      "validation_suites": [
+        "tests/test_scheduler_runtime_ownership_closure.py",
+        "tests/test_runtime_execution_ownership_seal.py",
+        "tests/test_runtime_ownership_execution_path_seal.py"
+      ],
+      "freeze_impact": {
+        "required": true,
+        "condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "source": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "assigned_wave_condition": "Scheduler direct execute_step/execute_steps call inventory must be empty before Wave 3 completes.",
+        "evidence": "Scheduler still has six direct execute_step calls; the assigned Wave 3 direct-call seal remains blocked."
+      },
+      "seal_impact": {
+        "required": true,
+        "conditions": [
+          "Freeze evidence remains valid with no runtime ownership drift, evidence graph drift, compatibility residue, or non-mainline residue."
+        ]
+      },
+      "closure_condition": "The named scheduler ownership test passes with direct_calls == []; all six Stage14 direct StepExecutor call seals are absent and Wave 3 validation passes."
+    },
+    {
+      "failure_id": "S15A1-GF-002",
+      "root_cause": {
+        "established": "For the autonomous_repair_chain test input, StepExecutor.execute_step returns result['ok'] == false instead of the required true handler contract.",
+        "implementation_cause_status": "not established by the pytest assertion; deeper mechanism diagnosis is deferred to the authorized remediation package",
+        "evidence": {
+          "assertion": "assert result[\"ok\"] is True",
+          "observed": false
+        }
+      },
+      "owner": "core.runtime.step_executor.StepExecutor",
+      "affected_symbols": [
+        "StepExecutor.execute_step",
+        "StepExecutor._handle_autonomous_repair_chain_step"
+      ],
+      "affected_blockers": [
+        "S13C-SE-028"
+      ],
+      "affected_waves": [
+        "Wave 7: repairchain recovery / retry / duplicate repair",
+        "Wave 8–10 downstream",
+        "Wave 1 authorization through the failed Wave 0 aggregate gate"
+      ],
+      "migration_dependencies": {
+        "cannot_start_until": [
+          "wave_6_complete"
+        ],
+        "upstream_dependencies": [
+          "goal_lineage_contract",
+          "lineage",
+          "runtime_session",
+          "runtime_session_ownership",
+          "scheduler",
+          "step_executor_contract",
+          "stepexecutor",
+          "taskrunner",
+          "taskrunner_contract"
+        ],
+        "downstream_unlocks": [
+          "compatibility_bridge",
+          "freeze_validation",
+          "repair",
+          "repair_chain",
+          "step_executor_contract",
+          "stepexecutor",
+          "taskrunner"
+        ],
+        "domains": [
+          "repairchain",
+          "lineage",
+          "runtime_session"
+        ]
+      },
+      "minimum_remediation_scope": {
+        "package_id": "S15A2-RP-002",
+        "scope": "One blocker-scoped handler-contract package for S13C-SE-028, preserving repairchain, lineage, and runtime-session outputs.",
+        "out_of_scope": [
+          "other Wave 7 blockers unless diagnosis proves a dependency",
+          "scheduler direct-call seal",
+          "status inventory",
+          "test changes"
+        ],
+        "execution_status": "not currently executable: assigned to Wave 7 and dependent on Wave 6 completion"
+      },
+      "rollback_risk": {
+        "level": "high",
+        "condition": "Rollback if repair eligibility, recovery continuation, retry limits, duplicate suppression, lineage, or repair-session persistence diverges."
+      },
+      "validation_suites": [
+        "tests/test_runtime_native_autonomous_repair_chain_v1.py",
+        "tests/test_runtime_native_autonomous_repair_chain_v2_integration.py",
+        "tests/test_runtime_native_autonomous_repair_chain_seal_v1.py",
+        "tests/test_runtime_blockers.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_ownership_isolation_fabric_seal_v1.py",
+        "tests/test_runtime_ownership_contract.py",
+        "tests/test_runtime_status_ownership_inventory.py"
+      ],
+      "freeze_impact": {
+        "required": true,
+        "condition": "Native owner is active, blocker assignment is retired, dependency graph is stable, and validation_gate passes before AER freeze.",
+        "wave0_condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "evidence": "The autonomous repair-chain handler returned ok=false; the assigned Wave 7 behavior gate remains blocked."
+      },
+      "seal_impact": {
+        "required": true,
+        "condition": "Freeze evidence remains valid with no runtime ownership drift, evidence graph drift, compatibility residue, or non-mainline residue."
+      },
+      "closure_condition": "The named repair-chain integration test passes with result['ok'] is True and S13C-SE-028 validation_gate passes without repairchain, lineage, or runtime-session regression."
+    },
+    {
+      "failure_id": "S15A1-GF-003",
+      "root_cause": {
+        "established": "The explicit status-owner scan reports only core/runtime/task_runner.py while ten other EXPECTED_HIGH_RISK_FILES entries are absent, producing ownership-inventory evidence drift.",
+        "implementation_cause_status": "inventory mismatch established; no unsupported cause is assigned to the ten absent findings",
+        "missing_expected_high_risk_files": [
+          "core/adaptive/adaptive_runtime_resume.py",
+          "core/runtime/persistent_runtime_orchestrator.py",
+          "core/runtime/runtime_recovery_continuation.py",
+          "core/runtime/thin_runtime_bridge.py",
+          "core/runtime/work_package_queue.py",
+          "core/tasks/scheduler.py",
+          "core/tasks/scheduler_core/repo_state_helpers.py",
+          "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+          "core/tasks/scheduler_core/runtime_resume_gate.py",
+          "core/tasks/scheduler_core/simple_runner_helpers.py"
+        ]
+      },
+      "owner": "runtime status ownership inventory",
+      "affected_symbols": [
+        "Scheduler.get_queue_snapshot",
+        "Scheduler.get_queue_rows",
+        "Scheduler.approve_review_item",
+        "Scheduler.reject_review_item",
+        "Scheduler.get_review_queue",
+        "Scheduler._attach_autonomous_repair_chain_summary",
+        "EXPECTED_HIGH_RISK_FILES",
+        "high_risk status assignment scan"
+      ],
+      "affected_blockers": [
+        "S14-NM-001",
+        "S14-NM-002",
+        "S14-NM-003",
+        "S14-NM-004",
+        "S14-NM-005",
+        "S14-NM-006"
+      ],
+      "affected_waves": [
+        "Wave 8: compatibility bridge/non-mainline retirement evidence",
+        "Wave 9: freeze validation",
+        "Wave 10: seal validation",
+        "Wave 1 authorization through the failed Wave 0 aggregate gate"
+      ],
+      "migration_dependencies": {
+        "cannot_start_until": [
+          "wave_9_complete"
+        ],
+        "required_prior_tracks": [
+          "Wave 8 compatibility bridge retirement",
+          "Wave 9 freeze validation",
+          "6/6 non-mainline observability records retained"
+        ],
+        "non_mainline_track": [
+          "S14-NM-001",
+          "S14-NM-002",
+          "S14-NM-003",
+          "S14-NM-004",
+          "S14-NM-005",
+          "S14-NM-006"
+        ]
+      },
+      "minimum_remediation_scope": {
+        "package_id": "S15A2-RP-003",
+        "scope": "One evidence-reconciliation package for the ten missing scan findings and six Stage14 non-mainline observability records; runtime ownership evidence must satisfy the unchanged test contract.",
+        "out_of_scope": [
+          "test expectation edits",
+          "non-mainline reclassification",
+          "scheduler direct-call changes",
+          "repair-chain behavior changes"
+        ],
+        "execution_status": "not currently executable: seal reconciliation is assigned to Wave 10 after Wave 9 completion"
+      },
+      "rollback_risk": {
+        "level": "critical",
+        "condition": "Rollback if reconciliation hides status writers, changes canonical status ownership, drops non-mainline evidence, or creates evidence-graph drift."
+      },
+      "validation_suites": [
+        "tests/test_runtime_status_ownership_inventory.py",
+        "tests/test_runtime_audit_artifact.py"
+      ],
+      "freeze_impact": {
+        "required": true,
+        "condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "source": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "assigned_failure_classification": "seal evidence in Stage14 and Stage15A",
+        "evidence": "The aggregate Wave 0 validation remains failed while this seal-evidence test fails."
+      },
+      "seal_impact": {
+        "required": true,
+        "condition": "No class-level replacement, direct execution ownership, or owner endpoint drift may reappear after freeze.",
+        "evidence_graph_condition": "Source symbols, native owners, dependency edges, and validation evidence hashes remain stable from freeze through seal.",
+        "evidence": "The expected high-risk status-writer inventory differs from the source scan; inventory drift remains seal evidence."
+      },
+      "closure_condition": "The named inventory test passes: every EXPECTED_HIGH_RISK_FILES entry is present in the scan findings, with the Stage14 non-mainline observability report retained.",
+      "non_mainline_issue_reporting": {
+        "mandatory": true,
+        "status": "preserved",
+        "count": 6,
+        "tracking_ids": [
+          "S14-NM-001",
+          "S14-NM-002",
+          "S14-NM-003",
+          "S14-NM-004",
+          "S14-NM-005",
+          "S14-NM-006"
+        ]
+      }
+    }
+  ],
+  "execution_topology": {
+    "status": "execution_dependency_deadlock",
+    "evidence": [
+      "Stage15A requires all three failed validations to clear before Wave 1 authorization.",
+      "Stage14 assigns the remediation domains to Wave 3, Wave 7, and Wave 10.",
+      "Stage14 sequential dependencies require Wave 1 before Wave 3, Wave 6 before Wave 7, and Wave 9 before Wave 10."
+    ],
+    "consequence": "No runtime remediation package is executable under the current authorization topology without separate gate-policy authority; this plan does not alter that policy."
+  },
+  "closure_decision": {
+    "gate_to_clear_first": {
+      "failure_id": "S15A1-GF-001",
+      "reason": "It is the highest-risk failure and has the earliest Stage14-assigned remediation wave.",
+      "qualification": "Priority only; it is not executable while Wave 1 and Wave 2 remain unauthorized."
+    },
+    "smallest_executable_remediation_package": {
+      "package_id": "S15A2-RP-001",
+      "failure_id": "S15A1-GF-001",
+      "nominal_scope": "One scheduler ownership package covering the six evidenced call sites in core/tasks/scheduler.py and their single delegation-boundary validation contract.",
+      "current_executability": false,
+      "blocker": "No runtime remediation package is executable under the current authorization topology without separate gate-policy authority; this plan does not alter that policy."
+    },
+    "first_gate_remediation_wave": {
+      "wave": "Wave 3: scheduler direct-call seal",
+      "currently_reachable": false,
+      "prerequisites": [
+        "Wave 0 complete",
+        "Wave 1 complete",
+        "Wave 2 complete"
+      ]
+    },
+    "expected_wave1_authorization_condition": "All Stage15A invariant locks remain passing; S15A1-GF-001, S15A1-GF-002, and S15A1-GF-003 all satisfy their closure conditions; the limited ownership/blocker suites pass; and no new validation failure appears."
+  },
+  "artifact_consistency": {
+    "status": "pass",
+    "failure_ids": [
+      "S15A1-GF-001",
+      "S15A1-GF-002",
+      "S15A1-GF-003"
+    ],
+    "all_failures_planned": true,
+    "stage14_wave_assignments_preserved": true,
+    "stage15a_authorization_condition_preserved": true,
+    "non_mainline_reporting_preserved": true
+  }
+}

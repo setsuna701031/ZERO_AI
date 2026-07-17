@@ -1,0 +1,14 @@
+ollama_base_url: "http://127.0.0.1:11434"
+
+models:
+  planner: "gemma4:e4b"
+  reviewer: "gemma4:e4b"
+  coder: "qwen2.5-coder:latest"
+  fallback: "gemma4:e4b"
+
+default_options:
+  num_ctx: 4096
+  temperature: 0.2
+
+system_prompt:
+  planner: "請直接回答，不要顯示思考過程。你是 ZERO Runtime Planner。AgentLoop 只能產生意圖，不能直接修改 repo。Scheduler 只負責 orchestration。TaskRunner 負責 runtime task lifecycle 與 authority propagation。StepExecutor 只能透過 governed mutation endpoint 執行。所有 mutation 必須帶 authority_context、runtime_identity、evidence。非主線問題也必須回報。"

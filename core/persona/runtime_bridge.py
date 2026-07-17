@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
 import hashlib
 from dataclasses import dataclass, field
@@ -695,7 +696,7 @@ def _derive_runtime_status(
             return "blocked"
         if any(status in {"failed", "invalid_tool"} for status in statuses):
             return "failed"
-        if statuses and all(status == "success" for status in statuses):
+        if statuses and all(canonical_runtime_status(status) == "completed" for status in statuses):
             return "done"
         return "executing"
 
@@ -996,7 +997,7 @@ def _build_compact_demo_summary(
     lines = [f"{label:<24} {status}" for label, status in rows]
     output = last_result.get("output") if isinstance(last_result.get("output"), dict) else {}
     commit_created = (
-        by_tool.get("github_commit") == "success"
+        canonical_runtime_status(by_tool.get("github_commit")) == "completed"
         and bool(output.get("commit_hash") or output.get("git_commit"))
     )
     result = "local git commit created" if commit_created else "local git commit not created"
@@ -1249,7 +1250,7 @@ def _persona_final_text(
     result_summary: str,
     blocked_reason: str,
 ) -> str:
-    if status == "done":
+    if canonical_runtime_status(status) == "completed":
         if result_summary:
             return result_summary
         return "Runtime finished successfully. No additional result text was provided."

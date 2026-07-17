@@ -1,0 +1,1754 @@
+{
+  "stage": "TaskRunner Dependency Closure Inventory Stage13B",
+  "scope": "taskrunner_contract",
+  "production_runtime_modified": false,
+  "inputs": [
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_summary.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md"
+  ],
+  "taskrunner_total": 19,
+  "classification_counts": {
+    "confirmed_blocker": 19,
+    "compatibility_bridge": 0,
+    "false_positive": 0,
+    "non_mainline_issue": 0
+  },
+  "ownership_counts": {
+    "taskrunner_state_ownership": 2,
+    "taskrunner_execution_ownership": 14,
+    "taskrunner_continuation_ownership": 1,
+    "taskrunner_runtime_session_ownership": 2
+  },
+  "dependency_counts": {
+    "scheduler_dependencies": 13,
+    "step_executor_dependencies": 12,
+    "repair_chain_dependencies": 3
+  },
+  "marker_counts": {
+    "direct_step_executor_overlay": 2,
+    "goal_lineage_dependency": 12,
+    "runtime_session_dependency": 13
+  },
+  "taskrunner_items": [
+    {
+      "blocker_id": "S13B-TR-001",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4589,
+      "symbol": "TaskRunner._run_one_step",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._run_one_step",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4589",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._run_one_step (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_v702_task_runner_run_one_step",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_v702_runner_extract_workspace_py_path",
+        "_zero_v702_runner_looks_like_autonomous_repair",
+        "_zero_v702_runner_normalize_rel_path",
+        "_zero_v702_runner_repair_task_steps_if_needed"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:4589"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-002",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4624,
+      "symbol": "TaskRunner._determine_failure_type",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._determine_failure_type",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4624",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._determine_failure_type (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "repair_chain_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "taskrunner_contract",
+          "relationship": "repair_chain_dependencies"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": false,
+      "marker_evidence": [
+        "assignment_rhs:_zero_v703_task_runner_determine_failure_type"
+      ],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_repair_chain_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:4624"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-003",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4669,
+      "symbol": "TaskRunner._determine_failure_type",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._determine_failure_type",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4669",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._determine_failure_type (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "repair_chain_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "taskrunner_contract",
+          "relationship": "repair_chain_dependencies"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": false,
+      "marker_evidence": [
+        "assignment_rhs:_zero_v710_task_runner_determine_failure_type"
+      ],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_repair_chain_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:4669"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-004",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4686,
+      "symbol": "TaskRunner.READ_ONLY_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.READ_ONLY_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4686",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.READ_ONLY_STEP_TYPES (native definition)",
+      "ownership_bucket": "taskrunner_state_ownership",
+      "taskrunner_responsibility": "Own TaskRunner execution routing state and step-type policy in the native class definition.",
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native TaskRunner declares canonical step-type routing sets and all consumers use those declarations.",
+      "dependency_groups": [],
+      "dependency_edges": [],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": false,
+      "marker_evidence": [],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_state_ownership"
+        ]
+      },
+      "recommended_closure_action": "Promote routing state into the native class only after duplicate set extensions are reconciled.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:4686"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-005",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4696,
+      "symbol": "TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4696",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "ownership_bucket": "taskrunner_state_ownership",
+      "taskrunner_responsibility": "Own TaskRunner execution routing state and step-type policy in the native class definition.",
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native TaskRunner declares canonical step-type routing sets and all consumers use those declarations.",
+      "dependency_groups": [],
+      "dependency_edges": [],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": false,
+      "marker_evidence": [],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_state_ownership"
+        ]
+      },
+      "recommended_closure_action": "Promote routing state into the native class only after duplicate set extensions are reconciled.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:4696"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-006",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4722,
+      "symbol": "TaskRunner._determine_failure_type",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._determine_failure_type",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4722",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._determine_failure_type (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "repair_chain_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "taskrunner_contract",
+          "relationship": "repair_chain_dependencies"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": false,
+      "marker_evidence": [
+        "assignment_rhs:_zero_v731_task_runner_determine_failure_type"
+      ],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_repair_chain_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:4722"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-007",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5179,
+      "symbol": "TaskRunner.__init__",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.__init__",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5179",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.__init__ (native definition)",
+      "ownership_bucket": "taskrunner_runtime_session_ownership",
+      "taskrunner_responsibility": "Own runtime-session construction and durable step-result persistence.",
+      "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native construction and persistence use one runtime-session owner and preserve step results across resume.",
+      "dependency_groups": [],
+      "dependency_edges": [
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_v810_taskrunner_init",
+        "native_owner:TaskRunner.runtime_session_initialization"
+      ],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_runtime_session_ownership"
+        ]
+      },
+      "recommended_closure_action": "Consolidate constructor/session wiring and persistence under the native TaskRunner owner.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5179"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-008",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5180,
+      "symbol": "TaskRunner._persist_step_result_to_runtime_state",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._persist_step_result_to_runtime_state",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5180",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._persist_step_result_to_runtime_state (native definition)",
+      "ownership_bucket": "taskrunner_runtime_session_ownership",
+      "taskrunner_responsibility": "Own runtime-session construction and durable step-result persistence.",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native construction and persistence use one runtime-session owner and preserve step results across resume.",
+      "dependency_groups": [
+        "scheduler_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": false,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_v810_persist_step_result_to_runtime_state",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_runtime_session_ownership",
+          "taskrunner_scheduler_dependency"
+        ]
+      },
+      "recommended_closure_action": "Consolidate constructor/session wiring and persistence under the native TaskRunner owner.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5180"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-009",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5476,
+      "symbol": "TaskRunner.run_task_adaptive",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_adaptive",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5476",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task_adaptive (native definition)",
+      "ownership_bucket": "taskrunner_continuation_ownership",
+      "taskrunner_responsibility": "Own adaptive continuation entry and preserve goal-lineage identity across resumed execution.",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native adaptive execution preserves complete goal lineage and continuation identity through scheduler handoff.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": false,
+      "marker_evidence": [
+        "assignment_rhs:_zero_run_task_adaptive",
+        "native_owner:TaskRunner._pre_execution_authority_denial"
+      ],
+      "reachable_helpers": [],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_continuation_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Close continuation and goal-lineage contracts before retiring the adaptive execution overlay.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5476"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-010",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5630,
+      "symbol": "TaskRunner.run_task_tick",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5630",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task_tick (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": true,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_taskrunner_consolidated_run_task_tick",
+        "function_or_reachable_helper:step_executor.execute_step",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_taskrunner_authority_denial_shape",
+        "_taskrunner_has_dispatch_authority",
+        "_taskrunner_is_soft_authority_gate_failure",
+        "_taskrunner_result_text",
+        "_taskrunner_runtime_gate_fallback_step",
+        "_taskrunner_select_current_step"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5630"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-011",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5643,
+      "symbol": "TaskRunner.run_task",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5643",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": true,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_taskrunner_consolidated_run_task",
+        "function_or_reachable_helper:step_executor.execute_step",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_taskrunner_authority_denial_shape",
+        "_taskrunner_has_dispatch_authority",
+        "_taskrunner_is_soft_authority_gate_failure",
+        "_taskrunner_result_text",
+        "_taskrunner_runtime_gate_fallback_step",
+        "_taskrunner_select_current_step"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5643"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-012",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5683,
+      "symbol": "TaskRunner.run_task_tick",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5683",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task_tick (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_stage3b_run_task_tick",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_stage3b_taskrunner_enrich_success_result"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5683"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-013",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5692,
+      "symbol": "TaskRunner.run_task",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5692",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_stage3b_run_task",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_stage3b_taskrunner_enrich_success_result"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5692"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-014",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5875,
+      "symbol": "TaskRunner.run_task_tick",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5875",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task_tick (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_stage3b_run_task_tick_v2",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_stage3b_call_registered_handler_v2",
+        "_zero_stage3b_mapping_v2",
+        "_zero_stage3b_normalize_blocked_v2",
+        "_zero_stage3b_normalize_success_v2",
+        "_zero_stage3b_read_state_v2",
+        "_zero_stage3b_runtime_mode_v2",
+        "_zero_stage3b_select_step_v2",
+        "_zero_stage3b_state_path_v2",
+        "_zero_stage3b_write_state_v2"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5875"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-015",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5889,
+      "symbol": "TaskRunner.run_task",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5889",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_stage3b_run_task_v2",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_stage3b_mapping_v2",
+        "_zero_stage3b_normalize_blocked_v2",
+        "_zero_stage3b_normalize_success_v2",
+        "_zero_stage3b_read_state_v2",
+        "_zero_stage3b_runtime_mode_v2",
+        "_zero_stage3b_select_step_v2",
+        "_zero_stage3b_state_path_v2",
+        "_zero_stage3b_write_state_v2"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5889"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-016",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5982,
+      "symbol": "TaskRunner.run_task_tick",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5982",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task_tick (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_stage3b_run_task_tick_v3",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_stage3b_normalize_taskrunner_result_v3",
+        "_zero_stage3b_runtime_state_from_task_v3"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5982"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-017",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5991,
+      "symbol": "TaskRunner.run_task",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5991",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_stage3b_run_task_v3",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_stage3b_normalize_taskrunner_result_v3",
+        "_zero_stage3b_runtime_state_from_task_v3"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:5991"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-018",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 6036,
+      "symbol": "TaskRunner.run_task_tick",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:6036",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task_tick (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_stage3b_run_task_tick_v4",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_stage3b_taskrunner_record_operator_failure_v4"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:6036"
+      ]
+    },
+    {
+      "blocker_id": "S13B-TR-019",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 6045,
+      "symbol": "TaskRunner.run_task",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:6045",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.run_task (native definition)",
+      "ownership_bucket": "taskrunner_execution_ownership",
+      "taskrunner_responsibility": "Own task, tick, and one-step execution without class-level overlays.",
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.",
+      "dependency_groups": [
+        "scheduler_dependencies",
+        "step_executor_dependencies"
+      ],
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "taskrunner_contract",
+          "relationship": "scheduler_dependencies"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "taskrunner_contract",
+          "relationship": "step_executor_dependencies"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "taskrunner_contract",
+          "relationship": "identity_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "taskrunner_contract",
+          "relationship": "session_dependency"
+        }
+      ],
+      "direct_step_executor_overlay": false,
+      "goal_lineage_dependency": true,
+      "runtime_session_dependency": true,
+      "marker_evidence": [
+        "assignment_rhs:_zero_stage3b_run_task_v4",
+        "native_owner:TaskRunner._pre_execution_authority_denial",
+        "function_body:runtime_session_or_state"
+      ],
+      "reachable_helpers": [
+        "_zero_stage3b_taskrunner_record_operator_failure_v4"
+      ],
+      "critical_chain_position": {
+        "stage12_order": 5,
+        "stage13b_closure_nodes": [
+          "taskrunner_execution_ownership",
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      "recommended_closure_action": "Order overlays chronologically, identify the terminal contract, and plan one native execution chain.",
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#taskrunner_contract",
+        "core/runtime/task_runner.py:6045"
+      ]
+    }
+  ],
+  "dependency_graph": {
+    "nodes": [
+      {
+        "order": 1,
+        "node": "taskrunner_state_ownership",
+        "blocked_by": [],
+        "unlocks": [
+          "taskrunner_runtime_session_ownership"
+        ]
+      },
+      {
+        "order": 2,
+        "node": "taskrunner_runtime_session_ownership",
+        "blocked_by": [
+          "taskrunner_state_ownership"
+        ],
+        "unlocks": [
+          "taskrunner_scheduler_dependency"
+        ]
+      },
+      {
+        "order": 3,
+        "node": "taskrunner_scheduler_dependency",
+        "blocked_by": [
+          "scheduler_contract",
+          "taskrunner_runtime_session_ownership"
+        ],
+        "unlocks": [
+          "taskrunner_step_executor_dependency"
+        ]
+      },
+      {
+        "order": 4,
+        "node": "taskrunner_step_executor_dependency",
+        "blocked_by": [
+          "step_executor_contract",
+          "taskrunner_scheduler_dependency"
+        ],
+        "unlocks": [
+          "taskrunner_repair_chain_dependency",
+          "taskrunner_execution_ownership"
+        ]
+      },
+      {
+        "order": 5,
+        "node": "taskrunner_repair_chain_dependency",
+        "blocked_by": [
+          "repair_chain",
+          "taskrunner_step_executor_dependency"
+        ],
+        "unlocks": [
+          "taskrunner_execution_ownership"
+        ]
+      },
+      {
+        "order": 6,
+        "node": "taskrunner_execution_ownership",
+        "blocked_by": [
+          "taskrunner_scheduler_dependency",
+          "taskrunner_step_executor_dependency",
+          "taskrunner_repair_chain_dependency"
+        ],
+        "unlocks": [
+          "taskrunner_continuation_ownership"
+        ]
+      },
+      {
+        "order": 7,
+        "node": "taskrunner_continuation_ownership",
+        "blocked_by": [
+          "taskrunner_execution_ownership",
+          "goal_lineage_contract"
+        ],
+        "unlocks": [
+          "scheduler_contract"
+        ]
+      }
+    ],
+    "dependency_edges": [
+      {
+        "from": "taskrunner_state_ownership",
+        "to": "taskrunner_runtime_session_ownership",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "taskrunner_scheduler_dependency",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_runtime_session_ownership",
+        "to": "taskrunner_scheduler_dependency",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "step_executor_contract",
+        "to": "taskrunner_step_executor_dependency",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_scheduler_dependency",
+        "to": "taskrunner_step_executor_dependency",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "repair_chain",
+        "to": "taskrunner_repair_chain_dependency",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_step_executor_dependency",
+        "to": "taskrunner_repair_chain_dependency",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_scheduler_dependency",
+        "to": "taskrunner_execution_ownership",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_step_executor_dependency",
+        "to": "taskrunner_execution_ownership",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_repair_chain_dependency",
+        "to": "taskrunner_execution_ownership",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "taskrunner_execution_ownership",
+        "to": "taskrunner_continuation_ownership",
+        "relationship": "blocked_by"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "taskrunner_continuation_ownership",
+        "relationship": "blocked_by"
+      }
+    ],
+    "unlock_edges": [
+      {
+        "from": "taskrunner_state_ownership",
+        "to": "taskrunner_runtime_session_ownership",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_runtime_session_ownership",
+        "to": "taskrunner_scheduler_dependency",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_scheduler_dependency",
+        "to": "taskrunner_step_executor_dependency",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_step_executor_dependency",
+        "to": "taskrunner_repair_chain_dependency",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_step_executor_dependency",
+        "to": "taskrunner_execution_ownership",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_repair_chain_dependency",
+        "to": "taskrunner_execution_ownership",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_execution_ownership",
+        "to": "taskrunner_continuation_ownership",
+        "relationship": "unlocks"
+      },
+      {
+        "from": "taskrunner_continuation_ownership",
+        "to": "scheduler_contract",
+        "relationship": "unlocks"
+      }
+    ]
+  },
+  "scheduler_unlock_graph": {
+    "directly_unlocked": [
+      {
+        "scheduler_blocker_id": "S13A-SCHED-023",
+        "symbol": "Scheduler._sync_runner_result_and_requeue_if_ready",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9024,
+        "cross_domain_dependencies": [
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-023",
+        "unlock_reason": "TaskRunner is the only cross-domain dependency."
+      }
+    ],
+    "partially_unlocked": [
+      {
+        "scheduler_blocker_id": "S13A-SCHED-001",
+        "symbol": "Scheduler._handle_dispatch_result",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7782,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-001",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-004",
+        "symbol": "Scheduler._finalize_dispatched_task",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7785,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-004",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-008",
+        "symbol": "Scheduler._execute_simple_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7910,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-008",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-009",
+        "symbol": "Scheduler._execute_simple_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7944,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-009",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-019",
+        "symbol": "Scheduler._run_simple_task_tick",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8639,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-019",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-022",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9023,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-022",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-027",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9414,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-027",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-028",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9579,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-028",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-029",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9784,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-029",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-030",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9950,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-030",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-031",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10166,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-031",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-032",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10352,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-032",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-035",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10493,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-035",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-036",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10570,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-036",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-037",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10641,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-037",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-038",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10707,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-038",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-039",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10793,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-039",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-040",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10820,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-040",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-041",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10891,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-041",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-042",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10978,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-042",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-043",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11049,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-043",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-044",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11155,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-044",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-045",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11244,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-045",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-046",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11308,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-046",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-047",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11332,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-047",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-048",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11364,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-048",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-049",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11398,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-049",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-050",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11432,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-050",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-051",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "source_line": 226,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-051",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      },
+      {
+        "scheduler_blocker_id": "S13A-SCHED-052",
+        "symbol": "Scheduler.run_one_step",
+        "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "source_line": 245,
+        "cross_domain_dependencies": [
+          "step_executor_contract",
+          "taskrunner_contract"
+        ],
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-052",
+        "remaining_dependencies_after_taskrunner_closure": [
+          "step_executor_contract"
+        ]
+      }
+    ]
+  },
+  "unresolved_ambiguities": [],
+  "non_mainline_issues": [],
+  "outside_domain_non_mainline_issues_discovered": []
+}

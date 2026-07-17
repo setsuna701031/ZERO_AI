@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import os
 import time
@@ -10,7 +11,7 @@ from core.planning.replan_suggestion import (
     build_replan_suggestions,
     format_replan_suggestion_cli,
 )
-from core.tasks.scheduler_core.repo_state_helpers import sync_runtime_back_to_repo
+from core.tasks.scheduler_core.repo_runtime_sync import sync_runtime_back_to_repo
 
 
 def normalize_public_status_fields(
@@ -24,7 +25,7 @@ def normalize_public_status_fields(
         return task
 
     status = str(task.get("status") or status_created).strip().lower() or status_created
-    task["status"] = status
+    project_runtime_status(task, status, owner="core/tasks/scheduler_core/public_task_record_helpers.py")
 
     steps = task.get("steps", [])
     if not isinstance(steps, list):
@@ -182,23 +183,7 @@ def build_public_task_record(
     return record
 
 
-def refresh_task_public_fields(
-    *,
-    scheduler: Any,
-    task: Dict[str, Any],
-    status_created: str = "created",
-    default_max_replans: int = 3,
-) -> Dict[str, Any]:
-    """Refresh derived public fields on a task payload.
-
-    This keeps artifact/public snapshot formatting outside the scheduler while
-    still using scheduler-owned path and task-schema helpers during Phase9.
-    """
-    if not isinstance(task, dict):
-        return task
-
-    task = scheduler._normalize_task_schema(task)
-
+def _ensure_public_runtime_collections(task: Dict[str, Any]) -> None:
     if not isinstance(task.get("results"), list):
         task["results"] = []
     if not isinstance(task.get("step_results"), list):
@@ -211,9 +196,13 @@ def refresh_task_public_fields(
     if not isinstance(task.get("execution_log"), list):
         task["execution_log"] = []
 
+
+def _backfill_public_final_answer_if_finished(scheduler: Any, task: Dict[str, Any]) -> None:
     if task["status"] in {"finished", "done", "success", "completed"} and not str(task.get("final_answer") or "").strip():
         task["final_answer"] = scheduler._build_simple_final_answer(task.get("results", []))
 
+
+def _build_public_artifact_state(scheduler: Any, task: Dict[str, Any]) -> Dict[str, Any]:
     artifact_paths = scheduler._extract_result_artifact_paths(task)
     artifact_entries = [scheduler._make_artifact_entry(path) for path in artifact_paths]
 
@@ -252,18 +241,48 @@ def refresh_task_public_fields(
     except Exception:
         updated_at = 0
 
+    return {
+        "preferred_result_path": preferred_result_path,
+        "result_exists": result_exists,
+        "openable": openable,
+        "artifact_entries": artifact_entries,
+        "updated_at": updated_at,
+    }
+
+
+def _apply_public_artifact_state(
+    scheduler: Any,
+    task: Dict[str, Any],
+    artifact_state: Dict[str, Any],
+) -> None:
+    preferred_result_path = str(artifact_state.get("preferred_result_path") or "")
+    artifact_entries = artifact_state.get("artifact_entries", [])
+    if not isinstance(artifact_entries, list):
+        artifact_entries = []
+
     task["result_path"] = preferred_result_path
     task["result_logical_path"] = scheduler._to_logical_path(preferred_result_path)
-    task["result_exists"] = result_exists
-    task["openable"] = openable
+    task["result_exists"] = bool(artifact_state.get("result_exists"))
+    task["openable"] = bool(artifact_state.get("openable"))
     task["open_targets"] = artifact_entries
     task["artifacts"] = copy.deepcopy(artifact_entries)
-    task["updated_at"] = updated_at
+    task["updated_at"] = int(artifact_state.get("updated_at", 0) or 0)
+
+
+def _apply_public_replan_fields(task: Dict[str, Any]) -> None:
     suggestion = build_replan_suggestion(task)
     task["replan_suggestion"] = suggestion
     task["suggestions"] = build_replan_suggestions(task)
     task["cli_suggestion"] = format_replan_suggestion_cli(suggestion)
 
+
+def _finalize_public_snapshot(
+    *,
+    scheduler: Any,
+    task: Dict[str, Any],
+    status_created: str,
+    default_max_replans: int,
+) -> Dict[str, Any]:
     task = scheduler._infer_completion_fields(task)
     task = scheduler._clear_stale_replan_fields(task)
     task["public_snapshot"] = build_public_task_record(
@@ -272,8 +291,39 @@ def refresh_task_public_fields(
         status_created=status_created,
         default_max_replans=default_max_replans,
     )
-
     return task
+
+
+def refresh_task_public_fields(
+    *,
+    scheduler: Any,
+    task: Dict[str, Any],
+    status_created: str = "created",
+    default_max_replans: int = 3,
+) -> Dict[str, Any]:
+    """Refresh derived public fields on a task payload.
+
+    This keeps artifact/public snapshot formatting outside the scheduler while
+    still using scheduler-owned path and task-schema helpers during Phase9.
+    """
+    if not isinstance(task, dict):
+        return task
+
+    task = scheduler._normalize_task_schema(task)
+
+    _ensure_public_runtime_collections(task)
+    _backfill_public_final_answer_if_finished(scheduler, task)
+
+    artifact_state = _build_public_artifact_state(scheduler, task)
+    _apply_public_artifact_state(scheduler, task, artifact_state)
+    _apply_public_replan_fields(task)
+
+    return _finalize_public_snapshot(
+        scheduler=scheduler,
+        task=task,
+        status_created=status_created,
+        default_max_replans=default_max_replans,
+    )
 
 
 def sync_runtime_back_to_repo_with_retry_collapse(

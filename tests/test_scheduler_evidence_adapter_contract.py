@@ -3,6 +3,11 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

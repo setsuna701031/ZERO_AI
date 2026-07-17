@@ -201,6 +201,19 @@ class TaskWorkspace:
             "planner_result": copy.deepcopy(planner_result),
         }
 
+        for key in (
+            "metadata",
+            "operator",
+            "operator_session_id",
+            "persistent_operator_session_id",
+            "execution_authority",
+            "authority_context",
+            "runtime_authority_context",
+            "authority_propagation_required",
+        ):
+            if key in task:
+                payload[key] = copy.deepcopy(task.get(key))
+
         if depends_on:
             payload["depends_on"] = copy.deepcopy(depends_on)
         else:

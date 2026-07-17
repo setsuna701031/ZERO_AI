@@ -1,0 +1,149 @@
+Package 45: Regression Runner Fast Lane Fix
+Date: 2026-06-30
+
+Scope
+-----
+Refined the regression runner fast lane without changing runtime logic,
+production code, pytest marker definitions, test markers, test assertions, or
+test behavior. Changes are limited to the regression runner and this report.
+
+Markers Added
+-------------
+- contract_fast: fast helper/runtime/authority/parser/payload/state/registry contract tests
+- contract_heavy: heavyweight contract tests involving inventory, scans,
+  traversal, subprocess, CLI, or broad repository inspection
+
+Markers Preserved
+-----------------
+- smoke
+- contract
+- integration
+- external
+- llm
+- slow
+
+Marker Classification Summary
+-----------------------------
+Module-level pytestmark metadata was refined across the existing contract test
+set.
+
+Counts by marker:
+- smoke: 1
+- contract: 346
+- contract_fast: 38
+- contract_heavy: 308
+- integration: 116
+- external: 5
+- llm: 16
+- slow: 11
+
+Contract Fast Scope
+-------------------
+contract_fast covers helper contracts, runtime_contracts, authority helpers,
+scheduler helpers, parser helpers, planner helpers, canonicalization, payload
+contracts, serialization, state transitions, registry helpers, and pure
+monkeypatch contracts.
+
+Contract Heavy Scope
+--------------------
+contract_heavy covers contract tests with workspace or repository scanning,
+inventory assertions, subprocess or CLI startup, broad filesystem traversal,
+large temporary workspaces, repository inspection, engineering inventory,
+runtime inventory, bridge inventory, compatibility inventory, freeze inventory,
+migration inventory, or audit inventory.
+
+Top Heavy Categories
+--------------------
+- Execution/Runtime Surface: 242
+- Workspace Scan: 119
+- Inventory: 65
+- Audit: 62
+- Engineering: 53
+- Migration/Compatibility/Freeze: 39
+- Repository Scan: 25
+- CLI: 18
+- Subprocess: 11
+
+Key Classifications
+-------------------
+- tests/runtime_contracts/*.py: contract + contract_fast
+- tests/test_scheduler_*_helpers.py-style contracts: contract + contract_fast
+- tests/test_scheduler_runtime_payload_contract.py: contract + contract_fast
+- tests/test_taskrunner_registry_* helper tests: contract + contract_fast
+- tests/test_taskrunner_registry_legacy_cleanup_phase*.py: contract + contract_heavy
+- tests/test_*_seal.py and broad execution/runtime surface contracts: contract + contract_heavy
+- tests/test_*_inventory.py: contract + contract_heavy
+- tests/test_repo_scan_impacted_plan_contract.py: contract + contract_heavy
+- tests/test_runtime_engineering_cli_seal_v1.py: contract + contract_heavy
+- tests/test_*_integration*_contract.py: contract + contract_heavy
+- tests/test_llm_general_generation_contract.py: contract + contract_heavy + external + llm
+
+Selection Guidance
+------------------
+Smoke:
+  python -m pytest -m smoke -q
+  python tools/regression_runner.py smoke
+
+Contract Fast:
+  python -m pytest -m contract_fast -q
+  python tools/regression_runner.py contract-fast
+  python tools/regression_runner.py contract
+
+Contract Heavy:
+  python -m pytest -m contract_heavy -q
+  python tools/regression_runner.py contract-heavy
+
+Fast local:
+  python -m pytest -m "smoke or contract_fast" -q
+  python tools/regression_runner.py fast
+
+Integration:
+  python -m pytest -m integration -q
+  python tools/regression_runner.py integration
+
+LLM/External:
+  python -m pytest -m "llm or external" -q
+  python tools/regression_runner.py llm --confirm-external
+
+Nightly:
+  python -m pytest tests -q
+  python tools/regression_runner.py nightly --confirm-nightly
+
+Runner Dry Runs
+---------------
+The standard entry point supports --dry-run for every tier:
+  python tools/regression_runner.py smoke --dry-run
+  python tools/regression_runner.py contract --dry-run
+  python tools/regression_runner.py contract-fast --dry-run
+  python tools/regression_runner.py contract-heavy --dry-run
+  python tools/regression_runner.py fast --dry-run
+  python tools/regression_runner.py integration --dry-run
+  python tools/regression_runner.py llm --dry-run
+  python tools/regression_runner.py nightly --dry-run
+
+Guardrails:
+- contract now aliases the fast contract tier and runs -m "contract_fast".
+- fast is limited to smoke or contract_fast and no longer selects the broad
+  tests tree by exclusion.
+- nightly refuses to execute unless --confirm-nightly is passed.
+- llm refuses to execute unless --confirm-external is passed.
+- dry-run prints the command without requiring confirmation or running pytest.
+
+Validation Plan
+---------------
+Short validation only:
+  python tools/regression_runner.py fast --dry-run
+  python tools/regression_runner.py fast
+
+Do not run contract-heavy, nightly, llm, or pytest tests -q as part of this
+package.
+
+Non-mainline Issues
+-------------------
+- Several heavy contract files still contain repository traversal, inventory,
+  subprocess, CLI, or broad scan behavior. Package 44 isolates these tests from
+  fast lanes but intentionally does not optimize or rewrite them.
+- Some contract files also carry integration, external, or llm markers. They
+  remain excluded from fast contract by contract_heavy classification.
+- Git reports LF-to-CRLF working-copy warnings for many touched test files on
+  this Windows checkout; content diffs are limited to pytestmark changes.

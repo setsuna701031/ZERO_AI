@@ -1,0 +1,152 @@
+{
+  "total_items": 1281,
+  "by_category": {
+    "fallback_reference": 412,
+    "legacy_reference": 279,
+    "legacy_route": 9,
+    "migration_blocker": 7,
+    "fallback_planning_or_recovery": 62,
+    "compatibility_reference": 201,
+    "migration_bridge": 9,
+    "runtime_core_compatibility": 268,
+    "import_compatibility_guard": 12,
+    "abi_compatibility": 22
+  },
+  "by_risk": {
+    "low": 926,
+    "medium": 355
+  },
+  "top_files": [
+    [
+      "core/tasks/scheduler.py",
+      208
+    ],
+    [
+      "core/tasks/scheduler_execution_gateway.py",
+      65
+    ],
+    [
+      "core/runtime/executor.py",
+      59
+    ],
+    [
+      "core/runtime/task_runtime.py",
+      54
+    ],
+    [
+      "core/agent/agent_loop.py",
+      51
+    ],
+    [
+      "core/runtime/step_executor.py",
+      41
+    ],
+    [
+      "core/tasks/runtime_repair_apply_transaction.py",
+      40
+    ],
+    [
+      "core/tasks/execution_gateway.py",
+      38
+    ],
+    [
+      "core/runtime/execution_landing_consistency.py",
+      31
+    ],
+    [
+      "core/tasks/execution_gateway_runtime.py",
+      28
+    ],
+    [
+      "core/agent/code_chain_controlled_self_edit_bridge.py",
+      27
+    ],
+    [
+      "core/planning/planner.py",
+      27
+    ],
+    [
+      "core/runtime/runtime_execution_result.py",
+      25
+    ],
+    [
+      "core/tasks/planner_gateway_runtime.py",
+      25
+    ],
+    [
+      "core/runtime/self_edit_mainline_convergence.py",
+      21
+    ],
+    [
+      "core/runtime/runtime_compatibility.py",
+      20
+    ],
+    [
+      "core/tasks/work_package_intake.py",
+      19
+    ],
+    [
+      "core/runtime/runtime_evidence_authority.py",
+      18
+    ],
+    [
+      "core/runtime/governed_mutation_runtime.py",
+      16
+    ],
+    [
+      "core/runtime/task_runner.py",
+      15
+    ],
+    [
+      "core/planning/task_replanner.py",
+      13
+    ],
+    [
+      "core/memory/step_reflection_engine.py",
+      12
+    ],
+    [
+      "core/runtime/execution_authority.py",
+      12
+    ],
+    [
+      "core/runtime/runtime_recovery_execution_contract.py",
+      12
+    ],
+    [
+      "core/system/llm_planner.py",
+      12
+    ],
+    [
+      "core/planning/replanner.py",
+      10
+    ],
+    [
+      "core/runtime/runtime_native_targeted_pytest_planner.py",
+      10
+    ],
+    [
+      "core/runtime/runtime_recovery_plan.py",
+      10
+    ],
+    [
+      "core/runtime/step_handlers.py",
+      9
+    ],
+    [
+      "core/tasks/scheduler_core/simple_step_executor_helpers.py",
+      9
+    ]
+  ],
+  "target_counts": {
+    "core/runtime/execution_authority.py": 12,
+    "core/runtime/task_runner.py": 15,
+    "core/runtime/step_executor.py": 41,
+    "core/tasks/scheduler.py": 208,
+    "core/runtime/runtime_authority.py": 3,
+    "core/runtime/runtime_session_resume.py": 2
+  },
+  "zero_patch_residue_count": 0,
+  "zero_patch_residue": [],
+  "verification_passed": true
+}

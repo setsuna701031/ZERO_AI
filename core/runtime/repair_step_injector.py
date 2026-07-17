@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
@@ -109,6 +110,10 @@ class RepairStepInjector:
 
         task_id = self._task_id(task)
         base_id = self._safe_id(task_id or "repair")
+        repair_ancestry = self._repair_ancestry(
+            failed_step=failed_step,
+            failed_result=failed_result,
+        )
         injected: List[InjectedRepairStep] = []
 
         for index, action in enumerate(actions, start=1):
@@ -149,6 +154,7 @@ class RepairStepInjector:
                         ],
                         "scope": str(action.get("scope") or "sandbox"),
                         "repair_injected": True,
+                        "repair_ancestry": copy.deepcopy(repair_ancestry),
                     },
                     reason=str(action.get("reason") or "governed repair mutation"),
                 )
@@ -166,6 +172,7 @@ class RepairStepInjector:
                         payload={
                             "command": command,
                             "command_cwd": self._resolve_command_cwd(task=task, failed_step=failed_step),
+                            "repair_ancestry": copy.deepcopy(repair_ancestry),
                         },
                         reason="verify repaired candidate",
                     )
@@ -197,6 +204,7 @@ class RepairStepInjector:
                     "path": report_path,
                     "content": report_content,
                     "scope": "sandbox",
+                    "repair_ancestry": copy.deepcopy(repair_ancestry),
                 },
                 reason="write auto repair report",
             )
@@ -209,6 +217,7 @@ class RepairStepInjector:
                 payload={
                     "path": report_path,
                     "contains": "AER_AUTO_REPAIR_PLAN_OK",
+                    "repair_ancestry": copy.deepcopy(repair_ancestry),
                 },
                 reason="verify auto repair report",
             )
@@ -226,6 +235,7 @@ class RepairStepInjector:
                 "action_count": len(actions),
                 "injected_step_count": len(injected),
                 "governed_repair_mutation_enabled": True,
+                "repair_ancestry": copy.deepcopy(repair_ancestry),
             },
         )
 
@@ -338,6 +348,29 @@ class RepairStepInjector:
                 compact["command"] = result.get("command")
 
         return compact
+
+    def _repair_ancestry(
+        self,
+        *,
+        failed_step: Optional[Dict[str, Any]],
+        failed_result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "schema": "zero.workflow_runtime_session.repair_ancestry.v1",
+            "parent_failed_step_ref": self._payload_ref("failed_step", failed_step),
+            "parent_failed_result_ref": self._payload_ref("failed_result", failed_result),
+            "parent_failed_step": copy.deepcopy(failed_step or {}),
+            "parent_failed_result": self._compact_failure(failed_result),
+        }
+
+    def _payload_ref(self, kind: str, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not isinstance(payload, dict) or not payload:
+            return {}
+        encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+        return {
+            "kind": kind,
+            "hash": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+        }
 
     def _resolve_command_cwd(
         self,

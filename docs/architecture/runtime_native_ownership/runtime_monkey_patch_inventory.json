@@ -1,0 +1,1406 @@
+[
+  {
+    "path": "core\\agent\\agent_loop.py",
+    "line": 144,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(runtime_obj, \"operator_bridge\", operator_bridge)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\runtime\\aer_runtime_integration.py",
+    "line": 254,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.runtime_dispatcher = runtime_dispatcher",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\controlled_mutation_sandbox_executor.py",
+    "line": 92,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._patch_identity = copy.deepcopy(patch_identity)",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\controlled_mutation_sandbox_plan.py",
+    "line": 31,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._patch_identity = copy.deepcopy(patch_identity)",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\controlled_mutation_sandbox_plan.py",
+    "line": 69,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._patch_identity = copy.deepcopy(patch_identity)",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\governed_mutation_runtime.py",
+    "line": 426,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.patch_plan = create_patch_plan(",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\governed_mutation_runtime.py",
+    "line": 462,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.apply_result = apply_patch(",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\governed_mutation_runtime.py",
+    "line": 514,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.verification = verify_patch_plan(",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\operator_session_bootstrap.py",
+    "line": 144,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(task, \"operator_session_id\", resolved)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\runtime\\operator_session_bootstrap.py",
+    "line": 151,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(task, \"metadata\", current_metadata)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\runtime\\planner_runtime_dispatch.py",
+    "line": 323,
+    "kind": "class_method_assignment",
+    "owner_domain": "planner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.root = self.repo_root / \"workspace\" / \"planner_runtime_dispatch\"",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\planner_runtime_dispatch.py",
+    "line": 324,
+    "kind": "class_method_assignment",
+    "owner_domain": "planner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatch_log_path = self.root / \"dispatch_log.json\"",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_execution_transaction.py",
+    "line": 57,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatcher = dispatcher if dispatcher is not None else RuntimeCapabilityDispatcher()",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_agent_loop.py",
+    "line": 337,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._runtime_dispatcher_adapter = None",
+    "reason": "AST detected attribute assignment with patch/wrapper wording"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_agent_loop.py",
+    "line": 339,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._runtime_dispatcher_adapter = _RuntimeNativeAgentLoopDispatcherAdapter()",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_agent_loop.py",
+    "line": 340,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(self.aer_integration, \"runtime_dispatcher\", self._runtime_dispatcher_adapter)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_agent_loop.py",
+    "line": 344,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._runtime_dispatcher_adapter = dispatcher",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_autonomous_repair_chain.py",
+    "line": 181,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.patch_pipeline = patch_pipeline",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_code_mutation_loop.py",
+    "line": 222,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatch = dispatch",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_engineering_session.py",
+    "line": 188,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatch = dispatch",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_execution_dispatch.py",
+    "line": 579,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self._dispatches = {}",
+    "reason": "AST detected attribute assignment with patch/wrapper wording"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_git_patch_pipeline.py",
+    "line": 188,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.storage_path = Path(storage_path) if storage_path is not None else self.workspace_root / \"workspace\" / \"runtime_native_git_patch_pipeline.json\"",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_multisession_coordination.py",
+    "line": 297,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatch = dispatch",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 6022,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "task_runner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(builtins, '_zero_operator_failure_registry_v14', failures)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\runtime\\work_package_operator.py",
+    "line": 49,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatcher = dispatcher or RuntimeDispatcher(",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\runtime\\work_package_operator.py",
+    "line": 56,
+    "kind": "class_method_assignment",
+    "owner_domain": "planner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatcher.planner_bridge = self.planner_bridge",
+    "reason": "AST detected attribute assignment with patch/wrapper wording"
+  },
+  {
+    "path": "core\\runtime\\work_package_operator.py",
+    "line": 65,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatcher.llm_client = llm_client",
+    "reason": "AST detected attribute assignment with patch/wrapper wording"
+  },
+  {
+    "path": "core\\task_manager.py",
+    "line": 511,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(task, key, copy.deepcopy(runtime_state[key]))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\tasks\\engineering_goal_loop.py",
+    "line": 146,
+    "kind": "class_method_assignment",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.goal_loop_dispatcher = goal_loop_dispatcher or GoalLoopDispatcher(",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 424,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatcher = TaskDispatcher(",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7668,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7782,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7783,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7784,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7785,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7786,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7787,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7788,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 7789,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11325,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(builtins, \"_zero_operator_completion_registry_v13\", registry)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11349,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(builtins, \"_zero_operator_completion_registry_v13\", registry)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11359,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(builtins, \"_zero_operator_failure_registry_v14\", failed)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11393,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(builtins, \"_zero_operator_failure_registry_v14\", failed)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11427,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(builtins, \"_zero_operator_failure_registry_v14\", failures)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\conftest.py",
+    "line": 41,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "setattr(app, \"print_json\", _legacy_print_json)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_governed_code_chain_landing_contract.py",
+    "line": 179,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_legacy_migration_closure.py",
+    "line": 108,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"submit_work_package\", lambda *_args, **_kwargs: {\"ok\": True})",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_provenance_subject_binding_seal.py",
+    "line": 35,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(evidence_validator_module, \"_VALIDATED_EVIDENCE\", {id(evidence): evidence}, raising=False)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_provenance_subject_binding_seal.py",
+    "line": 39,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_terminal_authority_lineage_seal.py",
+    "line": 94,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(lifecycle_module, \"_write_json\", lambda *_args: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_terminal_authority_lineage_seal.py",
+    "line": 100,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(lifecycle_module, \"_write_json\", lambda *_args: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_terminal_authority_lineage_seal.py",
+    "line": 118,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(lifecycle_module, \"_write_json\", lambda *_args: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_terminal_authority_lineage_seal.py",
+    "line": 130,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_aer_terminal_authority_lineage_seal.py",
+    "line": 140,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"submit_work_package\", lambda *_args, **_kwargs: {\"ok\": True, \"package_id\": \"package-a\"})",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agent_loop_engineering_goal_route.py",
+    "line": 34,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(EngineeringProgramCycle, \"run_until_idle\", fake_run_until_idle)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agent_loop_engineering_goal_route.py",
+    "line": 35,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(EngineeringGoalLoop, \"run_until_terminal\", fail_goal_loop)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agent_loop_engineering_goal_route.py",
+    "line": 89,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "task_runner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.tasks.engineering_task_runner.run_engineering_task\", fake_run_engineering_task)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agent_loop_engineering_task_runner.py",
+    "line": 207,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "task_runner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.tasks.engineering_task_runner.run_engineering_task\", fake_run_engineering_task)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agent_loop_engineering_task_runner.py",
+    "line": 279,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "task_runner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.tasks.engineering_task_runner.run_engineering_task\", fake_run_engineering_task)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agentloop_createtask_mutation_bridge_contract.py",
+    "line": 22,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(agent_loop_module, \"run_repo_edit_decision\", forbidden_repo_edit)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_agentloop_createtask_mutation_bridge_contract.py",
+    "line": 49,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"run_repo_edit_decision\", forbidden_repo_edit)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_engineering_portfolio_auto_cycle.py",
+    "line": 46,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(portfolio_cli, \"_portfolio_cycle\", lambda repo_root: fake_cycle)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_engineering_portfolio_auto_cycle.py",
+    "line": 64,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(portfolio_cli, \"_portfolio_cycle\", lambda repo_root: fake_cycle)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_engineering_program_auto_cycle.py",
+    "line": 41,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(program_cli, \"_program_cycle\", lambda repo_root: fake_cycle)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_engineering_program_auto_cycle.py",
+    "line": 59,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(program_cli, \"_program_cycle\", lambda repo_root: fake_cycle)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_engineering_program_tree_summary.py",
+    "line": 129,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(program_cli, \"_program_observability\", lambda repo_root: fake)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_engineering_report_usability_contract.py",
+    "line": 128,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_goal_cli.py",
+    "line": 114,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(goal_cli, \"EngineeringGoalScheduler\", lambda: spy)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_goal_cli.py",
+    "line": 139,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(goal_cli, \"EngineeringGoalScheduler\", lambda: spy)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_llm_general_generation_contract.py",
+    "line": 23,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(llm_client, \"requests\", Requests())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_repair_chain_runtime.py",
+    "line": 1886,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.tasks.scheduler.time.time\", lambda: 1_700_000_000.0)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_dispatcher_status_authority_seal.py",
+    "line": 89,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(runtime_dispatcher_module, \"normalize_runtime_status\", canonical_status)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_phase3_state_evidence_replay.py",
+    "line": 128,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(mutation_patch_apply, \"apply_patch_plan\", partial_apply)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2549,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", fake_run)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2578,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", fake_run)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2620,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2697,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2718,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2740,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", fake_run)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2914,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"builtins.open\", blocked_open)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2915,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(pathlib.Path, \"write_text\", blocked_write_text)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2933,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 2967,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: responses.pop(0))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3044,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3057,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", timeout_run)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3079,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: responses.pop(0))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3101,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3124,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"builtins.open\", blocked_open)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3125,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(pathlib.Path, \"write_text\", blocked_write_text)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3126,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.json.dump\", blocked_json_dump)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3149,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", fake_run)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3172,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3196,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3222,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3249,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3281,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: responses.pop(0))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3312,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: responses.pop(0))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3373,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3395,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"builtins.open\", blocked_open)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3396,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(pathlib.Path, \"write_text\", blocked_write_text)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3397,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.json.dump\", blocked_json_dump)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3416,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3454,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: responses.pop(0))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3485,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3498,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", timeout_run)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3536,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3569,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: OkCompleted())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3581,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: responses.pop(0))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3628,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.subprocess.run\", lambda *args, **kwargs: Completed())",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3652,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"builtins.open\", blocked_open)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3653,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(pathlib.Path, \"write_text\", blocked_write_text)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_runtime_replay_execution_bridge.py",
+    "line": 3654,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(\"core.runtime.task_runtime.json.dump\", blocked_json_dump)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_dispatch_result_helpers.py",
+    "line": 52,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "self.dispatcher = RecordingDispatcher(self.calls)",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 19,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 33,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_simple_basic_step\", fake_basic_step)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 34,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_llm_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 35,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_command_like_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 63,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 75,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_simple_basic_step\", lambda **kwargs: dict(legacy_result))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 76,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"run_scheduler_step_execution_gateway\", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError(\"gateway failed\")))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 77,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_llm_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_basic_step_integration.py",
+    "line": 78,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_command_like_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 17,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 23,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_simple_basic_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 24,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_llm_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 34,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_command_like_step\", fake_command_like_step)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 60,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 66,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_simple_basic_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 67,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_llm_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 75,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_command_like_step\", lambda **kwargs: dict(legacy_result))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_command_like_integration.py",
+    "line": 76,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 17,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 23,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_simple_basic_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 33,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_llm_step\", fake_llm_step)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 34,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_command_like_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 60,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 66,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_simple_basic_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 74,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_llm_step\", lambda **kwargs: dict(legacy_result))",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 75,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"execute_command_like_step\", lambda **kwargs: None)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_execution_gateway_llm_step_integration.py",
+    "line": 76,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 45,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 51,
+    "kind": "class_method_assignment",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "scheduler.dispatcher = EmptyDispatcher()",
+    "reason": "class/module attribute assignment may be monkey patching"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 132,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"_ZERO_V726_ORIGINAL_CREATE_TASK\", failing_create_task)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 167,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 208,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(scheduler_module, \"_ZERO_V726_ORIGINAL_CREATE_TASK\", create_after_cleanup)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 278,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 318,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 435,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 485,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 568,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_scheduler_runtime_tail_regression.py",
+    "line": 574,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_session_identity_authority_seal.py",
+    "line": 89,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(persistent_orchestrator_module, \"PersistentEngineeringSession\", EngineeringSession)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_session_identity_authority_seal.py",
+    "line": 111,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "runtime_authority",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(persistent_orchestrator_module, \"PersistentEngineeringSession\", EngineeringSession)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_verification_tiers.py",
+    "line": 109,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "unknown",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(verification_cli, \"run_verification_cli\", fake_cli)",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  },
+  {
+    "path": "tests\\test_work_package_adaptive_runtime_feedback.py",
+    "line": 161,
+    "kind": "class_method_assignment",
+    "owner_domain": "task_runner",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "operator.dispatcher.task_runner = _AlwaysFailRunner()",
+    "reason": "AST detected attribute assignment with patch/wrapper wording"
+  },
+  {
+    "path": "tests\\test_work_package_scheduler.py",
+    "line": 130,
+    "kind": "setattr_runtime_injection",
+    "owner_domain": "scheduler",
+    "action": "manual_review_or_promote_to_native_owner",
+    "text": "monkeypatch.setattr(",
+    "reason": "setattr can mutate runtime behavior dynamically"
+  }
+]

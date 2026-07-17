@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
 from typing import Any, Dict, List
 
@@ -133,7 +134,7 @@ class AggregationRuntime:
         selected = max(
             results,
             key=lambda item: (
-                item["status"] == "success",
+                canonical_runtime_status(item.get("status")) == "completed",
                 float(item.get("confidence") or 0.0),
                 item["task_id"],
             ),

@@ -22,6 +22,7 @@ from core.runtime.mutation_audit import (
     write_audit_record,
 )
 from core.runtime.mutation_gateway import MutationGatewayRequest
+from core.runtime.runtime_mutation_authority import mutation_surface_inventory
 from core.runtime.mutation_patch_apply import (
     MutationPatchApplyResult,
     MutationPatchPlan,
@@ -39,6 +40,14 @@ from core.runtime.mutation_verification import (
 )
 from core.runtime.runtime_evidence_bundle import RuntimeEvidenceBundle
 from core.runtime.runtime_evidence_authority import RuntimeEvidenceAuthority
+from core.runtime.runtime_authority_seal import _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN
+from core.runtime.runtime_execution_authority import (
+    capability_from_authority_decision,
+    propagate_runtime_capability,
+    validate_capability_provenance,
+)
+from core.runtime.runtime_execution_authority_policy import evaluate_execution_authority
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.runtime_abi import validate_abi
 from core.runtime.runtime_artifact_gate import RuntimeArtifactGate
 from core.runtime.runtime_capability_graph import (
@@ -156,6 +165,25 @@ class GovernedMutationRuntimeResult:
     def completed(self) -> bool:
         return not self.truth.blocked and not self.truth.failed
 
+    def _runtime_execution_result_payload(self) -> dict[str, Any] | None:
+        if self.execution_result is None:
+            return None
+
+        payload = self.execution_result.to_dict()
+        if not isinstance(payload, dict):
+            return None
+
+        # v7.3.3 governed runtime rollback propagation compatibility:
+        # The governed runtime truth model is the canonical source for rollback
+        # and recovery outcome.  RuntimeExecutionResult is a normalized nested
+        # surface consumed by legacy recovery/replay tests, so mirror the truth
+        # fields here instead of allowing nested metadata to silently omit them.
+        payload["rolled_back"] = bool(self.truth.rolled_back)
+        payload["recovered"] = bool(self.truth.recovered)
+        payload["rollback_snapshot"] = dict(self.truth.rollback_snapshot)
+        payload["governed_runtime_truth"] = self.truth.to_dict()
+        return payload
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -168,9 +196,7 @@ class GovernedMutationRuntimeResult:
             "approval": self.approval.to_dict() if self.approval else None,
             "audit_record": self.audit_record.to_dict() if self.audit_record else None,
             "artifact_paths": dict(self.artifact_paths),
-            "runtime_execution_result": (
-                self.execution_result.to_dict() if self.execution_result else None
-            ),
+            "runtime_execution_result": self._runtime_execution_result_payload(),
             "runtime_evidence_bundle": (
                 self.evidence_bundle.to_dict() if self.evidence_bundle else None
             ),
@@ -193,6 +219,30 @@ class GovernedMutationRuntimeSession:
 
     def __init__(self, request: MutationGatewayRequest) -> None:
         self.request = request
+        existing_provenance = dict(request.metadata or {}).get("runtime_capability_provenance")
+        if existing_provenance is not None:
+            self.capability_provenance = validate_capability_provenance(existing_provenance)
+        else:
+            decision = evaluate_execution_authority(
+                source="runtime_mutation_gateway",
+                action_type="issue_capability",
+                metadata={"side_effect": False, "intent": request.intent},
+            )
+            self.capability_provenance = capability_from_authority_decision(
+                decision,
+                issuer="RuntimeExecutionAuthorityPolicy",
+                resource="governed_mutation",
+                action="mutation",
+                scope={"paths": "|".join(request.relative_paths) or request.intent or "mutation"},
+                lineage={"initiator": request.initiator, "reason": request.reason},
+            )
+        self.capability_metadata = propagate_runtime_capability(
+            {}, self.capability_provenance, stage="mutation"
+        )
+        self.persistence = RuntimePersistenceService(
+            workspace_root=request.report_root,
+            source="governed_mutation_runtime",
+        )
         self.session: MutationSession | None = None
         self.impacted_plan: ImpactedPlan | None = None
         self.patch_plan: MutationPatchPlan | None = None
@@ -231,7 +281,11 @@ class GovernedMutationRuntimeSession:
         self.protection = RuntimeSelfProtectionController()
         self.artifact_gate = RuntimeArtifactGate(self.protection)
         self.lifecycle_coordinator = RuntimeLifecycleCoordinator(self._transition_direct, self._checkpoint_direct)
-        self.evidence_authority = RuntimeEvidenceAuthority(evidence_id=f"evidence:{self.request.intent or 'runtime'}")
+        self.evidence_authority = RuntimeEvidenceAuthority(
+            evidence_id=f"evidence:{self.request.intent or 'runtime'}",
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+            capability_provenance=self.capability_provenance,
+        )
         self.evidence_coordinator = RuntimeEvidenceCoordinator(self.evidence_authority)
         self.integrity_coordinator = RuntimeIntegrityCoordinator(self.artifact_gate)
         self.replay_coordinator = RuntimeReplayCoordinator(
@@ -495,6 +549,7 @@ class GovernedMutationRuntimeSession:
         self._consume_budget("verification")
         self._mark("session.collect_evidence")
         evidence = {
+            **propagate_runtime_capability({}, self.capability_provenance, stage="evidence"),
             "runtime_version": runtime_version_descriptor().runtime_version,
             "abi_version": runtime_version_descriptor().abi_version,
             "session_id": self._require_session().session_id,
@@ -548,10 +603,18 @@ class GovernedMutationRuntimeSession:
             "runtime_compatibility": list(self.compatibility_reports),
             "runtime_abi": list(self.abi_reports),
         }
-        self.evidence_authority.update(**evidence)
+        self.evidence_authority.update(
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+            **evidence,
+        )
         self.evidence = self.evidence_authority.to_dict()
         path = self._reports() / "governed_runtime_evidence.json"
-        path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.persistence.write_json(
+            path,
+            evidence,
+            reason="governed_mutation_evidence_persistence",
+            metadata=propagate_runtime_capability({}, self.capability_provenance, stage="mutation"),
+        )
         self.artifact_paths["evidence"] = str(path)
         self._emit_event(
             EvidenceAttachedEvent(
@@ -628,7 +691,10 @@ class GovernedMutationRuntimeSession:
             "reason": "no_governed_repair_mutation_provided",
             "inside_governed_runtime": True,
         }
-        self.evidence_authority.update(recovery=recovery)
+        self.evidence_authority.update(
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+            recovery=recovery,
+        )
         self.evidence = self.evidence_authority.to_dict()
         self._emit_event(
             RecoveryCompletedEvent(
@@ -746,9 +812,11 @@ class GovernedMutationRuntimeSession:
         if replay_gate.integrity is not None:
             self.integrity_reports.append(replay_gate.integrity.to_dict())
         path = self._reports() / "governed_runtime_replay.json"
-        path.write_text(
-            json.dumps(self.replay_artifact, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        self.persistence.write_json(
+            path,
+            self.replay_artifact,
+            reason="governed_mutation_replay_persistence",
+            metadata=propagate_runtime_capability({}, self.capability_provenance, stage="mutation"),
         )
         self.artifact_paths["replay"] = str(path)
         self._checkpoint("replay", {"replay": self.replay_artifact})
@@ -797,6 +865,7 @@ class GovernedMutationRuntimeSession:
         )
         execution_result = RuntimeExecutionResult.from_governed_mutation_result(result)
         self.evidence_authority.update(
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
             stdout=str(self.evidence.get("stdout") or ""),
             stderr=str(self.evidence.get("stderr") or ""),
             test_results=self.evidence.get("test_results"),
@@ -872,21 +941,27 @@ class GovernedMutationRuntimeSession:
             runtime_topology=dict(self.topology),
         )
         bundle_path = self._reports() / "runtime_evidence_bundle.json"
-        bundle_path.write_text(
-            json.dumps(evidence_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        self.persistence.write_json(
+            bundle_path,
+            evidence_payload,
+            reason="governed_mutation_evidence_bundle_persistence",
+            metadata=propagate_runtime_capability({}, self.capability_provenance, stage="mutation"),
         )
         self.artifact_paths["evidence_bundle"] = str(bundle_path)
         diagnostics_path = self._reports() / "runtime_diagnostics.json"
-        diagnostics_path.write_text(
-            json.dumps(self.diagnostics, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        self.persistence.write_json(
+            diagnostics_path,
+            self.diagnostics,
+            reason="governed_mutation_diagnostics_persistence",
+            metadata=propagate_runtime_capability({}, self.capability_provenance, stage="mutation"),
         )
         self.artifact_paths["runtime_diagnostics"] = str(diagnostics_path)
         topology_path = self._reports() / "runtime_topology.json"
-        topology_path.write_text(
-            json.dumps(self.topology, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        self.persistence.write_json(
+            topology_path,
+            self.topology,
+            reason="governed_mutation_topology_persistence",
+            metadata=propagate_runtime_capability({}, self.capability_provenance, stage="mutation"),
         )
         self.artifact_paths["runtime_topology"] = str(topology_path)
         result = GovernedMutationRuntimeResult(
@@ -925,7 +1000,12 @@ class GovernedMutationRuntimeSession:
             runtime_diagnostics=dict(self.diagnostics),
             runtime_topology=dict(self.topology),
         )
-        path.write_text(result.to_json(), encoding="utf-8")
+        self.persistence.write_text(
+            path,
+            result.to_json(),
+            reason="governed_mutation_result_persistence",
+            metadata=propagate_runtime_capability({}, self.capability_provenance, stage="mutation"),
+        )
         return result
 
     def run(self) -> GovernedMutationRuntimeResult:

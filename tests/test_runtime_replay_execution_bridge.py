@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import pathlib
+import subprocess
+
 from core.runtime.task_runtime import TaskRuntime
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.external, pytest.mark.slow]
+
+
 
 
 def _runtime(tmp_path):
@@ -1865,3 +1874,1794 @@ def test_aer_governance_core_seal_debug_context_contains_flags(tmp_path):
     assert debug["execution_allowed"] is False
     assert debug["mutation_allowed"] is False
     assert debug["authorization_granted"] is False
+
+
+def _sandbox_execution_ticket_preview(runtime: TaskRuntime, transaction_id: str):
+    resolution, diff = _policy_resolution(runtime, transaction_id)
+    seal = runtime.build_governed_replay_aer_governance_core_seal(
+        resolution,
+        diff_verification=diff,
+    )
+    return runtime.build_governed_sandboxed_execution_ticket_preview(
+        seal,
+        policy_resolution=resolution,
+        diff_verification=diff,
+    )
+
+
+def _assert_sandbox_execution_ticket_never_allows_execution(preview: dict) -> None:
+    assert preview["execution_allowed"] is False
+    assert preview["mutation_allowed"] is False
+    assert preview["executor_dispatch_allowed"] is False
+    assert preview["scheduler_dispatch_allowed"] is False
+    assert preview["command_execution_allowed"] is False
+    assert preview["authorization_granted"] is False
+    assert preview["auto_commit"] is False
+    assert preview["auto_rollback"] is False
+    assert preview["shell_execution_allowed"] is False
+    assert preview["filesystem_write_allowed"] is False
+    assert preview["network_access_allowed"] is False
+    assert preview["subprocess_allowed"] is False
+    assert preview["repo_mutation_allowed"] is False
+
+
+def test_execution_ticket_preview_is_preview_only(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-ticket-preview")
+
+    assert preview["source"] == "governed_sandboxed_execution_ticket_preview_v1"
+    assert preview["execution_ticket_status"] == "preview_only"
+    assert preview["execution_ticket"]["ticket_type"] == "sandboxed_execution_ticket_preview"
+    assert preview["execution_ticket"]["preview_only"] is True
+    assert preview["execution_ticket"]["immutable"] is True
+    assert preview["execution_ticket"]["governance_sealed"] is True
+    _assert_sandbox_execution_ticket_never_allows_execution(preview)
+
+
+def test_execution_ticket_never_allows_execution(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-ticket-never")
+    ticket = preview["execution_ticket"]
+
+    assert ticket["execution_allowed"] is False
+    assert ticket["mutation_allowed"] is False
+    assert ticket["dispatch_allowed"] is False
+    assert ticket["shell_execution_allowed"] is False
+    _assert_sandbox_execution_ticket_never_allows_execution(preview)
+
+
+def test_capability_envelope_is_readonly_only(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-envelope-readonly")
+    envelope = preview["capability_envelope"]
+
+    assert envelope["envelope_type"] == "sandboxed_capability_envelope_preview"
+    assert envelope["preview_only"] is True
+    assert envelope["readonly_execution_only"] is True
+    assert envelope["mutation_execution_allowed"] is False
+    assert envelope["shell_execution_allowed"] is False
+    assert envelope["filesystem_write_allowed"] is False
+    assert envelope["network_access_allowed"] is False
+    assert envelope["subprocess_allowed"] is False
+    assert envelope["repo_mutation_allowed"] is False
+
+
+def test_capability_envelope_blocks_mutation_execution(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-envelope-blocks")
+    envelope = preview["capability_envelope"]
+
+    assert envelope["mutation_execution_allowed"] is False
+    assert preview["mutation_allowed"] is False
+    assert preview["filesystem_write_allowed"] is False
+    assert preview["repo_mutation_allowed"] is False
+    assert preview["subprocess_allowed"] is False
+
+
+def test_allowed_readonly_commands_are_whitelisted(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-allowed-commands")
+
+    assert preview["allowed_readonly_commands"] == [
+        "pwd",
+        "dir",
+        "ls",
+        "git status",
+        "python -m compileall",
+        "pytest --collect-only",
+    ]
+
+
+def test_blocked_commands_contains_mutation_commands(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-blocked-commands")
+    blocked_commands = preview["blocked_commands"]
+
+    for command in (
+        "rm",
+        "del",
+        "move",
+        "rename",
+        "git commit",
+        "git push",
+        "git reset",
+        "pip install",
+        "powershell",
+        "bash",
+        "cmd /c",
+        "python script_that_writes.py",
+    ):
+        assert command in blocked_commands
+
+
+def test_sandbox_dispatch_preview_never_allows_dispatch(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-sandbox-dispatch")
+    dispatch = preview["sandbox_dispatch_preview"]
+
+    assert dispatch["dispatch_type"] == "sandboxed_dispatch_preview"
+    assert dispatch["preview_only"] is True
+    assert dispatch["readonly_dispatch_only"] is True
+    assert dispatch["dispatch_allowed"] is False
+    assert dispatch["execution_allowed"] is False
+    assert dispatch["mutation_allowed"] is False
+    assert dispatch["shell_execution_allowed"] is False
+
+
+def test_execution_verification_contract_requires_governance_seal(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-verification-contract")
+    contract = preview["execution_verification_contract"]
+
+    assert contract["verification_type"] == "sandbox_execution_verification_preview"
+    assert contract["preview_only"] is True
+    assert contract["deterministic_verification_required"] is True
+    assert contract["evidence_capture_required"] is True
+    assert contract["rollback_required_before_mutation"] is True
+    assert contract["governance_seal_required"] is True
+
+
+def test_evidence_capture_contract_never_persists_logs(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-evidence-contract")
+    contract = preview["evidence_capture_contract"]
+
+    assert contract["evidence_type"] == "sandbox_execution_evidence_preview"
+    assert contract["preview_only"] is True
+    assert contract["capture_stdout"] is True
+    assert contract["capture_stderr"] is True
+    assert contract["capture_exit_code"] is True
+    assert contract["capture_command"] is True
+    assert contract["capture_runtime_metadata"] is True
+    assert contract["persist_execution_logs"] is False
+
+
+def test_execution_ticket_debug_context_contains_sandbox_fields(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    preview = _sandbox_execution_ticket_preview(runtime, "tx-ticket-debug")
+    debug = preview["debug_context"]
+
+    assert debug["source"] == "governed_sandboxed_execution_ticket_preview_v1"
+    assert debug["replay_id"] == "replay-tx-ticket-debug"
+    assert debug["transaction_id"] == "tx-ticket-debug"
+    assert debug["action"] == "commit"
+    assert debug["execution_ticket_status"] == "preview_only"
+    assert debug["readonly_execution_only"] is True
+    assert debug["shell_execution_allowed"] is False
+    assert debug["filesystem_write_allowed"] is False
+    assert debug["network_access_allowed"] is False
+    assert debug["subprocess_allowed"] is False
+    assert debug["repo_mutation_allowed"] is False
+    assert debug["execution_allowed"] is False
+    assert debug["mutation_allowed"] is False
+    assert debug["authorization_granted"] is False
+    assert debug["blocked_reason"] == "approval_not_granted"
+    assert debug["risk_level"] == "high"
+    _assert_sandbox_execution_ticket_never_allows_execution(preview)
+
+
+def _readonly_command_gate(
+    runtime: TaskRuntime,
+    command: str,
+    *,
+    enable_readonly_execution: bool = False,
+    readonly_execution_mode: str = "preview",
+):
+    command_slug = "".join(char if char.isalnum() else "-" for char in command.lower()).strip("-")
+    return runtime.build_readonly_command_execution_gate(
+        _sandbox_execution_ticket_preview(runtime, f"tx-command-{command_slug}"),
+        command=command,
+        enable_readonly_execution=enable_readonly_execution,
+        readonly_execution_mode=readonly_execution_mode,
+    )
+
+
+def _assert_readonly_command_gate_never_executes(gate: dict) -> None:
+    assert gate["execution_allowed"] is False
+    assert gate["mutation_allowed"] is False
+    assert gate["executor_dispatch_allowed"] is False
+    assert gate["scheduler_dispatch_allowed"] is False
+    assert gate["command_execution_allowed"] is False
+    assert gate["authorization_granted"] is False
+    assert gate["auto_commit"] is False
+    assert gate["auto_rollback"] is False
+
+
+def test_readonly_command_gate_allows_pwd_preview(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "pwd")
+
+    assert gate["source"] == "readonly_command_execution_gate_v1"
+    assert gate["normalized_command"] == "pwd"
+    assert gate["command_category"] == "readonly_allowed"
+    assert gate["command_allowed"] is True
+    assert gate["deny_reason"] == ""
+    assert gate["readonly_match"] is True
+    assert gate["blocked_match"] is False
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_allows_git_status_preview(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "git status")
+
+    assert gate["normalized_command"] == "git status"
+    assert gate["command_category"] == "readonly_allowed"
+    assert gate["command_allowed"] is True
+    assert gate["execution_plan_preview"]["command_allowed"] is True
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_allows_compileall_preview(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "python -m compileall")
+
+    assert gate["normalized_command"] == "python -m compileall"
+    assert gate["command_category"] == "readonly_allowed"
+    assert gate["command_allowed"] is True
+    assert gate["readonly_match"] is True
+    assert gate["blocked_match"] is False
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_blocks_rm(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "rm -rf workspace")
+
+    assert gate["command_category"] == "blocked_mutation"
+    assert gate["command_allowed"] is False
+    assert gate["deny_reason"] == "blocked command pattern"
+    assert gate["blocked_match"] is True
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_blocks_git_commit(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "git commit -m test")
+
+    assert gate["command_category"] == "blocked_mutation"
+    assert gate["command_allowed"] is False
+    assert gate["deny_reason"] == "blocked command pattern"
+    assert gate["blocked_match"] is True
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_blocks_pip_install(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "pip install requests")
+
+    assert gate["command_category"] == "blocked_network_or_install"
+    assert gate["command_allowed"] is False
+    assert gate["deny_reason"] == "blocked command pattern"
+    assert gate["blocked_match"] is True
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_blocks_shell_escape(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "bash -lc ls")
+
+    assert gate["command_category"] == "blocked_shell"
+    assert gate["command_allowed"] is False
+    assert gate["deny_reason"] == "blocked command pattern"
+    assert gate["blocked_match"] is True
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_blocks_unknown_command(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "git log")
+
+    assert gate["command_category"] == "unknown"
+    assert gate["command_allowed"] is False
+    assert gate["deny_reason"] == "command not in readonly whitelist"
+    assert gate["readonly_match"] is False
+    assert gate["blocked_match"] is False
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_allowed_preview_still_never_executes(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "ls")
+    plan = gate["execution_plan_preview"]
+
+    assert gate["command_allowed"] is True
+    assert plan["preview_only"] is True
+    assert plan["dispatch_allowed"] is False
+    assert plan["execution_allowed"] is False
+    assert plan["readonly_execution_only"] is True
+    assert plan["mutation_allowed"] is False
+    assert plan["expected_evidence"] == ["stdout", "stderr", "exit_code", "command", "runtime_metadata"]
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_evidence_capture_plan_is_preview_only(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "dir")
+    evidence = gate["evidence_capture_plan"]
+    verification = gate["verification_plan"]
+
+    assert evidence["preview_only"] is True
+    assert evidence["capture_stdout"] is True
+    assert evidence["capture_stderr"] is True
+    assert evidence["capture_exit_code"] is True
+    assert evidence["capture_command"] is True
+    assert evidence["capture_runtime_metadata"] is True
+    assert evidence["persist_logs"] is False
+    assert evidence["write_allowed"] is False
+    assert verification["preview_only"] is True
+    assert verification["verify_exit_code"] is True
+    assert verification["verify_no_mutation"] is True
+    assert verification["verify_command_in_whitelist"] is True
+    assert verification["verify_blacklist_not_matched"] is True
+    assert verification["deterministic_verification_required"] is True
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_command_gate_debug_context_contains_command_fields(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "  Git   Status  ")
+    debug = gate["debug_context"]
+
+    assert debug["source"] == "readonly_command_execution_gate_v1"
+    assert debug["command"] == "  Git   Status  "
+    assert debug["normalized_command"] == "git status"
+    assert debug["command_category"] == "readonly_allowed"
+    assert debug["command_allowed"] is True
+    assert debug["deny_reason"] == ""
+    assert debug["readonly_match"] is True
+    assert debug["blocked_match"] is False
+    assert debug["execution_allowed"] is False
+    assert debug["command_execution_allowed"] is False
+    assert debug["mutation_allowed"] is False
+    assert debug["auto_commit"] is False
+    assert debug["auto_rollback"] is False
+    _assert_readonly_command_gate_never_executes(gate)
+
+
+def test_readonly_execution_unlock_preview_mode_keeps_git_status_non_executable(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(runtime, "git status")
+
+    assert gate["command_allowed"] is True
+    assert gate["execution_allowed"] is False
+    assert gate["command_execution_allowed"] is False
+    assert gate["readonly_execution_mode"] == "preview"
+    assert gate["enable_readonly_execution"] is False
+
+
+def test_readonly_execution_unlock_execute_mode_allows_git_status_contract(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert gate["command_allowed"] is True
+    assert gate["execution_allowed"] is True
+    assert gate["command_execution_allowed"] is True
+    assert gate["execution_plan_preview"]["execution_allowed"] is True
+    assert gate["execution_plan_preview"]["command_execution_allowed"] is True
+    assert gate["mutation_allowed"] is False
+    assert gate["executor_dispatch_allowed"] is False
+    assert gate["scheduler_dispatch_allowed"] is False
+    assert gate["authorization_granted"] is False
+    assert gate["auto_commit"] is False
+    assert gate["auto_rollback"] is False
+
+
+def test_readonly_execution_unlock_execute_mode_still_blocks_git_commit(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(
+        runtime,
+        "git commit -m test",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert gate["command_allowed"] is False
+    assert gate["execution_allowed"] is False
+    assert gate["command_execution_allowed"] is False
+    assert gate["deny_reason"] == "blocked command pattern"
+    assert gate["blocked_pattern_classification"] == "mutation"
+
+
+def test_readonly_execution_unlock_execute_mode_keeps_unknown_blocked(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(
+        runtime,
+        "python scripts/custom.py",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert gate["command_allowed"] is False
+    assert gate["execution_allowed"] is False
+    assert gate["command_execution_allowed"] is False
+    assert gate["deny_reason"] == "command not in readonly whitelist"
+    assert gate["command_category"] == "unknown"
+
+
+def test_readonly_execution_unlock_normalizes_git_status(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(
+        runtime,
+        "   GIT   STATUS   ",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert gate["normalized_command"] == "git status"
+    assert gate["command_allowed"] is True
+    assert gate["execution_allowed"] is True
+    assert gate["command_execution_allowed"] is True
+
+
+def test_readonly_execution_unlock_allowed_command_has_contract_plans(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    gate = _readonly_command_gate(
+        runtime,
+        "pytest --collect-only tests",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert gate["command_allowed"] is True
+    assert gate["execution_allowed"] is True
+    assert gate["command_execution_allowed"] is True
+    assert gate["execution_plan_preview"]["preview_only"] is True
+    assert gate["evidence_capture_plan"]["preview_only"] is True
+    assert gate["evidence_capture_plan"]["persist_logs"] is False
+    assert gate["evidence_capture_plan"]["write_allowed"] is False
+    assert gate["verification_plan"]["preview_only"] is True
+    assert gate["verification_plan"]["verify_no_mutation"] is True
+
+
+def test_readonly_execution_unlock_safety_regression_blocks_dangerous_commands(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    for command in (
+        'python -c "print(1)"',
+        "pip install requests",
+        "curl https://example.com",
+        "rm -rf .",
+        "git push",
+        "echo hi > file.txt",
+    ):
+        gate = _readonly_command_gate(
+            runtime,
+            command,
+            enable_readonly_execution=True,
+            readonly_execution_mode="execute_readonly",
+        )
+
+        assert gate["command_allowed"] is False
+        assert gate["execution_allowed"] is False
+        assert gate["command_execution_allowed"] is False
+        assert gate["deny_reason"] == "blocked command pattern"
+        assert gate["blocked_match"] is True
+        assert gate["mutation_allowed"] is False
+        assert gate["executor_dispatch_allowed"] is False
+        assert gate["scheduler_dispatch_allowed"] is False
+        assert gate["authorization_granted"] is False
+        assert gate["auto_commit"] is False
+        assert gate["auto_rollback"] is False
+
+
+def _run_readonly_command(
+    runtime: TaskRuntime,
+    command: str,
+    *,
+    enable_readonly_execution: bool = False,
+    readonly_execution_mode: str = "preview",
+    timeout_seconds: int = 10,
+):
+    return runtime.run_readonly_command_execution_gate(
+        _sandbox_execution_ticket_preview(runtime, "tx-controlled-readonly"),
+        command=command,
+        cwd="E:\\zero_ai",
+        timeout_seconds=timeout_seconds,
+        enable_readonly_execution=enable_readonly_execution,
+        readonly_execution_mode=readonly_execution_mode,
+    )
+
+
+def _assert_controlled_result_contract(result: dict) -> None:
+    for field in (
+        "status",
+        "command",
+        "normalized_command",
+        "command_allowed",
+        "execution_allowed",
+        "command_execution_allowed",
+        "deny_reason",
+        "blocked_pattern_classification",
+        "execution_plan_preview",
+        "evidence_capture_plan",
+        "verification_plan",
+        "stdout",
+        "stderr",
+        "returncode",
+        "duration_seconds",
+        "timeout_seconds",
+        "executed",
+        "execution_record",
+        "replay_record",
+        "evidence_record",
+        "verification_record",
+    ):
+        assert field in result
+
+
+def test_controlled_readonly_execution_preview_mode_does_not_execute(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(runtime, "git status")
+
+    _assert_controlled_result_contract(result)
+    assert result["command_allowed"] is True
+    assert result["execution_allowed"] is False
+    assert result["command_execution_allowed"] is False
+    assert result["executed"] is False
+    assert result["status"] in {"blocked", "preview"}
+    assert result["stdout"] == ""
+    assert result["stderr"] == ""
+
+
+def test_controlled_readonly_execution_execute_mode_runs_git_status(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    _assert_controlled_result_contract(result)
+    assert result["command_execution_allowed"] is True
+    assert result["executed"] is True
+    assert result["status"] in {"executed", "failed"}
+    assert "stdout" in result
+    assert "stderr" in result
+    assert "returncode" in result
+
+
+def test_controlled_readonly_execution_blocked_command_does_not_execute(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert result["executed"] is False
+    assert result["command_execution_allowed"] is False
+    assert result["deny_reason"] == "blocked command pattern"
+    assert result["status"] == "blocked"
+
+
+def test_controlled_readonly_execution_unknown_command_does_not_execute(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "python scripts/custom.py",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert result["executed"] is False
+    assert result["command_execution_allowed"] is False
+    assert result["deny_reason"] == "command not in readonly whitelist"
+    assert result["status"] == "blocked"
+
+
+def test_controlled_readonly_execution_unsafe_paths_do_not_execute(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    for command in (
+        "python -m compileall ..\\outside",
+        "pytest --collect-only ..\\tests",
+        "python -m compileall core\\runtime\\task_runtime.py && git status",
+    ):
+        result = _run_readonly_command(
+            runtime,
+            command,
+            enable_readonly_execution=True,
+            readonly_execution_mode="execute_readonly",
+        )
+
+        assert result["executed"] is False
+        assert result["command_execution_allowed"] is False or result["deny_reason"] == "unsafe readonly command path"
+        assert result["deny_reason"] in {"unsafe readonly command path", "blocked command pattern"}
+
+
+def test_controlled_readonly_execution_safe_compileall_executes(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "python -m compileall core\\runtime\\task_runtime.py",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    _assert_controlled_result_contract(result)
+    assert result["executed"] is True
+    assert result["command_execution_allowed"] is True
+    assert "returncode" in result
+    assert result["status"] in {"executed", "failed"}
+
+
+def test_controlled_readonly_execution_timeout_contract(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 1))
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", fake_run)
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+        timeout_seconds=1,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["executed"] is True
+    assert result["returncode"] is None
+    assert "timeout" in result["stderr"] or "timeout" in result["deny_reason"]
+
+
+def test_controlled_readonly_execution_subprocess_uses_shell_false(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+    calls = []
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    def fake_run(*args, **kwargs):
+        calls.append(kwargs)
+        return Completed()
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", fake_run)
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert result["executed"] is True
+    assert result["status"] == "executed"
+    assert calls
+    assert calls[0].get("shell") is False
+
+
+def test_readonly_execution_evidence_executed_command_has_all_records(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "python -m compileall core\\runtime\\task_runtime.py",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    _assert_controlled_result_contract(result)
+    assert result["executed"] is True
+    assert result["execution_record"]["record_type"] == "readonly_command_execution"
+    assert result["replay_record"]["replay_type"] == "readonly_command_replay"
+    assert result["replay_record"]["replayable"] is True
+    assert result["evidence_record"]["evidence_type"] == "command_execution_evidence"
+    assert result["verification_record"]["verification_type"] == "readonly_execution_verification"
+
+
+def test_readonly_execution_evidence_digest_is_deterministic(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "fixed stdout"
+        stderr = "fixed stderr"
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+
+    first = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    second = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert first["execution_record"]["stdout_digest"] == second["execution_record"]["stdout_digest"]
+    assert first["execution_record"]["stderr_digest"] == second["execution_record"]["stderr_digest"]
+
+
+def test_readonly_execution_evidence_preview_mode_has_records_not_replayable(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(runtime, "git status")
+
+    _assert_controlled_result_contract(result)
+    assert result["executed"] is False
+    assert result["status"] in {"preview", "blocked"}
+    assert result["execution_record"]["executed"] is False
+    assert result["replay_record"]["replayable"] is False
+    assert result["verification_record"]["verification_status"] in {"preview", "blocked"}
+
+
+def test_readonly_execution_evidence_blocked_command_has_blocked_records(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert result["executed"] is False
+    assert result["replay_record"]["replayable"] is False
+    assert result["verification_record"]["verification_status"] == "blocked"
+    assert result["deny_reason"] == "blocked command pattern"
+    assert result["execution_record"]["executed"] is False
+    assert result["evidence_record"]["executed"] is False
+
+
+def test_readonly_execution_evidence_unsafe_path_has_blocked_records(tmp_path):
+    runtime = _runtime(tmp_path)
+
+    result = _run_readonly_command(
+        runtime,
+        "python -m compileall ..\\outside",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert result["executed"] is False
+    assert result["replay_record"]["replayable"] is False
+    assert result["verification_record"]["verification_status"] == "blocked"
+    assert result["deny_reason"] == "unsafe readonly command path"
+    assert result["execution_record"]["executed"] is False
+    assert result["evidence_record"]["executed"] is False
+
+
+def test_readonly_execution_evidence_output_preview_is_bounded(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+    long_stdout = "x" * 5000
+
+    class Completed:
+        stdout = long_stdout
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+
+    assert len(result["execution_record"]["stdout_preview"]) <= 2000
+    assert result["execution_record"]["stdout_digest"] == hashlib.sha256(long_stdout.encode("utf-8")).hexdigest()
+
+
+def test_readonly_execution_evidence_replay_uses_whitelist_argv(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    replay_argv = result["replay_record"]["replay_argv"]
+
+    assert isinstance(replay_argv, list)
+    assert replay_argv == ["git", "status", "--short"]
+    assert "shell=True" not in replay_argv
+    assert result["verification_record"]["checks"]["argv_generated_from_whitelist"] is True
+
+
+def test_readonly_execution_evidence_timeout_has_timeout_verification(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 1))
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", fake_run)
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+        timeout_seconds=1,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["executed"] is True
+    assert result["verification_record"]["verification_status"] == "timeout"
+    assert isinstance(result["replay_record"]["replayable"], bool)
+
+
+def test_runtime_evidence_registry_can_register_executed_result(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "python -m compileall core\\runtime\\task_runtime.py",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+
+    record = registry.register_execution_result(result)
+
+    assert len(registry.list_records()) == 1
+    assert record["record_type"] == "runtime_evidence_registry_record"
+    assert record["execution_record"]
+    assert record["replay_record"]
+    assert record["evidence_record"]
+    assert record["verification_record"]
+
+
+def test_runtime_evidence_registry_can_query_by_evidence_id(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    found = registry.get_by_evidence_id(record["evidence_id"])
+
+    assert found is not None
+    assert found["registry_record_id"] == record["registry_record_id"]
+
+
+def test_runtime_evidence_registry_query_by_status_and_executed(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    registry.register_execution_result(result)
+
+    executed_records = registry.query(executed=True)
+    status_records = registry.query(status=result["status"])
+
+    assert executed_records
+    assert status_records
+    assert result["status"] in {"executed", "failed"}
+
+
+def test_runtime_evidence_registry_stores_blocked_result(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    assert record["executed"] is False
+    assert record["replay_record"]["replayable"] is False
+    assert registry.query(executed=False)
+
+
+def test_runtime_evidence_registry_reconstructs_replay_request(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    request = registry.build_replay_request(record["evidence_id"])
+
+    assert request["replay_request_type"] == "readonly_command_replay_request"
+    assert isinstance(request["replay_argv"], list)
+    assert request["replay_safety"] == "readonly_only"
+
+
+def test_runtime_evidence_registry_reconstructs_blocked_replay_request(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    request = registry.build_replay_request(record["evidence_id"])
+
+    assert request["replay_request_type"] == "readonly_command_replay_request"
+    assert request["replayable"] is False
+    assert request["deny_reason"]
+
+
+def test_runtime_evidence_registry_builds_verification_lineage(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    lineage = registry.build_verification_lineage(record["evidence_id"])
+
+    assert lineage["lineage_type"] == "readonly_execution_verification_lineage"
+    assert lineage["verification_status"]
+    assert isinstance(lineage["checks"], dict)
+    assert "stdout_digest" in lineage
+    assert "stderr_digest" in lineage
+
+
+def test_runtime_evidence_registry_query_handles_missing_fields(tmp_path):
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    minimal = {
+        "command": "manual",
+        "normalized_command": "manual",
+        "status": "blocked",
+        "executed": False,
+        "returncode": None,
+    }
+
+    record = registry.register_execution_result(minimal)
+    results = registry.query(status="blocked", replayable=False, verification_status="")
+
+    assert record["evidence_id"]
+    assert results
+
+
+def test_runtime_evidence_registry_does_not_write_files(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(runtime, "git status")
+    writes = []
+
+    def blocked_open(*args, **kwargs):
+        writes.append(("open", args, kwargs))
+        raise AssertionError("registry should not write files")
+
+    def blocked_write_text(*args, **kwargs):
+        writes.append(("write_text", args, kwargs))
+        raise AssertionError("registry should not write files")
+
+    monkeypatch.setattr("builtins.open", blocked_open)
+    monkeypatch.setattr(pathlib.Path, "write_text", blocked_write_text)
+
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    assert registry.list_records()
+    assert registry.get_record(record["registry_record_id"])
+    assert registry.query(command_contains="git")
+    assert not writes
+
+
+def test_runtime_replay_engine_deterministic_digest_passes(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    report = registry.replay(record["evidence_id"])
+
+    assert report["replay_report_type"] == "readonly_command_replay_validation"
+    assert report["replay_executed"] is True
+    assert report["replay_validation_status"] == "passed"
+    assert report["returncode_match"] is True
+    assert report["stdout_digest_match"] is True
+    assert report["stderr_digest_match"] is True
+
+
+def test_runtime_replay_engine_detects_digest_mismatch(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class FirstCompleted:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    class ReplayCompleted:
+        stdout = "changed"
+        stderr = ""
+        returncode = 0
+
+    responses = [FirstCompleted(), ReplayCompleted()]
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: responses.pop(0))
+
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    report = registry.replay(record["evidence_id"])
+
+    assert report["replay_validation_status"] == "mismatch"
+    assert report["stdout_digest_match"] is False
+
+
+def test_runtime_replay_engine_blocked_record_does_not_execute(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    report = registry.replay(record["evidence_id"])
+
+    assert report["replay_executed"] is False
+    assert report["replay_validation_status"] == "blocked"
+    assert report["deny_reason"]
+
+
+def test_runtime_replay_engine_invalid_replay_argv_blocked(tmp_path):
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    result = {
+        "command": "git status",
+        "normalized_command": "git status",
+        "status": "executed",
+        "executed": True,
+        "returncode": 0,
+        "execution_record": {
+            "stdout_digest": hashlib.sha256(b"").hexdigest(),
+            "stderr_digest": hashlib.sha256(b"").hexdigest(),
+        },
+        "evidence_record": {"evidence_id": "invalid-argv-evidence"},
+        "replay_record": {
+            "replayable": True,
+            "replay_command": "git status",
+            "replay_normalized_command": "git status",
+            "replay_argv": "git status",
+            "replay_cwd": "E:\\zero_ai",
+            "expected_returncode": 0,
+            "expected_stdout_digest": hashlib.sha256(b"").hexdigest(),
+            "expected_stderr_digest": hashlib.sha256(b"").hexdigest(),
+            "replay_safety": "readonly_only",
+        },
+        "verification_record": {"verification_status": "passed", "checks": {}},
+    }
+    record = registry.register_execution_result(result)
+
+    report = registry.replay(record["evidence_id"])
+
+    assert report["replay_executed"] is False
+    assert report["replay_validation_status"] == "blocked"
+    assert report["deny_reason"] == "invalid replay argv"
+
+
+def test_runtime_replay_engine_timeout_contract(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    def timeout_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 1))
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", timeout_run)
+    report = registry.replay(record["evidence_id"], timeout_seconds=1)
+
+    assert report["replay_validation_status"] == "timeout"
+    assert report["replay_executed"] is True
+    assert report["status"] == "timeout"
+
+
+def test_runtime_replay_engine_report_contains_bounded_previews(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class FirstCompleted:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    class ReplayCompleted:
+        stdout = "x" * 5000
+        stderr = ""
+        returncode = 0
+
+    responses = [FirstCompleted(), ReplayCompleted()]
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: responses.pop(0))
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    report = registry.replay(record["evidence_id"])
+
+    assert len(report["stdout_preview"]) <= 2000
+
+
+def test_runtime_replay_engine_reports_are_memory_only(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    writes = []
+
+    def blocked_open(*args, **kwargs):
+        writes.append(("open", args, kwargs))
+        raise AssertionError("replay should not write files")
+
+    def blocked_write_text(*args, **kwargs):
+        writes.append(("write_text", args, kwargs))
+        raise AssertionError("replay should not write files")
+
+    def blocked_json_dump(*args, **kwargs):
+        writes.append(("json.dump", args, kwargs))
+        raise AssertionError("replay should not write files")
+
+    monkeypatch.setattr("builtins.open", blocked_open)
+    monkeypatch.setattr(pathlib.Path, "write_text", blocked_write_text)
+    monkeypatch.setattr("core.runtime.task_runtime.json.dump", blocked_json_dump)
+
+    report = registry.replay(record["evidence_id"])
+
+    assert report["replay_executed"] is True
+    assert registry.list_replay_reports()
+    assert registry.get_replay_reports(record["evidence_id"])
+    assert not writes
+
+
+def test_runtime_replay_engine_subprocess_uses_shell_false(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+    calls = []
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    def fake_run(*args, **kwargs):
+        calls.append(kwargs)
+        return Completed()
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", fake_run)
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    assert len(calls) >= 2
+    assert all(call.get("shell") is False for call in calls)
+
+
+def test_runtime_execution_chain_register_creates_execution_node(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    nodes = registry.list_execution_chain_nodes()
+
+    assert len(nodes) >= 1
+    assert nodes[0]["node_type"] == "readonly_execution"
+    assert nodes[0]["evidence_id"] == record["evidence_id"]
+
+
+def test_runtime_execution_chain_replay_creates_validation_node_and_edge(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    nodes = registry.list_execution_chain_nodes()
+    edges = registry.list_execution_chain_edges()
+
+    assert any(node["node_type"] == "readonly_replay_validation" for node in nodes)
+    assert any(edge["edge_type"] == "replay_validation_of" for edge in edges)
+
+
+def test_runtime_execution_chain_for_evidence(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    chain = registry.get_execution_chain_for_evidence(record["evidence_id"])
+
+    assert chain["chain_type"] == "readonly_execution_chain"
+    assert chain["execution_node"]
+    assert len(chain["replay_nodes"]) >= 1
+    assert len(chain["edges"]) >= 1
+
+
+def test_runtime_execution_ancestry_detects_passed_replay(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    ancestry = registry.build_execution_ancestry(record["evidence_id"])
+
+    assert ancestry["latest_validation_status"] == "passed"
+    assert ancestry["validation_count"] >= 1
+    assert ancestry["has_mismatch"] is False
+
+
+def test_runtime_execution_ancestry_detects_mismatch(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class FirstCompleted:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    class ReplayCompleted:
+        stdout = "changed"
+        stderr = ""
+        returncode = 0
+
+    responses = [FirstCompleted(), ReplayCompleted()]
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: responses.pop(0))
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    ancestry = registry.build_execution_ancestry(record["evidence_id"])
+
+    assert ancestry["has_mismatch"] is True
+    assert ancestry["latest_validation_status"] == "mismatch"
+
+
+def test_runtime_replay_lineage_counts_statuses(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class OkCompleted:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    class ChangedCompleted:
+        stdout = "changed"
+        stderr = ""
+        returncode = 0
+
+    responses = [OkCompleted(), OkCompleted(), ChangedCompleted()]
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: responses.pop(0))
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+    registry.replay(record["evidence_id"])
+
+    lineage = registry.build_replay_lineage(record["evidence_id"])
+
+    assert lineage["passed_count"] >= 1
+    assert lineage["mismatch_count"] >= 1
+    assert lineage["latest_report"]
+
+
+def test_runtime_execution_chain_unknown_evidence_safe_return(tmp_path):
+    registry = TaskRuntime.build_runtime_evidence_registry()
+
+    chain = registry.get_execution_chain_for_evidence("missing")
+    ancestry = registry.build_execution_ancestry("missing")
+    lineage = registry.build_replay_lineage("missing")
+
+    assert chain["found"] is False
+    assert ancestry["found"] is False
+    assert lineage["found"] is False
+    assert chain["reason"]
+    assert ancestry["reason"]
+    assert lineage["reason"]
+
+
+def test_runtime_execution_chain_blocked_replay_appears_in_lineage(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    lineage = registry.build_replay_lineage(record["evidence_id"])
+    ancestry = registry.build_execution_ancestry(record["evidence_id"])
+
+    assert lineage["blocked_count"] >= 1
+    assert ancestry["has_blocked_replay"] is True
+
+
+def test_runtime_execution_chain_does_not_write_files(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    writes = []
+
+    def blocked_open(*args, **kwargs):
+        writes.append(("open", args, kwargs))
+        raise AssertionError("chain graph should not write files")
+
+    def blocked_write_text(*args, **kwargs):
+        writes.append(("write_text", args, kwargs))
+        raise AssertionError("chain graph should not write files")
+
+    def blocked_json_dump(*args, **kwargs):
+        writes.append(("json.dump", args, kwargs))
+        raise AssertionError("chain graph should not write files")
+
+    monkeypatch.setattr("builtins.open", blocked_open)
+    monkeypatch.setattr(pathlib.Path, "write_text", blocked_write_text)
+    monkeypatch.setattr("core.runtime.task_runtime.json.dump", blocked_json_dump)
+
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+    registry.get_execution_chain_for_evidence(record["evidence_id"])
+    registry.build_execution_ancestry(record["evidence_id"])
+    registry.build_replay_lineage(record["evidence_id"])
+
+    assert not writes
+
+
+def test_runtime_governance_evaluation_healthy_replay_allows_future_governed_mutation(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+    registry.replay(record["evidence_id"])
+
+    health = registry.evaluate_execution_health(record["evidence_id"])
+    stability = registry.evaluate_replay_stability(record["evidence_id"])
+    confidence = registry.evaluate_verification_confidence(record["evidence_id"])
+    readiness = registry.evaluate_mutation_readiness(record["evidence_id"])
+
+    assert health["health_status"] == "healthy"
+    assert stability["replay_stability_status"] == "stable"
+    assert confidence["confidence_level"] == "high"
+    assert readiness["mutation_ready"] is True
+    assert readiness["governance_decision"] == "allow_future_governed_mutation"
+
+
+def test_runtime_governance_evaluation_mismatch_degrades_runtime(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class FirstCompleted:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    class ReplayCompleted:
+        stdout = "changed"
+        stderr = ""
+        returncode = 0
+
+    responses = [FirstCompleted(), ReplayCompleted()]
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: responses.pop(0))
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    health = registry.evaluate_execution_health(record["evidence_id"])
+    stability = registry.evaluate_replay_stability(record["evidence_id"])
+    confidence = registry.evaluate_verification_confidence(record["evidence_id"])
+    readiness = registry.evaluate_mutation_readiness(record["evidence_id"])
+
+    assert health["health_status"] in {"degraded", "unstable"}
+    assert stability["replay_deterministic"] is False
+    assert confidence["confidence_level"] in {"low", "untrusted"}
+    assert readiness["mutation_ready"] is False
+    assert readiness["governance_decision"] == "deny_mutation"
+
+
+def test_runtime_governance_evaluation_timeout_affects_stability(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    def timeout_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 1))
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", timeout_run)
+    registry.replay(record["evidence_id"])
+
+    stability = registry.evaluate_replay_stability(record["evidence_id"])
+    readiness = registry.evaluate_mutation_readiness(record["evidence_id"])
+
+    assert stability["timeout_count"] >= 1
+    assert stability["replay_stability_status"] != "stable"
+    assert readiness["mutation_ready"] is False
+
+
+def test_runtime_governance_evaluation_blocked_replay_is_unsafe(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+
+    health = registry.evaluate_execution_health(record["evidence_id"])
+    readiness = registry.evaluate_mutation_readiness(record["evidence_id"])
+
+    assert health["health_status"] in {"blocked", "unstable"}
+    assert readiness["governance_decision"] in {"deny_mutation", "unsafe_runtime_state"}
+
+
+def test_runtime_governance_evaluation_no_replay_is_unknown(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+
+    health = registry.evaluate_execution_health(record["evidence_id"])
+    stability = registry.evaluate_replay_stability(record["evidence_id"])
+    readiness = registry.evaluate_mutation_readiness(record["evidence_id"])
+
+    assert health["health_status"] == "unknown"
+    assert stability["replay_stability_status"] == "unknown"
+    assert readiness["governance_decision"] == "require_more_replay_validation"
+
+
+def test_runtime_governance_registry_summary_mixed_results(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class OkCompleted:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    class ChangedCompleted:
+        stdout = "changed"
+        stderr = ""
+        returncode = 0
+
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: OkCompleted())
+    healthy = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    healthy_record = registry.register_execution_result(healthy)
+    registry.replay(healthy_record["evidence_id"])
+    registry.replay(healthy_record["evidence_id"])
+
+    responses = [OkCompleted(), ChangedCompleted()]
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: responses.pop(0))
+    mismatch = _run_readonly_command(
+        runtime,
+        "python -m compileall core\\runtime\\task_runtime.py",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    mismatch_record = registry.register_execution_result(mismatch)
+    registry.replay(mismatch_record["evidence_id"])
+
+    blocked = _run_readonly_command(
+        runtime,
+        "git push",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry.register_execution_result(blocked)
+
+    summary = registry.evaluate_registry_governance_summary()
+
+    assert summary["total_execution_records"] == 3
+    assert "registry_health_score" in summary
+    assert "registry_governance_status" in summary
+    assert "mutation_ready_count" in summary
+    assert "mutation_blocked_count" in summary
+
+
+def test_runtime_governance_evaluation_unknown_evidence_safe_return(tmp_path):
+    registry = TaskRuntime.build_runtime_evidence_registry()
+
+    health = registry.evaluate_execution_health("missing")
+    readiness = registry.evaluate_mutation_readiness("missing")
+
+    assert health["found"] is False
+    assert readiness["found"] is False
+    assert health["reason"]
+    assert readiness["reason"]
+
+
+def test_runtime_governance_evaluation_does_not_write_files(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+
+    class Completed:
+        stdout = "ok"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("core.runtime.task_runtime.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _run_readonly_command(
+        runtime,
+        "git status",
+        enable_readonly_execution=True,
+        readonly_execution_mode="execute_readonly",
+    )
+    registry = TaskRuntime.build_runtime_evidence_registry()
+    record = registry.register_execution_result(result)
+    registry.replay(record["evidence_id"])
+    writes = []
+
+    def blocked_open(*args, **kwargs):
+        writes.append(("open", args, kwargs))
+        raise AssertionError("governance evaluation should not write files")
+
+    def blocked_write_text(*args, **kwargs):
+        writes.append(("write_text", args, kwargs))
+        raise AssertionError("governance evaluation should not write files")
+
+    def blocked_json_dump(*args, **kwargs):
+        writes.append(("json.dump", args, kwargs))
+        raise AssertionError("governance evaluation should not write files")
+
+    monkeypatch.setattr("builtins.open", blocked_open)
+    monkeypatch.setattr(pathlib.Path, "write_text", blocked_write_text)
+    monkeypatch.setattr("core.runtime.task_runtime.json.dump", blocked_json_dump)
+
+    registry.evaluate_execution_health(record["evidence_id"])
+    registry.evaluate_replay_stability(record["evidence_id"])
+    registry.evaluate_verification_confidence(record["evidence_id"])
+    registry.evaluate_mutation_readiness(record["evidence_id"])
+    registry.evaluate_registry_governance_summary()
+
+    assert not writes

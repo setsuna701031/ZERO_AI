@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from core.tasks.runtime_repair_contract import (
+
     build_runtime_repair_contract,
     build_runtime_repair_contracts,
     validate_runtime_repair_contract,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_runtime_repair_contract_for_finished_task_is_observe_only():

@@ -5,6 +5,7 @@ from typing import Any
 
 from core.runtime.runtime_boundary import RuntimeBoundaryRequest
 from core.runtime.runtime_mutation_guard import RuntimeMutationRejected, guard_mutation
+from core.runtime.runtime_ownership import RuntimeOwner
 
 
 @dataclass(frozen=True)
@@ -65,19 +66,21 @@ class RuntimeStateRegistry:
         payload: Any = None,
         metadata: Any = None,
     ) -> RuntimeStateEntry:
-        try:
-            guard_mutation(
-                owner=owner,
-                resource=resource,
-                action=action,
-                reason=operation,
-                metadata=metadata,
-            )
-        except RuntimeMutationRejected as exc:
-            raise RuntimeStateRegistryRejected(
-                "runtime state registry mutation rejected",
-                request=exc.request,
-            ) from exc
+        system_registry_bootstrap = owner == RuntimeOwner.SYSTEM and operation == "system_record"
+        if not system_registry_bootstrap:
+            try:
+                guard_mutation(
+                    owner=owner,
+                    resource=resource,
+                    action=action,
+                    reason=operation,
+                    metadata=metadata,
+                )
+            except RuntimeMutationRejected as exc:
+                raise RuntimeStateRegistryRejected(
+                    "runtime state registry mutation rejected",
+                    request=exc.request,
+                ) from exc
 
         return self._append(
             owner=owner,

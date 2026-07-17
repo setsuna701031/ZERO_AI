@@ -35,6 +35,21 @@ def build_executor() -> Executor:
     )
 
 
+def test_executor_smoke_pytest_wrapper(tmp_path: Path) -> None:
+    executor = Executor(
+        workspace_root=tmp_path / "workspace",
+        default_retry_limit=0,
+        max_replan_rounds=0,
+        enable_forced_repair=True,
+    )
+
+    result = executor.execute_plan(task_name="pytest_wrapper", plan={"steps": []}, iteration=1)
+
+    assert result["success"] is False
+    assert result["needs_correction"] is True
+    assert len(result["rounds"]) == 1
+
+
 def main() -> None:
     print("\n[Executor Smoke Test]")
     print(f"project_root = {PROJECT_ROOT}")

@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.step_executor import StepExecutor
@@ -38,6 +39,14 @@ def _task(task_id: str, runtime_mode: str, step: dict) -> dict:
     }
 
 
+def _dispatcher_owned_task(task_id: str, runtime_mode: str, step: dict) -> dict:
+    task = _task(task_id, runtime_mode, step)
+    task["package_id"] = f"{task_id}-package"
+    task["session_id"] = f"{task_id}-session"
+    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
+    return task
+
+
 def test_step_executor_preserves_runtime_mode_in_result_and_trace() -> None:
     executor = StepExecutor(workspace_root=str(TEST_ROOT / "workspace"))
     result = executor.execute_step(
@@ -68,7 +77,7 @@ def test_step_executor_preserves_runtime_mode_in_result_and_trace() -> None:
 
 def test_task_runner_propagates_runtime_mode_to_step_executor_result_and_trace() -> None:
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-    task = _task(
+    task = _dispatcher_owned_task(
         "audit_read",
         "audit",
         {
@@ -99,9 +108,32 @@ def test_task_runner_propagates_runtime_mode_to_step_executor_result_and_trace()
     assert trace[0]["runtime_mode"] == "audit"
 
 
-def test_task_runner_step_runtime_mode_overrides_task_runtime_mode() -> None:
+def test_task_runner_without_dispatcher_capability_blocks_before_execution() -> None:
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     task = _task(
+        "audit_read_blocked",
+        "audit",
+        {
+            "type": "final_answer",
+            "content": "audit observation complete",
+        },
+    )
+
+    result = TaskRunner(
+        step_executor=StepExecutor(workspace_root=str(TEST_ROOT / "workspace")),
+        task_runtime=runtime,
+    ).run_task(task, current_tick=1)
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert result["task"]["status"] == "blocked"
+    assert result["task"]["results"][0]["result"]["executed"] is False
+    assert result["task"]["results"][0]["result"]["blocked"] is True
+
+
+def test_task_runner_step_runtime_mode_overrides_task_runtime_mode() -> None:
+    runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+    task = _dispatcher_owned_task(
         "step_override",
         "execute",
         {

@@ -1,0 +1,3758 @@
+{
+  "stage": "StepExecutor Native Ownership Closure Stage13C",
+  "production_runtime_modified": false,
+  "inputs": [
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation_summary.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_summary.json",
+    "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json",
+    "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b_summary.json"
+  ],
+  "total_stepexecutor_items": 30,
+  "classification_counts": {
+    "confirmed_blocker": 26,
+    "compatibility_bridge": 4,
+    "false_positive": 0,
+    "non_mainline_issue": 0
+  },
+  "bucket_counts": {
+    "execution_ownership": 18,
+    "authority_propagation": 6,
+    "direct_overlay": 30,
+    "fallback_signature": 2,
+    "lineage_dependency": 6,
+    "runtime_session_dependency": 6,
+    "repair_chain_dependency": 5,
+    "compatibility_bridge": 4,
+    "non_mainline_issue": 0
+  },
+  "stepexecutor_items": [
+    {
+      "blocker_id": "S13C-SE-001",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4196,
+      "symbol": "StepExecutor._register_builtin_handlers",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4196",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._register_builtin_handlers = _zero_v7_register_builtin_handlers"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_V7_ORIGINAL_REGISTER_BUILTINS"
+      ],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:4196",
+        "assignment_rhs:_zero_v7_register_builtin_handlers"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-002",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4221,
+      "symbol": "StepExecutor.__init__",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4221",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.__init__ (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.__init__ = _zero_v703_step_executor_init"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_V703_ORIGINAL_STEP_EXECUTOR_INIT"
+      ],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:4221",
+        "assignment_rhs:_zero_v703_step_executor_init"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-003",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4222,
+      "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "repair_chain",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4222",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {\"code_chain_repair\", \"autonomous_code_repair\"}"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": true,
+        "owner": "repair_chain",
+        "evidence": [
+          "stage12_domain:repair_chain"
+        ]
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "direct_overlay",
+        "repair_chain_dependency"
+      ],
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free.",
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "step_executor_contract",
+          "relationship": "repair_chain_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "repair_chain"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4222",
+        "class_state_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-004",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4366,
+      "symbol": "StepExecutor._register_builtin_handlers",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4366",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._register_builtin_handlers = _zero_v710_register_builtin_handlers"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_V710_ORIGINAL_REGISTER_BUILTINS"
+      ],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:4366",
+        "assignment_rhs:_zero_v710_register_builtin_handlers"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-005",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4367,
+      "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "repair_chain",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4367",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {\"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_repair_preflight_failed\"}"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": true,
+        "owner": "repair_chain",
+        "evidence": [
+          "stage12_domain:repair_chain"
+        ]
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "direct_overlay",
+        "repair_chain_dependency"
+      ],
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free.",
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "step_executor_contract",
+          "relationship": "repair_chain_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "repair_chain"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4367",
+        "class_state_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-006",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4576,
+      "symbol": "StepExecutor._register_builtin_handlers",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4576",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._register_builtin_handlers = _zero_v730_register_builtin_handlers"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_V730_ORIGINAL_REGISTER_BUILTIN_HANDLERS"
+      ],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:4576",
+        "assignment_rhs:_zero_v730_register_builtin_handlers"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-007",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4577,
+      "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "repair_chain",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4577",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = { \"code_chain_analyze\", \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_verify\", \"code_chain_repair_preflight_failed\", }"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": true,
+        "owner": "repair_chain",
+        "evidence": [
+          "stage12_domain:repair_chain"
+        ]
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "direct_overlay",
+        "repair_chain_dependency"
+      ],
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free.",
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "step_executor_contract",
+          "relationship": "repair_chain_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "repair_chain"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4577",
+        "class_state_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-008",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4587,
+      "symbol": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "repair_chain",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4587",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(StepExecutor, \"CODE_CHAIN_REPAIR_STEP_TYPES\", set())) | { \"code_chain_analyze\", \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_verify\", \"code_chain_repair_preflight_failed\", }"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": true,
+        "owner": "repair_chain",
+        "evidence": [
+          "stage12_domain:repair_chain"
+        ]
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "direct_overlay",
+        "repair_chain_dependency"
+      ],
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free.",
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "step_executor_contract",
+          "relationship": "repair_chain_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "repair_chain"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4587",
+        "class_state_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-009",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 5840,
+      "symbol": "StepExecutor.__init__",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:5840",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.__init__ (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.__init__ = _zero_v734_step_executor_init"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_V734_ORIGINAL_STEP_EXECUTOR_INIT"
+      ],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:5840",
+        "assignment_rhs:_zero_v734_step_executor_init"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-010",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6037,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "validated_classification": "compatibility_bridge",
+      "stage12_primary_domain": "runtime_gate_compatibility_bridge",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:6037",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._attach_adapter_payload (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._attach_adapter_payload = _zero_v739_attach_adapter_payload"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v739_error_text_from_payload",
+        "_zero_v739_error_type_from_payload",
+        "_zero_v739_safe_adapter_payload"
+      ],
+      "buckets": [
+        "direct_overlay",
+        "compatibility_bridge"
+      ],
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal. Stage13C StepExecutor condition: Adapter payload consumers use the canonical public result contract before bridge retirement.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#runtime_gate_compatibility_bridge",
+        "core/runtime/step_executor.py:6037",
+        "assignment_rhs:_zero_v739_attach_adapter_payload"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-011",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6106,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "validated_classification": "compatibility_bridge",
+      "stage12_primary_domain": "runtime_gate_compatibility_bridge",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:6106",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._attach_adapter_payload (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._attach_adapter_payload = _zero_v7310_attach_adapter_payload"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7310_adapter_execution_trace_from_result",
+        "_zero_v7310_adapter_trace_event_from_execution_trace"
+      ],
+      "buckets": [
+        "direct_overlay",
+        "compatibility_bridge"
+      ],
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal. Stage13C StepExecutor condition: Adapter payload consumers use the canonical public result contract before bridge retirement.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#runtime_gate_compatibility_bridge",
+        "core/runtime/step_executor.py:6106",
+        "assignment_rhs:_zero_v7310_attach_adapter_payload"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-012",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6166,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "validated_classification": "compatibility_bridge",
+      "stage12_primary_domain": "runtime_gate_compatibility_bridge",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:6166",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._attach_adapter_payload (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._attach_adapter_payload = _zero_v7311_attach_adapter_payload"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7311_safe_last_result_from_result"
+      ],
+      "buckets": [
+        "direct_overlay",
+        "compatibility_bridge"
+      ],
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal. Stage13C StepExecutor condition: Adapter payload consumers use the canonical public result contract before bridge retirement.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#runtime_gate_compatibility_bridge",
+        "core/runtime/step_executor.py:6166",
+        "assignment_rhs:_zero_v7311_attach_adapter_payload"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-013",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6194,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "validated_classification": "compatibility_bridge",
+      "stage12_primary_domain": "runtime_gate_compatibility_bridge",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:6194",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._attach_adapter_payload (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._attach_adapter_payload = _zero_v7312_attach_adapter_payload"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "direct_overlay",
+        "compatibility_bridge"
+      ],
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal. Stage13C StepExecutor condition: Adapter payload consumers use the canonical public result contract before bridge retirement.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#runtime_gate_compatibility_bridge",
+        "core/runtime/step_executor.py:6194",
+        "assignment_rhs:_zero_v7312_attach_adapter_payload"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-014",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6498,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:6498",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7313_execute_step_with_runtime_execution_result"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7313_build_runtime_execution_result_payload",
+        "_zero_v7313_infer_visible_step_ok",
+        "_zero_v7313_result_has_failure_signal",
+        "_zero_v7313_result_step_type",
+        "_zero_v7313_runtime_metadata_from_result"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:6498",
+        "assignment_rhs:_zero_v7313_execute_step_with_runtime_execution_result"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-015",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6867,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:6867",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7329_execute_step_final_public_abi"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": true,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7329_build_runtime_payload",
+        "_zero_v7329_extract_changed_files",
+        "_zero_v7329_extract_rollback_snapshot",
+        "_zero_v7329_extract_verification",
+        "_zero_v7329_failure_signal",
+        "_zero_v7329_step_type",
+        "_zero_v7329_success_signal",
+        "_zero_v7329_task_id"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay",
+        "fallback_signature"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "fallback_signature_dependency"
+        },
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:6867",
+        "assignment_rhs:_zero_v7329_execute_step_final_public_abi"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-016",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7044,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7044",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7330_execute_step_constitutional_probe"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7330_attach_constitutional_probe",
+        "_zero_v7330_existing_constitution_metadata",
+        "_zero_v7330_probe_source_status",
+        "_zero_v7330_probe_target_override",
+        "_zero_v7330_probe_target_status"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:7044",
+        "assignment_rhs:_zero_v7330_execute_step_constitutional_probe"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-017",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7300,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7300",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7331_execute_step_selective_activation"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7330_probe_source_status",
+        "_zero_v7330_probe_target_override",
+        "_zero_v7330_probe_target_status",
+        "_zero_v7331_activation_candidate",
+        "_zero_v7331_activation_metadata",
+        "_zero_v7331_activation_mode",
+        "_zero_v7331_activation_reason",
+        "_zero_v7331_apply_activation_metadata",
+        "_zero_v7331_constitutionally_blocked_result",
+        "_zero_v7331_probe_transition_and_decision"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:7300",
+        "assignment_rhs:_zero_v7331_execute_step_selective_activation"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-018",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7365,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7365",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7332_execute_step_public_output_sanitizer"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_clean",
+        "_zero_v7332_sanitize_public_runtime_output"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:7365",
+        "assignment_rhs:_zero_v7332_execute_step_public_output_sanitizer"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-019",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7403,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7403",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7333_execute_step_public_step_evidence_key_seal"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_clean",
+        "_zero_v7332_sanitize_public_runtime_output",
+        "_zero_v7333_strip_public_step_internal_keys"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:7403",
+        "assignment_rhs:_zero_v7333_execute_step_public_step_evidence_key_seal"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-020",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7775,
+      "symbol": "StepExecutor._classify_step_authority_requirement",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "authority_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._classify_step_authority_requirement",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7775",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._classify_step_authority_requirement (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._classify_step_authority_requirement = _zero_v7334_classify_step_authority_requirement"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": [
+          "stage12_domain:authority_contract"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "goal_lineage_contract",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_classify_step_authority_requirement:goal_lineage",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.goal_lineage_dependency"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime_session_ownership",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_classify_step_authority_requirement:runtime_session_or_state",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.runtime_session_dependency"
+        ]
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7334_normalize_step_type"
+      ],
+      "buckets": [
+        "authority_propagation",
+        "direct_overlay",
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "step_executor_contract",
+          "relationship": "authority_propagation"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "step_executor_contract",
+          "relationship": "lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "step_executor_contract",
+          "relationship": "runtime_session_dependency"
+        }
+      ],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#authority_contract",
+        "core/runtime/step_executor.py:7775",
+        "assignment_rhs:_zero_v7334_classify_step_authority_requirement"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-021",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7776,
+      "symbol": "StepExecutor._build_pre_execution_authority_decision",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "authority_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7776",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._build_pre_execution_authority_decision = _zero_v7334_build_pre_execution_authority_decision"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": [
+          "stage12_domain:authority_contract"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "goal_lineage_contract",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_build_pre_execution_authority_decision:goal_lineage",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.goal_lineage_dependency"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime_session_ownership",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_build_pre_execution_authority_decision:runtime_session_or_state",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.runtime_session_dependency"
+        ]
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7334_authority_context",
+        "_zero_v7334_authority_contract_required",
+        "_zero_v7334_execution_authority_from_context",
+        "_zero_v7334_execution_authority_validation"
+      ],
+      "buckets": [
+        "authority_propagation",
+        "direct_overlay",
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "step_executor_contract",
+          "relationship": "authority_propagation"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "step_executor_contract",
+          "relationship": "lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "step_executor_contract",
+          "relationship": "runtime_session_dependency"
+        }
+      ],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#authority_contract",
+        "core/runtime/step_executor.py:7776",
+        "assignment_rhs:_zero_v7334_build_pre_execution_authority_decision"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-022",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7777,
+      "symbol": "StepExecutor._attach_pre_execution_authority",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "authority_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_pre_execution_authority",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7777",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._attach_pre_execution_authority (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._attach_pre_execution_authority = _zero_v7334_attach_pre_execution_authority"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": [
+          "stage12_domain:authority_contract"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "goal_lineage_contract",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_attach_pre_execution_authority:goal_lineage",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.goal_lineage_dependency"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime_session_ownership",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_attach_pre_execution_authority:runtime_session_or_state",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.runtime_session_dependency"
+        ]
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7334_public_authority_decision"
+      ],
+      "buckets": [
+        "authority_propagation",
+        "direct_overlay",
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "step_executor_contract",
+          "relationship": "authority_propagation"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "step_executor_contract",
+          "relationship": "lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "step_executor_contract",
+          "relationship": "runtime_session_dependency"
+        }
+      ],
+      "unlock_targets": [],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#authority_contract",
+        "core/runtime/step_executor.py:7777",
+        "assignment_rhs:_zero_v7334_attach_pre_execution_authority"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-023",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 7778,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "authority_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:7778",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v7334_execute_step_with_pre_authority"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": [
+          "stage12_domain:authority_contract"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "goal_lineage_contract",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_execute_step_with_pre_authority:goal_lineage",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.goal_lineage_dependency"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime_session_ownership",
+        "evidence": [
+          "function_or_authority_chain:_zero_v7334_execute_step_with_pre_authority:runtime_session_or_state",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.runtime_session_dependency"
+        ]
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7334_authority_denied_result",
+        "_zero_v7334_normalize_step_type",
+        "_zero_v7334_public_authority_decision"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "authority_propagation",
+        "direct_overlay",
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "step_executor_contract",
+          "relationship": "authority_propagation"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "step_executor_contract",
+          "relationship": "lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "step_executor_contract",
+          "relationship": "runtime_session_dependency"
+        },
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#authority_contract",
+        "core/runtime/step_executor.py:7778",
+        "assignment_rhs:_zero_v7334_execute_step_with_pre_authority"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-024",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 8464,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "authority_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:8464",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_v811_execute_step_with_authority_closure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": [
+          "stage12_domain:authority_contract"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "goal_lineage_contract",
+        "evidence": [
+          "function_or_authority_chain:_zero_v811_execute_step_with_authority_closure:goal_lineage",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.goal_lineage_dependency"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime_session_ownership",
+        "evidence": [
+          "function_or_authority_chain:_zero_v811_execute_step_with_authority_closure:runtime_session_or_state",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.runtime_session_dependency"
+        ]
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v7334_attach_pre_execution_authority",
+        "_zero_v7334_normalize_step_type",
+        "_zero_v7334_public_authority_decision",
+        "_zero_v811_attach_authority_metadata",
+        "_zero_v811_authority_blocked_result",
+        "_zero_v811_authority_candidates",
+        "_zero_v811_public_authority_decision",
+        "_zero_v811_side_effect_action_type",
+        "_zero_v811_validate_step_authority",
+        "_zero_v812_affected_files_from_step_and_result",
+        "_zero_v812_attach_transaction",
+        "_zero_v812_blocked_transaction_evidence",
+        "_zero_v812_create_step_transaction",
+        "_zero_v812_finalize_step_transaction",
+        "_zero_v812_runtime_transaction_surface",
+        "_zero_v812_verification_from_result"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "authority_propagation",
+        "direct_overlay",
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "step_executor_contract",
+          "relationship": "authority_propagation"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "step_executor_contract",
+          "relationship": "lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "step_executor_contract",
+          "relationship": "runtime_session_dependency"
+        },
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#authority_contract",
+        "core/runtime/step_executor.py:8464",
+        "assignment_rhs:_zero_v811_execute_step_with_authority_closure"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-025",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 8509,
+      "symbol": "StepExecutor.__init__",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:8509",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.__init__ (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.__init__ = _zero_v813_step_executor_init"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:8509",
+        "assignment_rhs:_zero_v813_step_executor_init"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-026",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 8731,
+      "symbol": "StepExecutor.__init__",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:8731",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.__init__ (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.__init__ = _zero_operator_step_executor_init"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:8731",
+        "assignment_rhs:_zero_operator_step_executor_init"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-027",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 8889,
+      "symbol": "StepExecutor._register_builtin_handlers",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:8889",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._register_builtin_handlers = _zero_v2_step_executor_register_builtin_handlers"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_V2_ORIGINAL_STEP_EXECUTOR_REGISTER_BUILTINS"
+      ],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:8889",
+        "assignment_rhs:_zero_v2_step_executor_register_builtin_handlers"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-028",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 8890,
+      "symbol": "StepExecutor._handle_autonomous_repair_chain_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "repair_chain",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:8890",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "execution_boundary": {
+        "active": false,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor._handle_autonomous_repair_chain_step = _zero_v2_autonomous_repair_chain_handler"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": true,
+        "owner": "repair_chain",
+        "evidence": [
+          "stage12_domain:repair_chain"
+        ]
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [
+        "_zero_v2_callable_or_value"
+      ],
+      "buckets": [
+        "direct_overlay",
+        "repair_chain_dependency"
+      ],
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free.",
+      "dependency_edges": [
+        {
+          "from": "repair_chain",
+          "to": "step_executor_contract",
+          "relationship": "repair_chain_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "repair_chain"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:8890",
+        "assignment_rhs:_zero_v2_autonomous_repair_chain_handler"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-029",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 9072,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:9072",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_direct_llm_execute_step_contract_seal"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "goal_lineage_contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime_session_ownership",
+        "evidence": []
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": false,
+      "direct_overlay": true,
+      "indirect_overlay": false,
+      "predecessor_references": [],
+      "called_helpers": [],
+      "buckets": [
+        "execution_ownership",
+        "direct_overlay"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.",
+      "dependency_edges": [
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:9072",
+        "assignment_rhs:_zero_direct_llm_execute_step_contract_seal"
+      ]
+    },
+    {
+      "blocker_id": "S13C-SE-030",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 9622,
+      "symbol": "StepExecutor.execute_step",
+      "validated_classification": "confirmed_blocker",
+      "stage12_primary_domain": "step_executor_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:9622",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.execute_step (native definition)",
+      "execution_boundary": {
+        "active": true,
+        "owner": "StepExecutor",
+        "evidence": [
+          "assignment:StepExecutor.execute_step = _zero_boundary_execute_step"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "RuntimeExecutionAuthority → TaskRunner → StepExecutor",
+        "evidence": [
+          "stage12_domain:step_executor_contract"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "goal_lineage_contract",
+        "evidence": [
+          "function_or_authority_chain:_zero_boundary_execute_step:goal_lineage",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.goal_lineage_dependency"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime_session_ownership",
+        "evidence": [
+          "function_or_authority_chain:_zero_boundary_execute_step:runtime_session_or_state",
+          "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#marker_counts.runtime_session_dependency"
+        ]
+      },
+      "repair_boundary": {
+        "active": false,
+        "owner": "repair_chain",
+        "evidence": []
+      },
+      "fallback_signature": true,
+      "direct_overlay": true,
+      "indirect_overlay": true,
+      "predecessor_references": [
+        "_ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP"
+      ],
+      "called_helpers": [
+        "_runtime_step_attach_authority",
+        "_runtime_step_auth_explicit_denial",
+        "_runtime_step_auth_mapping",
+        "_runtime_step_execution_authority",
+        "_zero_boundary_authority_decision",
+        "_zero_boundary_blocked_result",
+        "_zero_boundary_execute_registered_handler",
+        "_zero_boundary_execute_simple_fallback",
+        "_zero_boundary_extract_authority_context",
+        "_zero_boundary_extract_execution_authority",
+        "_zero_boundary_norm_text",
+        "_zero_boundary_step_target",
+        "_zero_boundary_step_type",
+        "_zero_boundary_workspace_path"
+      ],
+      "buckets": [
+        "execution_ownership",
+        "authority_propagation",
+        "direct_overlay",
+        "fallback_signature",
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ],
+      "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+      "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "step_executor_contract",
+          "relationship": "authority_propagation"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "step_executor_contract",
+          "relationship": "lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "step_executor_contract",
+          "relationship": "runtime_session_dependency"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "fallback_signature_dependency"
+        },
+        {
+          "from": "scheduler_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_caller"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "step_executor_contract",
+          "relationship": "execution_owner_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler_contract",
+        "taskrunner_contract"
+      ],
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#step_executor_contract",
+        "core/runtime/step_executor.py:9622",
+        "assignment_rhs:_zero_boundary_execute_step"
+      ]
+    }
+  ],
+  "dependency_graph": {
+    "closure_nodes": [
+      {
+        "order": 1,
+        "node": "authority_propagation",
+        "blocked_by": [
+          "authority_contract"
+        ],
+        "unlocks": [
+          "execution_ownership"
+        ]
+      },
+      {
+        "order": 2,
+        "node": "execution_ownership",
+        "blocked_by": [
+          "authority_propagation"
+        ],
+        "unlocks": [
+          "lineage_dependency",
+          "runtime_session_dependency"
+        ]
+      },
+      {
+        "order": 3,
+        "node": "lineage_dependency",
+        "blocked_by": [
+          "execution_ownership",
+          "goal_lineage_contract"
+        ],
+        "unlocks": [
+          "runtime_session_dependency"
+        ]
+      },
+      {
+        "order": 4,
+        "node": "runtime_session_dependency",
+        "blocked_by": [
+          "lineage_dependency",
+          "runtime_session_ownership"
+        ],
+        "unlocks": [
+          "fallback_signature"
+        ]
+      },
+      {
+        "order": 5,
+        "node": "fallback_signature",
+        "blocked_by": [
+          "runtime_session_dependency",
+          "taskrunner_contract"
+        ],
+        "unlocks": [
+          "repair_chain_dependency",
+          "scheduler_contract"
+        ]
+      },
+      {
+        "order": 6,
+        "node": "repair_chain_dependency",
+        "blocked_by": [
+          "fallback_signature",
+          "repair_chain"
+        ],
+        "unlocks": [
+          "freeze_readiness"
+        ]
+      }
+    ],
+    "item_dependency_edges": [
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "repair_chain",
+        "to": "step_executor_contract",
+        "relationship": "repair_chain_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "repair_chain",
+        "to": "step_executor_contract",
+        "relationship": "repair_chain_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "repair_chain",
+        "to": "step_executor_contract",
+        "relationship": "repair_chain_dependency"
+      },
+      {
+        "from": "repair_chain",
+        "to": "step_executor_contract",
+        "relationship": "repair_chain_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "fallback_signature_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "authority_contract",
+        "to": "step_executor_contract",
+        "relationship": "authority_propagation"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "step_executor_contract",
+        "relationship": "lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "step_executor_contract",
+        "relationship": "runtime_session_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "step_executor_contract",
+        "relationship": "authority_propagation"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "step_executor_contract",
+        "relationship": "lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "step_executor_contract",
+        "relationship": "runtime_session_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "step_executor_contract",
+        "relationship": "authority_propagation"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "step_executor_contract",
+        "relationship": "lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "step_executor_contract",
+        "relationship": "runtime_session_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "step_executor_contract",
+        "relationship": "authority_propagation"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "step_executor_contract",
+        "relationship": "lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "step_executor_contract",
+        "relationship": "runtime_session_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "authority_contract",
+        "to": "step_executor_contract",
+        "relationship": "authority_propagation"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "step_executor_contract",
+        "relationship": "lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "step_executor_contract",
+        "relationship": "runtime_session_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "repair_chain",
+        "to": "step_executor_contract",
+        "relationship": "repair_chain_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      },
+      {
+        "from": "authority_contract",
+        "to": "step_executor_contract",
+        "relationship": "authority_propagation"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "step_executor_contract",
+        "relationship": "lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "step_executor_contract",
+        "relationship": "runtime_session_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "fallback_signature_dependency"
+      },
+      {
+        "from": "scheduler_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_caller"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "step_executor_contract",
+        "relationship": "execution_owner_boundary"
+      }
+    ],
+    "direct_overlays": [
+      "S13C-SE-001",
+      "S13C-SE-002",
+      "S13C-SE-003",
+      "S13C-SE-004",
+      "S13C-SE-005",
+      "S13C-SE-006",
+      "S13C-SE-007",
+      "S13C-SE-008",
+      "S13C-SE-009",
+      "S13C-SE-010",
+      "S13C-SE-011",
+      "S13C-SE-012",
+      "S13C-SE-013",
+      "S13C-SE-014",
+      "S13C-SE-015",
+      "S13C-SE-016",
+      "S13C-SE-017",
+      "S13C-SE-018",
+      "S13C-SE-019",
+      "S13C-SE-020",
+      "S13C-SE-021",
+      "S13C-SE-022",
+      "S13C-SE-023",
+      "S13C-SE-024",
+      "S13C-SE-025",
+      "S13C-SE-026",
+      "S13C-SE-027",
+      "S13C-SE-028",
+      "S13C-SE-029",
+      "S13C-SE-030"
+    ],
+    "indirect_overlays": [
+      "S13C-SE-001",
+      "S13C-SE-002",
+      "S13C-SE-004",
+      "S13C-SE-006",
+      "S13C-SE-009",
+      "S13C-SE-027",
+      "S13C-SE-030"
+    ],
+    "fallback_chains": [
+      "S13C-SE-015",
+      "S13C-SE-030"
+    ],
+    "authority_propagation_chains": [
+      "S13C-SE-020",
+      "S13C-SE-021",
+      "S13C-SE-022",
+      "S13C-SE-023",
+      "S13C-SE-024",
+      "S13C-SE-030"
+    ],
+    "execution_ownership_chains": [
+      "S13C-SE-001",
+      "S13C-SE-002",
+      "S13C-SE-004",
+      "S13C-SE-006",
+      "S13C-SE-009",
+      "S13C-SE-014",
+      "S13C-SE-015",
+      "S13C-SE-016",
+      "S13C-SE-017",
+      "S13C-SE-018",
+      "S13C-SE-019",
+      "S13C-SE-023",
+      "S13C-SE-024",
+      "S13C-SE-025",
+      "S13C-SE-026",
+      "S13C-SE-027",
+      "S13C-SE-029",
+      "S13C-SE-030"
+    ]
+  },
+  "unlock_graph": {
+    "scheduler": {
+      "dependency_edges_unlocked": [
+        {
+          "blocker_id": "S13A-SCHED-001",
+          "symbol": "Scheduler._handle_dispatch_result",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-001"
+        },
+        {
+          "blocker_id": "S13A-SCHED-004",
+          "symbol": "Scheduler._finalize_dispatched_task",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-004"
+        },
+        {
+          "blocker_id": "S13A-SCHED-008",
+          "symbol": "Scheduler._execute_simple_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-008"
+        },
+        {
+          "blocker_id": "S13A-SCHED-009",
+          "symbol": "Scheduler._execute_simple_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-009"
+        },
+        {
+          "blocker_id": "S13A-SCHED-019",
+          "symbol": "Scheduler._run_simple_task_tick",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-019"
+        },
+        {
+          "blocker_id": "S13A-SCHED-022",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-022"
+        },
+        {
+          "blocker_id": "S13A-SCHED-027",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-027"
+        },
+        {
+          "blocker_id": "S13A-SCHED-028",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-028"
+        },
+        {
+          "blocker_id": "S13A-SCHED-029",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-029"
+        },
+        {
+          "blocker_id": "S13A-SCHED-030",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-030"
+        },
+        {
+          "blocker_id": "S13A-SCHED-031",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-031"
+        },
+        {
+          "blocker_id": "S13A-SCHED-032",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-032"
+        },
+        {
+          "blocker_id": "S13A-SCHED-035",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-035"
+        },
+        {
+          "blocker_id": "S13A-SCHED-036",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-036"
+        },
+        {
+          "blocker_id": "S13A-SCHED-037",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-037"
+        },
+        {
+          "blocker_id": "S13A-SCHED-038",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-038"
+        },
+        {
+          "blocker_id": "S13A-SCHED-039",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-039"
+        },
+        {
+          "blocker_id": "S13A-SCHED-040",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-040"
+        },
+        {
+          "blocker_id": "S13A-SCHED-041",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-041"
+        },
+        {
+          "blocker_id": "S13A-SCHED-042",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-042"
+        },
+        {
+          "blocker_id": "S13A-SCHED-043",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-043"
+        },
+        {
+          "blocker_id": "S13A-SCHED-044",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-044"
+        },
+        {
+          "blocker_id": "S13A-SCHED-045",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-045"
+        },
+        {
+          "blocker_id": "S13A-SCHED-046",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-046"
+        },
+        {
+          "blocker_id": "S13A-SCHED-047",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-047"
+        },
+        {
+          "blocker_id": "S13A-SCHED-048",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-048"
+        },
+        {
+          "blocker_id": "S13A-SCHED-049",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-049"
+        },
+        {
+          "blocker_id": "S13A-SCHED-050",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-050"
+        },
+        {
+          "blocker_id": "S13A-SCHED-051",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-051"
+        },
+        {
+          "blocker_id": "S13A-SCHED-052",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-052"
+        }
+      ],
+      "directly_unlocked_by_stepexecutor_only": [],
+      "unlocked_after_taskrunner_and_stepexecutor": [
+        {
+          "blocker_id": "S13A-SCHED-001",
+          "symbol": "Scheduler._handle_dispatch_result",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-001"
+        },
+        {
+          "blocker_id": "S13A-SCHED-004",
+          "symbol": "Scheduler._finalize_dispatched_task",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-004"
+        },
+        {
+          "blocker_id": "S13A-SCHED-008",
+          "symbol": "Scheduler._execute_simple_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-008"
+        },
+        {
+          "blocker_id": "S13A-SCHED-009",
+          "symbol": "Scheduler._execute_simple_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-009"
+        },
+        {
+          "blocker_id": "S13A-SCHED-019",
+          "symbol": "Scheduler._run_simple_task_tick",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-019"
+        },
+        {
+          "blocker_id": "S13A-SCHED-022",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-022"
+        },
+        {
+          "blocker_id": "S13A-SCHED-027",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-027"
+        },
+        {
+          "blocker_id": "S13A-SCHED-028",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-028"
+        },
+        {
+          "blocker_id": "S13A-SCHED-029",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-029"
+        },
+        {
+          "blocker_id": "S13A-SCHED-030",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-030"
+        },
+        {
+          "blocker_id": "S13A-SCHED-031",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-031"
+        },
+        {
+          "blocker_id": "S13A-SCHED-032",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-032"
+        },
+        {
+          "blocker_id": "S13A-SCHED-035",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-035"
+        },
+        {
+          "blocker_id": "S13A-SCHED-036",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-036"
+        },
+        {
+          "blocker_id": "S13A-SCHED-037",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-037"
+        },
+        {
+          "blocker_id": "S13A-SCHED-038",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-038"
+        },
+        {
+          "blocker_id": "S13A-SCHED-039",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-039"
+        },
+        {
+          "blocker_id": "S13A-SCHED-040",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-040"
+        },
+        {
+          "blocker_id": "S13A-SCHED-041",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-041"
+        },
+        {
+          "blocker_id": "S13A-SCHED-042",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-042"
+        },
+        {
+          "blocker_id": "S13A-SCHED-043",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-043"
+        },
+        {
+          "blocker_id": "S13A-SCHED-044",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-044"
+        },
+        {
+          "blocker_id": "S13A-SCHED-045",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-045"
+        },
+        {
+          "blocker_id": "S13A-SCHED-046",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-046"
+        },
+        {
+          "blocker_id": "S13A-SCHED-047",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-047"
+        },
+        {
+          "blocker_id": "S13A-SCHED-048",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-048"
+        },
+        {
+          "blocker_id": "S13A-SCHED-049",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-049"
+        },
+        {
+          "blocker_id": "S13A-SCHED-050",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-050"
+        },
+        {
+          "blocker_id": "S13A-SCHED-051",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-051"
+        },
+        {
+          "blocker_id": "S13A-SCHED-052",
+          "symbol": "Scheduler.run_one_step",
+          "dependencies": [
+            "step_executor_contract",
+            "taskrunner_contract"
+          ],
+          "remaining_after_stepexecutor": [
+            "taskrunner_contract"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-052"
+        }
+      ]
+    },
+    "taskrunner": {
+      "dependency_edges_unlocked": [
+        {
+          "blocker_id": "S13B-TR-001",
+          "symbol": "TaskRunner._run_one_step",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-001"
+        },
+        {
+          "blocker_id": "S13B-TR-009",
+          "symbol": "TaskRunner.run_task_adaptive",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-009"
+        },
+        {
+          "blocker_id": "S13B-TR-010",
+          "symbol": "TaskRunner.run_task_tick",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-010"
+        },
+        {
+          "blocker_id": "S13B-TR-011",
+          "symbol": "TaskRunner.run_task",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-011"
+        },
+        {
+          "blocker_id": "S13B-TR-012",
+          "symbol": "TaskRunner.run_task_tick",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-012"
+        },
+        {
+          "blocker_id": "S13B-TR-013",
+          "symbol": "TaskRunner.run_task",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-013"
+        },
+        {
+          "blocker_id": "S13B-TR-014",
+          "symbol": "TaskRunner.run_task_tick",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-014"
+        },
+        {
+          "blocker_id": "S13B-TR-015",
+          "symbol": "TaskRunner.run_task",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-015"
+        },
+        {
+          "blocker_id": "S13B-TR-016",
+          "symbol": "TaskRunner.run_task_tick",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-016"
+        },
+        {
+          "blocker_id": "S13B-TR-017",
+          "symbol": "TaskRunner.run_task",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-017"
+        },
+        {
+          "blocker_id": "S13B-TR-018",
+          "symbol": "TaskRunner.run_task_tick",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-018"
+        },
+        {
+          "blocker_id": "S13B-TR-019",
+          "symbol": "TaskRunner.run_task",
+          "dependency_groups": [
+            "scheduler_dependencies",
+            "step_executor_dependencies"
+          ],
+          "remaining_after_stepexecutor": [
+            "scheduler_dependencies"
+          ],
+          "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-019"
+        }
+      ],
+      "directly_unlocked_by_stepexecutor_only": []
+    },
+    "repair_chain": [
+      {
+        "blocker_id": "S13C-SE-003",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+          "core/runtime/step_executor.py:4222",
+          "class_state_assignment"
+        ]
+      },
+      {
+        "blocker_id": "S13C-SE-005",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+          "core/runtime/step_executor.py:4367",
+          "class_state_assignment"
+        ]
+      },
+      {
+        "blocker_id": "S13C-SE-007",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+          "core/runtime/step_executor.py:4577",
+          "class_state_assignment"
+        ]
+      },
+      {
+        "blocker_id": "S13C-SE-008",
+        "symbol": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+          "core/runtime/step_executor.py:4587",
+          "class_state_assignment"
+        ]
+      },
+      {
+        "blocker_id": "S13C-SE-028",
+        "symbol": "StepExecutor._handle_autonomous_repair_chain_step",
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+          "core/runtime/step_executor.py:8890",
+          "assignment_rhs:_zero_v2_autonomous_repair_chain_handler"
+        ]
+      }
+    ]
+  },
+  "ownership_map": {
+    "current_execution_owner": "30 class-level StepExecutor assignments across execution, authority, repair, and adapter bridges",
+    "expected_execution_owner": "core.runtime.step_executor.StepExecutor native methods and native class state",
+    "ownership_leak_locations": [
+      "core/runtime/step_executor.py:4196",
+      "core/runtime/step_executor.py:4221",
+      "core/runtime/step_executor.py:4222",
+      "core/runtime/step_executor.py:4366",
+      "core/runtime/step_executor.py:4367",
+      "core/runtime/step_executor.py:4576",
+      "core/runtime/step_executor.py:4577",
+      "core/runtime/step_executor.py:4587",
+      "core/runtime/step_executor.py:5840",
+      "core/runtime/step_executor.py:6037",
+      "core/runtime/step_executor.py:6106",
+      "core/runtime/step_executor.py:6166",
+      "core/runtime/step_executor.py:6194",
+      "core/runtime/step_executor.py:6498",
+      "core/runtime/step_executor.py:6867",
+      "core/runtime/step_executor.py:7044",
+      "core/runtime/step_executor.py:7300",
+      "core/runtime/step_executor.py:7365",
+      "core/runtime/step_executor.py:7403",
+      "core/runtime/step_executor.py:7775",
+      "core/runtime/step_executor.py:7776",
+      "core/runtime/step_executor.py:7777",
+      "core/runtime/step_executor.py:7778",
+      "core/runtime/step_executor.py:8464",
+      "core/runtime/step_executor.py:8509",
+      "core/runtime/step_executor.py:8731",
+      "core/runtime/step_executor.py:8889",
+      "core/runtime/step_executor.py:8890",
+      "core/runtime/step_executor.py:9072",
+      "core/runtime/step_executor.py:9622"
+    ],
+    "native_owner_endpoints": [
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.__init__ (native definition)",
+      "core.runtime.step_executor.StepExecutor._attach_adapter_payload (native definition)",
+      "core.runtime.step_executor.StepExecutor._attach_pre_execution_authority (native definition)",
+      "core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision (native definition)",
+      "core.runtime.step_executor.StepExecutor._classify_step_authority_requirement (native definition)",
+      "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)",
+      "core.runtime.step_executor.StepExecutor.execute_step (native definition)"
+    ]
+  },
+  "unresolved_ambiguities": [],
+  "non_mainline_issues": [],
+  "outside_domain_non_mainline_issues_discovered": [],
+  "aer_closure_impact": {
+    "scheduler_impact": "Clears 30 StepExecutor dependency edges; 30 require TaskRunner closure too.",
+    "taskrunner_impact": "Clears 12 StepExecutor dependency edges, including the 2 direct overlays identified in Stage13B.",
+    "repair_chain_impact": "Maps 5 StepExecutor-owned repair blockers that gate repair-chain closure.",
+    "ownership_closure_completion_percent": 79.6,
+    "ownership_closure_basis": "confirmed blocker ownership mapped in Stage13A/B/C: 90/113",
+    "freeze_readiness_percent": 0.0,
+    "freeze_readiness_basis": "discovery only; 26 confirmed StepExecutor blockers remain and known ownership suites are not frozen"
+  }
+}

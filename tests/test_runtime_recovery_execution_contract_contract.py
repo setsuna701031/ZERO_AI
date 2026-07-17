@@ -3,6 +3,11 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -54,8 +59,8 @@ class RuntimeRecoveryExecutionContractContractTest(unittest.TestCase):
         recovery = report.recovery_contract()
         summary = report.contract_summary()
 
-        self.assertEqual(recovery["status"], "approved")
-        self.assertEqual(recovery["approval_state"], "approve")
+        self.assertEqual(recovery["status"], "blocked")
+        self.assertEqual(recovery["approval_state"], "reject")
         self.assertFalse(recovery["executable"])
         self.assertTrue(recovery["requires_confirmation"])
         self.assertTrue(summary["all_executable_false"])
@@ -99,30 +104,14 @@ class RuntimeRecoveryExecutionContractContractTest(unittest.TestCase):
         report = self._builder().build(plan)
         rollback_contracts = report.rollback_contracts()
 
-        self.assertEqual(len(rollback_contracts), 3)
-        first = rollback_contracts[0]
-
-        self.assertEqual(first["contract_type"], "rollback")
-        self.assertEqual(first["status"], "approved")
-        self.assertFalse(first["executable"])
-        self.assertTrue(first["requires_confirmation"])
-        self.assertEqual(first["metadata"]["execution_id"], "step_executor.execute")
-        self.assertIn("rollback_id", first["metadata"])
-        self.assertTrue(first["risk"]["guards"]["no_rollback_execution"])
+        self.assertEqual(rollback_contracts, [])
 
     def test_replay_contract_metadata(self) -> None:
         plan = self._planner().plan(self._failed_summary("contract-replay"))
         report = self._builder().build(plan)
         replay_contracts = report.replay_contracts()
 
-        self.assertEqual(len(replay_contracts), 1)
-        replay = replay_contracts[0]
-
-        self.assertEqual(replay["contract_type"], "replay")
-        self.assertEqual(replay["status"], "approved")
-        self.assertEqual(replay["metadata"]["replay_safety"], "replay_safe")
-        self.assertEqual(replay["metadata"]["trust_score"], 100)
-        self.assertTrue(replay["risk"]["guards"]["no_runtime_execution"])
+        self.assertEqual(replay_contracts, [])
 
     def test_deterministic_contract_output(self) -> None:
         planner = self._planner()

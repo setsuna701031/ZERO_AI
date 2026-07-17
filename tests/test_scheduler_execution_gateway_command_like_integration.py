@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import core.tasks.scheduler as scheduler_module
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 class AllowGuard:
@@ -87,4 +92,6 @@ def test_scheduler_command_like_step_falls_back_to_legacy_when_gateway_raises(mo
         },
     )
 
-    assert result == legacy_result
+    assert {key: result[key] for key in legacy_result} == legacy_result
+    assert result["legacy_bridge"] is True
+    assert result["diagnostic_only"] is True

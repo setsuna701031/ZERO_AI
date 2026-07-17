@@ -1,1 +1,0 @@
-print("HELLO_RUN_OK")

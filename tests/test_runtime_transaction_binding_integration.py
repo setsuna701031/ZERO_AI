@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_transaction_context import (
+
     RuntimeTransactionContext,
     bind_current_execution,
     bind_current_mutation,
@@ -18,6 +19,10 @@ from core.runtime.runtime_transaction_context import (
     transaction_scope,
 )
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 class RuntimeTransactionBindingIntegrationTest(unittest.TestCase):

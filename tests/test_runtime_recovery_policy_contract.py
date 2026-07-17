@@ -4,6 +4,11 @@ import copy
 import sys
 import unittest
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -91,12 +96,10 @@ class RuntimeRecoveryPolicyContractTest(unittest.TestCase):
         report = evaluator.evaluate(summary)
         failed = report.failed_execution_policy()
 
-        self.assertEqual(failed["decision"], "allow")
+        self.assertEqual(failed["decision"], "block")
         self.assertEqual(failed["failed_execution_count"], 1)
-        self.assertEqual(failed["candidate_count"], 1)
-        self.assertEqual(failed["candidates"][0]["candidate_id"], "failed_execution:failed-policy-fp")
-        self.assertEqual(failed["candidates"][0]["action"], "none")
-        self.assertFalse(failed["candidates"][0]["executes_action"])
+        self.assertEqual(failed["candidate_count"], 0)
+        self.assertEqual(failed["candidates"], [])
 
     def test_deterministic_policy_output(self) -> None:
         evaluator = self._evaluator()

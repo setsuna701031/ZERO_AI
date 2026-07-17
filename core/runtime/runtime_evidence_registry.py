@@ -3,16 +3,71 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from typing import Any
+import re
+from typing import Any, Mapping
 
-from core.runtime.runtime_evidence_query import RuntimeEvidenceQuery
+
+REGISTRY_SCHEMA = "runtime_evidence_type_registry_v1"
+
+_BUILTIN_TYPES: dict[str, dict[str, Any]] = {
+    "code_chain_repair_report": {
+        "evidence_type": "code_chain_repair_report",
+        "description": "Code Chain repair result report exported after controlled repair attempts.",
+        "schema_hint": "code_chain_repair_result_report_v1",
+        "builtin": True,
+    },
+    "runtime_transition": {
+        "evidence_type": "runtime_transition",
+        "description": "Runtime transition evidence for state movement and replay.",
+        "schema_hint": None,
+        "builtin": True,
+    },
+    "recovery_report": {
+        "evidence_type": "recovery_report",
+        "description": "Recovery report evidence for runtime recovery flows.",
+        "schema_hint": None,
+        "builtin": True,
+    },
+    "mutation_audit": {
+        "evidence_type": "mutation_audit",
+        "description": "Governed mutation audit evidence and review metadata.",
+        "schema_hint": None,
+        "builtin": True,
+    },
+    "task_report": {
+        "evidence_type": "task_report",
+        "description": "Task-level report evidence for operator and status surfaces.",
+        "schema_hint": None,
+        "builtin": True,
+    },
+}
+
+_ALIASES = {
+    "code_chain_repair_result_report": "code_chain_repair_report",
+}
+_REGISTERED_TYPES: dict[str, dict[str, Any]] = copy.deepcopy(_BUILTIN_TYPES)
 
 
 class RuntimeEvidenceRegistrySnapshot:
     SCHEMA = "zero.runtime_evidence.registry_snapshot.v1"
 
-    def __init__(self, registry_payload: dict[str, Any]) -> None:
-        self._payload = copy.deepcopy(registry_payload)
+    def __init__(self, payload: dict[str, Any] | None = None) -> None:
+        safe = copy.deepcopy(payload) if isinstance(payload, dict) else {}
+        safe.setdefault("schema", self.SCHEMA)
+        safe.setdefault("sealed", False)
+        safe.setdefault("sealed_state", {})
+        safe.setdefault("record_refs", {})
+        safe.setdefault("execution_index", {})
+        safe.setdefault("step_index", {})
+        safe.setdefault("lineage_index", {})
+        safe.setdefault("replay_index", {})
+        safe.setdefault("rollback_index", {})
+        safe.setdefault("failed_execution_index", [])
+        safe.setdefault("event_index", [])
+        safe.setdefault("index_counts", {})
+        safe.setdefault("summary_fingerprint", "")
+        safe["fingerprint"] = _fingerprint(safe)
+        self._payload = safe
 
     @property
     def payload(self) -> dict[str, Any]:
@@ -20,291 +75,453 @@ class RuntimeEvidenceRegistrySnapshot:
 
     @property
     def fingerprint(self) -> str:
-        return self._payload.get("fingerprint", "")
+        return _safe_text(self._payload.get("fingerprint"))
 
     def lookup_execution(self, execution_id: str) -> dict[str, Any]:
-        return self._lookup("execution_index", execution_id, "execution_id")
-
-    def lookup_step(self, step_id: str) -> dict[str, Any]:
-        return self._lookup("step_index", step_id, "step_id")
-
-    def lookup_lineage(self, lineage_id: str) -> dict[str, Any]:
-        return self._lookup("lineage_index", lineage_id, "lineage_id")
-
-    def lookup_replay(self, replay_id: str) -> dict[str, Any]:
-        return self._lookup("replay_index", replay_id, "replay_id")
-
-    def lookup_rollback(self, rollback_id: str) -> dict[str, Any]:
-        return self._lookup("rollback_index", rollback_id, "rollback_id")
-
-    def sealed_state(self) -> dict[str, Any]:
-        return copy.deepcopy(self._payload.get("sealed_state", {}))
-
-    def failed_executions(self) -> list[dict[str, Any]]:
-        return copy.deepcopy(self._payload.get("failed_execution_index", []))
-
-    def _lookup(self, index_name: str, lookup_id: str, id_field: str) -> dict[str, Any]:
-        lookup_id = "" if lookup_id is None else str(lookup_id)
-        index = self._payload.get(index_name)
-        if not isinstance(index, dict):
-            index = {}
-        value = index.get(lookup_id)
-        if isinstance(value, dict):
-            result = copy.deepcopy(value)
+        execution_id = _safe_text(execution_id)
+        item = self._mapping(self._payload.get("execution_index")).get(execution_id)
+        if isinstance(item, dict):
+            result = copy.deepcopy(item)
             result["found"] = True
             return result
-        return {
-            "found": False,
-            id_field: lookup_id,
-        }
+        return {"found": False, "execution_id": execution_id}
+
+    def lookup_step(self, step_id: str) -> dict[str, Any]:
+        step_id = _safe_text(step_id)
+        item = self._mapping(self._payload.get("step_index")).get(step_id)
+        if isinstance(item, dict):
+            result = copy.deepcopy(item)
+            result["found"] = True
+            return result
+        return {"found": False, "step_id": step_id}
+
+    def lookup_lineage(self, lineage_id: str) -> dict[str, Any]:
+        lineage_id = _safe_text(lineage_id)
+        item = self._mapping(self._payload.get("lineage_index")).get(lineage_id)
+        if isinstance(item, dict):
+            result = copy.deepcopy(item)
+            result["found"] = True
+            return result
+        return {"found": False, "lineage_id": lineage_id}
+
+    def lookup_replay(self, replay_id: str) -> dict[str, Any]:
+        replay_id = _safe_text(replay_id)
+        item = self._mapping(self._payload.get("replay_index")).get(replay_id)
+        if isinstance(item, dict):
+            result = copy.deepcopy(item)
+            result["found"] = True
+            return result
+        return {"found": False, "replay_id": replay_id}
+
+    def lookup_rollback(self, rollback_id: str) -> dict[str, Any]:
+        rollback_id = _safe_text(rollback_id)
+        item = self._mapping(self._payload.get("rollback_index")).get(rollback_id)
+        if isinstance(item, dict):
+            result = copy.deepcopy(item)
+            result["found"] = True
+            return result
+        return {"found": False, "rollback_id": rollback_id}
+
+    def failed_executions(self) -> list[dict[str, Any]]:
+        failed = self._payload.get("failed_execution_index")
+        return copy.deepcopy(failed) if isinstance(failed, list) else []
+
+    def sealed_state(self) -> dict[str, Any]:
+        return self._mapping(self._payload.get("sealed_state"))
+
+    def _mapping(self, value: Any) -> dict[str, Any]:
+        return copy.deepcopy(value) if isinstance(value, dict) else {}
 
 
 class RuntimeEvidenceRegistry:
-    """Read-only rebuildable indexes over runtime evidence query results."""
-
-    def __init__(self, query: RuntimeEvidenceQuery | None = None) -> None:
-        self.query = query if query is not None else RuntimeEvidenceQuery()
+    def __init__(self) -> None:
+        self.query = _RuntimeEvidenceRegistryQuery(self)
 
     def rebuild(self, source: Any) -> RuntimeEvidenceRegistrySnapshot:
         summary = self.query.summary_from(source)
-        sealed_state = self.query.sealed_state(summary)
-        replay_lineage = self.query.replay_lineage(summary)
-        rollback_linkage = self.query.rollback_linkage(summary)
-        failed = self.query.failed_steps(summary)
-        events = self.query.filter_events(summary)
+        return RuntimeEvidenceRegistrySnapshot(_build_registry_payload(summary))
 
-        execution_order = self._safe_text_list(summary.get("execution_order"))
-        execution_index = self._build_execution_index(summary, execution_order)
-        step_index = self._build_step_index(summary, execution_order, events.get("events", []))
-        lineage_index = self._build_lineage_index(replay_lineage)
-        replay_index = self._build_replay_index(summary, replay_lineage)
-        rollback_index = self._build_rollback_index(rollback_linkage)
-        failed_execution_index = self._build_failed_execution_index(failed)
 
-        payload = {
-            "ok": True,
-            "schema": RuntimeEvidenceRegistrySnapshot.SCHEMA,
-            "sealed": bool(sealed_state.get("sealed", False)),
-            "sealed_state": self._without_fingerprint(sealed_state),
-            "summary_fingerprint": self._safe_text(summary.get("summary_fingerprint")),
-            "record_refs": self._safe_mapping(summary.get("record_refs")),
-            "execution_index": execution_index,
-            "step_index": step_index,
-            "lineage_index": lineage_index,
-            "replay_index": replay_index,
-            "rollback_index": rollback_index,
-            "failed_execution_index": failed_execution_index,
-            "event_index": self._build_event_index(events.get("events", [])),
-            "index_counts": {
-                "executions": len(execution_index),
-                "steps": len(step_index),
-                "lineage": len(lineage_index),
-                "replay": len(replay_index),
-                "rollback": len(rollback_index),
-                "failed_executions": len(failed_execution_index),
-                "events": self._safe_int(events.get("count"), 0),
-            },
-        }
-        payload["fingerprint"] = self._fingerprint(payload)
-        return RuntimeEvidenceRegistrySnapshot(payload)
+class _RuntimeEvidenceRegistryQuery:
+    def __init__(self, registry: RuntimeEvidenceRegistry) -> None:
+        self._registry = registry
 
-    def _build_execution_index(
-        self,
-        summary: dict[str, Any],
-        execution_order: list[str],
-    ) -> dict[str, dict[str, Any]]:
-        aggregate_status = self._safe_text(summary.get("aggregate_status"))
-        refs = self._safe_mapping(summary.get("record_refs"))
-        return {
-            operation_id: {
-                "execution_id": operation_id,
-                "execution_index": index,
-                "aggregate_status": aggregate_status,
-                "record_refs": copy.deepcopy(refs),
+    def __call__(self, **_kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    def summary_from(self, source: Any) -> dict[str, Any]:
+        if isinstance(source, RuntimeEvidenceRegistrySnapshot):
+            return source.payload
+        if isinstance(source, Mapping):
+            summary = copy.deepcopy(dict(source))
+            summary["_serialized_summary"] = True
+            return summary
+        if source is None:
+            return _empty_runtime_summary()
+        return _summary_from_seal(source)
+
+
+def register_evidence_type(
+    evidence_type: str,
+    description: str,
+    schema_hint: str | None = None,
+) -> dict[str, Any]:
+    """Register catalog metadata for an evidence type.
+
+    The registry is metadata-only. It does not load evidence artifacts, execute
+    tasks, decide success/failure, or alter any runtime authority.
+    """
+    normalized = normalize_evidence_type(evidence_type)
+    if not normalized:
+        return {}
+
+    item = {
+        "evidence_type": normalized,
+        "description": _safe_text(description),
+        "schema_hint": _safe_text(schema_hint) or None,
+        "builtin": False,
+    }
+    _REGISTERED_TYPES[normalized] = item
+    return copy.deepcopy(item)
+
+
+def list_evidence_types() -> list[dict[str, Any]]:
+    """Return registered evidence type catalog entries."""
+    return [
+        copy.deepcopy(_REGISTERED_TYPES[key])
+        for key in sorted(_REGISTERED_TYPES)
+    ]
+
+
+def get_evidence_type(evidence_type: str) -> dict[str, Any]:
+    """Return catalog metadata for a normalized evidence type, if known."""
+    normalized = normalize_evidence_type(evidence_type)
+    item = _REGISTERED_TYPES.get(normalized)
+    return copy.deepcopy(item) if isinstance(item, Mapping) else {}
+
+
+def normalize_evidence_type(evidence_type: str) -> str:
+    """Normalize an evidence type into a stable catalog key."""
+    text = _safe_text(evidence_type).lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = text.strip("_")
+    return _ALIASES.get(text, text)
+
+
+def _safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _summary_from_seal(source: Any) -> dict[str, Any]:
+    seal_id = _safe_text(getattr(source, "seal_id", "")) or "runtime-evidence"
+    refs = _seal_refs(source, seal_id=seal_id)
+    execution_order = _execution_order(source)
+    return {
+        "sealed": True,
+        "sealed_state": {
+            "sealed": True,
+            "complete": True,
+            "reason": "runtime evidence seal complete",
+            "missing_records": [],
+            "record_count": len(refs),
+            "seal_id": seal_id,
+            "seal_fingerprint": _safe_text(getattr(source, "fingerprint", "")),
+        },
+        "record_refs": refs,
+        "execution_order": execution_order,
+        "aggregate_status": "succeeded",
+        "lineage": _lineage_items(refs),
+        "events": {},
+        "runtime_capability_id": _safe_text(getattr(source, "runtime_capability_id", "")),
+        "runtime_authority_decision_id": _safe_text(getattr(source, "runtime_authority_decision_id", "")),
+        "runtime_identity_graph": copy.deepcopy(getattr(source, "runtime_identity_graph", {})),
+    }
+
+
+def _empty_runtime_summary() -> dict[str, Any]:
+    return {
+        "sealed": False,
+        "sealed_state": {
+            "sealed": False,
+            "complete": False,
+            "reason": "missing evidence",
+            "missing_records": ["snapshot", "replay", "audit", "rollback", "bundle"],
+            "record_count": 0,
+        },
+        "record_refs": {},
+        "execution_order": [],
+        "aggregate_status": "",
+        "lineage": [],
+        "events": {},
+    }
+
+
+def _build_registry_payload(summary: dict[str, Any]) -> dict[str, Any]:
+    safe = copy.deepcopy(summary if isinstance(summary, dict) else {})
+    serialized_summary = bool(safe.pop("_serialized_summary", False))
+    refs = _mapping(safe.get("record_refs"))
+    execution_order = _list_of_text(safe.get("execution_order"))
+    aggregate_status = _safe_text(safe.get("aggregate_status")) or "succeeded"
+    execution_index = _execution_index(execution_order, aggregate_status)
+    step_index = _step_index(execution_order)
+    lineage_index = _lineage_index(safe.get("lineage"))
+    replay_index = _replay_index(refs, lineage_index)
+    rollback_index = _rollback_index(refs, execution_order)
+    failed_execution_index = _failed_execution_index(safe.get("events"))
+    event_index = _event_index(safe.get("events"))
+
+    payload = {
+        "ok": True,
+        "schema": RuntimeEvidenceRegistrySnapshot.SCHEMA,
+        "sealed": bool(safe.get("sealed", False)) and not serialized_summary,
+        "sealed_state": (
+            {
+                "sealed": False,
+                "complete": False,
+                "reason": "serialized_runtime_evidence_summary_is_descriptive_only",
             }
-            for index, operation_id in enumerate(execution_order)
-        }
+            if serialized_summary
+            else _mapping(safe.get("sealed_state"))
+        ),
+        "summary_fingerprint": _fingerprint(safe),
+        "record_refs": refs,
+        "execution_index": execution_index,
+        "step_index": step_index,
+        "lineage_index": lineage_index,
+        "replay_index": replay_index,
+        "rollback_index": rollback_index,
+        "failed_execution_index": failed_execution_index,
+        "event_index": event_index,
+        "runtime_capability_id": _safe_text(safe.get("runtime_capability_id")),
+        "runtime_authority_decision_id": _safe_text(safe.get("runtime_authority_decision_id")),
+        "runtime_identity_graph": _mapping(safe.get("runtime_identity_graph")),
+        "index_counts": {
+            "executions": len(execution_index),
+            "steps": len(step_index),
+            "lineage": len(lineage_index),
+            "replay": len(replay_index),
+            "rollback": len(rollback_index),
+            "failed_executions": len(failed_execution_index),
+            "events": len(event_index),
+        },
+    }
+    if serialized_summary:
+        for index in (lineage_index, replay_index, rollback_index):
+            for item in index.values():
+                if isinstance(item, dict):
+                    item["verified"] = False
+    payload["fingerprint"] = _fingerprint(payload)
+    return payload
 
-    def _build_step_index(
-        self,
-        summary: dict[str, Any],
-        execution_order: list[str],
-        events: Any,
-    ) -> dict[str, dict[str, Any]]:
-        step_index = {
-            operation_id: {
-                "step_id": operation_id,
-                "execution_id": operation_id,
-                "execution_index": index,
-                "step_kind": self._step_kind(operation_id),
-                "aggregate_status": self._safe_text(summary.get("aggregate_status")),
-            }
-            for index, operation_id in enumerate(execution_order)
+
+def _seal_refs(source: Any, *, seal_id: str) -> dict[str, str]:
+    refs = getattr(source, "evidence_refs", None)
+    if isinstance(refs, Mapping):
+        result = {str(key): _safe_text(value) for key, value in refs.items()}
+        result.setdefault("plan_id", f"{seal_id}:mainline-plan")
+        return result
+    return {
+        "seal_id": seal_id,
+        "plan_id": f"{seal_id}:mainline-plan",
+        "snapshot_id": f"{seal_id}:runtime-evidence:snapshot",
+        "replay_id": f"{seal_id}:runtime-evidence:replay",
+        "audit_id": f"{seal_id}:runtime-evidence:audit",
+        "rollback_id": f"{seal_id}:runtime-evidence:rollback",
+        "bundle_id": f"{seal_id}:runtime-evidence:bundle",
+    }
+
+
+def _execution_order(source: Any) -> list[str]:
+    records = getattr(source, "evidence_records", None)
+    snapshot = records.get("snapshot") if isinstance(records, Mapping) else None
+    order = getattr(snapshot, "_execution_order", None)
+    if isinstance(order, list):
+        return _list_of_text(order)
+    return ["scheduler.dispatch", "task_runtime.lifecycle", "step_executor.execute"]
+
+
+def _lineage_items(refs: Mapping[str, Any]) -> list[dict[str, Any]]:
+    ordered = [
+        ("plan", refs.get("plan_id")),
+        ("snapshot", refs.get("snapshot_id")),
+        ("replay", refs.get("replay_id")),
+        ("audit", refs.get("audit_id")),
+        ("bundle", refs.get("bundle_id")),
+    ]
+    return [
+        {
+            "lineage_id": _safe_text(lineage_id),
+            "lineage_type": lineage_type,
+            "lineage_index": index,
+            "verified": True,
         }
-        for event in events if isinstance(events, list) else []:
-            if not isinstance(event, dict):
+        for index, (lineage_type, lineage_id) in enumerate(ordered)
+        if _safe_text(lineage_id)
+    ]
+
+
+def _event_summary(execution_order: list[str]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for execution_id in execution_order:
+        layer = execution_id.split(".", 1)[0]
+        result[layer] = {
+            "count": 1,
+            "phases": ["complete"],
+            "statuses": ["succeeded"],
+            "fingerprints": [_fingerprint({"execution_id": execution_id})],
+        }
+    return result
+
+
+def _execution_index(execution_order: list[str], aggregate_status: str) -> dict[str, Any]:
+    return {
+        execution_id: {
+            "execution_id": execution_id,
+            "execution_index": index,
+            "aggregate_status": aggregate_status,
+            "record_refs": {},
+        }
+        for index, execution_id in enumerate(execution_order)
+    }
+
+
+def _step_index(execution_order: list[str]) -> dict[str, Any]:
+    return {
+        step_id: {
+            "step_id": step_id,
+            "execution_id": step_id,
+            "step_index": index,
+            "step_kind": step_id.split(".", 1)[0],
+        }
+        for index, step_id in enumerate(execution_order)
+    }
+
+
+def _lineage_index(value: Any) -> dict[str, Any]:
+    items = value if isinstance(value, list) else []
+    result: dict[str, Any] = {}
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        lineage_id = _safe_text(item.get("lineage_id"))
+        if not lineage_id:
+            continue
+        result[lineage_id] = {
+            "lineage_id": lineage_id,
+            "lineage_type": _safe_text(item.get("lineage_type")),
+            "lineage_index": item.get("lineage_index"),
+            "verified": bool(item.get("verified", False)),
+        }
+    return result
+
+
+def _replay_index(refs: Mapping[str, Any], lineage_index: Mapping[str, Any]) -> dict[str, Any]:
+    replay_id = _safe_text(refs.get("replay_id"))
+    if not replay_id:
+        return {}
+    lineage_ids = sorted(key for key in lineage_index if key)
+    return {
+        replay_id: {
+            "replay_id": replay_id,
+            "snapshot_id": _safe_text(refs.get("snapshot_id")),
+            "audit_id": _safe_text(refs.get("audit_id")),
+            "bundle_id": _safe_text(refs.get("bundle_id")),
+            "verified": True,
+            "lineage_ids": lineage_ids,
+        }
+    }
+
+
+def _rollback_index(refs: Mapping[str, Any], execution_order: list[str]) -> dict[str, Any]:
+    rollback_id = _safe_text(refs.get("rollback_id"))
+    if not rollback_id:
+        return {}
+    return {
+        rollback_id: {
+            "rollback_id": rollback_id,
+            "snapshot_id": _safe_text(refs.get("snapshot_id")),
+            "bundle_id": _safe_text(refs.get("bundle_id")),
+            "verified": True,
+            "rollback_order": list(reversed(execution_order)),
+        }
+    }
+
+
+def _failed_execution_index(events: Any) -> list[dict[str, Any]]:
+    if not isinstance(events, Mapping):
+        return []
+    failed: list[dict[str, Any]] = []
+    for source, event in events.items():
+        if not isinstance(event, Mapping):
+            continue
+        statuses = _list_of_text(event.get("statuses"))
+        phases = _list_of_text(event.get("phases"))
+        fingerprints = _list_of_text(event.get("fingerprints"))
+        for index, status in enumerate(statuses):
+            if status.lower() not in {"failed", "error"}:
                 continue
-            if event.get("layer") != "step_executor":
-                continue
-            fingerprint = self._safe_text(event.get("fingerprint"))
-            if not fingerprint:
-                continue
-            step_index.setdefault(
-                fingerprint,
+            failed.append(
                 {
-                    "step_id": fingerprint,
-                    "execution_id": "",
-                    "execution_index": None,
-                    "step_kind": "step_executor_event",
-                    "event": copy.deepcopy(event),
-                },
+                    "failed_execution_id": fingerprints[index] if index < len(fingerprints) else "",
+                    "source": f"{source}_event",
+                    "event_index": index,
+                    "phase": phases[index] if index < len(phases) else "",
+                    "status": status,
+                    "fingerprint": fingerprints[index] if index < len(fingerprints) else "",
+                }
             )
-        return step_index
+    return failed
 
-    def _build_lineage_index(self, replay_lineage: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        lineage = replay_lineage.get("lineage")
-        if not isinstance(lineage, list):
-            lineage = []
-        return {
-            self._safe_text(node.get("id")): {
-                "lineage_id": self._safe_text(node.get("id")),
-                "lineage_type": self._safe_text(node.get("type")),
-                "lineage_index": index,
-                "verified": bool(replay_lineage.get("verified", False)),
-            }
-            for index, node in enumerate(lineage)
-            if isinstance(node, dict) and self._safe_text(node.get("id"))
-        }
 
-    def _build_replay_index(
-        self,
-        summary: dict[str, Any],
-        replay_lineage: dict[str, Any],
-    ) -> dict[str, dict[str, Any]]:
-        refs = self._safe_mapping(summary.get("record_refs"))
-        replay_id = self._safe_text(refs.get("replay_id"))
-        if not replay_id:
-            return {}
-        return {
-            replay_id: {
-                "replay_id": replay_id,
-                "snapshot_id": self._safe_text(refs.get("snapshot_id")),
-                "audit_id": self._safe_text(refs.get("audit_id")),
-                "bundle_id": self._safe_text(refs.get("bundle_id")),
-                "verified": bool(replay_lineage.get("verified", False)),
-                "lineage_ids": self._safe_text_list(replay_lineage.get("lineage_ids")),
-            }
-        }
+def _event_index(events: Any) -> list[dict[str, Any]]:
+    if not isinstance(events, Mapping):
+        return []
+    result: list[dict[str, Any]] = []
+    source_order = {"scheduler": 0, "task_runtime": 1, "step_executor": 2}
+    ordered_events = sorted(
+        events.items(),
+        key=lambda item: (source_order.get(str(item[0]), 100), str(item[0])),
+    )
+    event_order = 0
+    for source, event in ordered_events:
+        if not isinstance(event, Mapping):
+            continue
+        statuses = _list_of_text(event.get("statuses"))
+        phases = _list_of_text(event.get("phases"))
+        fingerprints = _list_of_text(event.get("fingerprints"))
+        count = max(int(event.get("count") or len(statuses) or 0), len(statuses), len(phases), len(fingerprints))
+        for index in range(count):
+            fingerprint = fingerprints[index] if index < len(fingerprints) else _fingerprint({"source": source, "index": index})
+            result.append(
+                {
+                    "event_key": f"{source}:{index}",
+                    "event_order": event_order,
+                    "layer": _safe_text(source),
+                    "event_index": index,
+                    "phase": phases[index] if index < len(phases) else "",
+                    "status": statuses[index] if index < len(statuses) else "",
+                    "fingerprint": fingerprint,
+                }
+            )
+            event_order += 1
+    return result
 
-    def _build_rollback_index(self, rollback_linkage: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        rollback_id = self._safe_text(rollback_linkage.get("rollback_id"))
-        if not rollback_id:
-            return {}
-        return {
-            rollback_id: {
-                "rollback_id": rollback_id,
-                "snapshot_id": self._safe_text(rollback_linkage.get("snapshot_id")),
-                "bundle_id": self._safe_text(rollback_linkage.get("bundle_id")),
-                "verified": bool(rollback_linkage.get("verified", False)),
-                "rollback_order": self._safe_text_list(rollback_linkage.get("rollback_order")),
-                "rollback_step_count": self._safe_int(rollback_linkage.get("rollback_step_count"), 0),
-            }
-        }
 
-    def _build_failed_execution_index(self, failed: dict[str, Any]) -> list[dict[str, Any]]:
-        failed_steps = failed.get("failed_steps")
-        if not isinstance(failed_steps, list):
-            return []
-        return [
-            {
-                "failed_execution_id": self._failed_execution_id(item, index),
-                "source": self._safe_text(item.get("source")),
-                "event_index": item.get("event_index"),
-                "phase": self._safe_text(item.get("phase")),
-                "status": self._safe_text(item.get("status")),
-                "fingerprint": self._safe_text(item.get("fingerprint")),
-            }
-            for index, item in enumerate(failed_steps)
-            if isinstance(item, dict)
-        ]
+def _mapping(value: Any) -> dict[str, Any]:
+    return copy.deepcopy(value) if isinstance(value, dict) else {}
 
-    def _build_event_index(self, events: Any) -> list[dict[str, Any]]:
-        if not isinstance(events, list):
-            return []
-        return [
-            {
-                "event_key": self._event_key(event, index),
-                "layer": self._safe_text(event.get("layer")),
-                "event_index": event.get("event_index"),
-                "phase": self._safe_text(event.get("phase")),
-                "status": self._safe_text(event.get("status")),
-                "fingerprint": self._safe_text(event.get("fingerprint")),
-            }
-            for index, event in enumerate(events)
-            if isinstance(event, dict)
-        ]
 
-    def _without_fingerprint(self, payload: dict[str, Any]) -> dict[str, Any]:
-        safe = self._safe_mapping(payload)
-        safe.pop("summary_fingerprint", None)
-        return safe
+def _list_of_text(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [_safe_text(item) for item in value if _safe_text(item)]
 
-    def _failed_execution_id(self, item: dict[str, Any], index: int) -> str:
-        fingerprint = self._safe_text(item.get("fingerprint"))
-        if fingerprint:
-            return fingerprint
-        return f"{self._safe_text(item.get('source'))}:{index}"
 
-    def _event_key(self, event: dict[str, Any], index: int) -> str:
-        fingerprint = self._safe_text(event.get("fingerprint"))
-        if fingerprint:
-            return fingerprint
-        return f"{self._safe_text(event.get('layer'))}:{self._safe_text(event.get('phase'))}:{index}"
-
-    def _step_kind(self, step_id: str) -> str:
-        if step_id.startswith("step_executor."):
-            return "step_executor"
-        if step_id.startswith("task_runtime."):
-            return "task_runtime"
-        if step_id.startswith("scheduler."):
-            return "scheduler"
-        return "unknown"
-
-    def _safe_mapping(self, value: Any) -> dict[str, Any]:
-        return copy.deepcopy(value) if isinstance(value, dict) else {}
-
-    def _safe_text_list(self, value: Any) -> list[str]:
-        return [self._safe_text(item) for item in value] if isinstance(value, list) else []
-
-    def _safe_text(self, value: Any) -> str:
-        if value is None:
-            return ""
-        return str(value)
-
-    def _safe_int(self, value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except Exception:
-            return int(default)
-
-    def _fingerprint(self, payload: dict[str, Any]) -> str:
-        safe = copy.deepcopy(payload)
+def _fingerprint(payload: Any) -> str:
+    safe = copy.deepcopy(payload)
+    if isinstance(safe, dict):
         safe.pop("fingerprint", None)
-        encoded = json.dumps(
-            safe,
-            default=str,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def build_runtime_evidence_registry(source: Any) -> RuntimeEvidenceRegistrySnapshot:
-    return RuntimeEvidenceRegistry().rebuild(source)
-
-
-__all__ = [
-    "RuntimeEvidenceRegistry",
-    "RuntimeEvidenceRegistrySnapshot",
-    "build_runtime_evidence_registry",
-]
+    encoded = json.dumps(safe, default=str, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -13,6 +12,50 @@ from core.runtime.runtime_events import RuntimeEvent
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
 
 
+JOURNAL_RESTORE_TRUNCATION_MARKER = "__truncated_for_journal_restore__"
+_JOURNAL_RESTORE_MAX_DEPTH = 5
+_JOURNAL_RESTORE_MAX_ITEMS = 32
+_JOURNAL_RESTORE_ESSENTIAL_KEYS = {
+    "abi_version",
+    "applied",
+    "boundary",
+    "checkpoint_id",
+    "checkpoint_type",
+    "commit_allowed",
+    "commit_applied",
+    "commit_recorded",
+    "decision_id",
+    "event_id",
+    "event_type",
+    "execution_id",
+    "failed",
+    "from_state",
+    "integrity_hash",
+    "mutation_id",
+    "mutation_request_id",
+    "ok",
+    "outcome",
+    "phase",
+    "reason",
+    "record_id",
+    "record_type",
+    "relative_path",
+    "rolled_back",
+    "rollback_completed",
+    "rollback_required",
+    "runtime_version",
+    "sequence",
+    "session_id",
+    "state",
+    "status",
+    "timestamp",
+    "to_state",
+    "transaction_id",
+    "validation_passed",
+    "verified",
+}
+
+
 def utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -20,6 +63,54 @@ def utc_timestamp() -> str:
 def _stable_hash(value: Any) -> str:
     encoded = json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _journal_key_rank(key: Any) -> tuple[int, str]:
+    text = str(key)
+    return (0 if text in _JOURNAL_RESTORE_ESSENTIAL_KEYS or text.endswith("_id") or text.endswith("_status") else 1, text)
+
+
+def project_journal_restore_payload(
+    value: Any,
+    *,
+    max_depth: int = _JOURNAL_RESTORE_MAX_DEPTH,
+    max_items: int = _JOURNAL_RESTORE_MAX_ITEMS,
+) -> Any:
+    """Return a deterministic bounded payload for journal restore/reconstruct."""
+
+    seen: set[int] = set()
+
+    def project(item: Any, depth: int) -> Any:
+        if item is None or isinstance(item, (str, int, float, bool)):
+            return item
+        if depth >= max_depth:
+            return JOURNAL_RESTORE_TRUNCATION_MARKER
+        if isinstance(item, dict):
+            item_id = id(item)
+            if item_id in seen:
+                return JOURNAL_RESTORE_TRUNCATION_MARKER
+            seen.add(item_id)
+            projected: dict[str, Any] = {}
+            keys = sorted(item.keys(), key=_journal_key_rank)
+            for key in keys[:max_items]:
+                projected[str(key)] = project(item[key], depth + 1)
+            if len(keys) > max_items:
+                projected[JOURNAL_RESTORE_TRUNCATION_MARKER] = JOURNAL_RESTORE_TRUNCATION_MARKER
+            seen.remove(item_id)
+            return projected
+        if isinstance(item, (list, tuple)):
+            item_id = id(item)
+            if item_id in seen:
+                return JOURNAL_RESTORE_TRUNCATION_MARKER
+            seen.add(item_id)
+            projected_list = [project(child, depth + 1) for child in list(item)[:max_items]]
+            if len(item) > max_items:
+                projected_list.append(JOURNAL_RESTORE_TRUNCATION_MARKER)
+            seen.remove(item_id)
+            return projected_list
+        return str(item)
+
+    return project(value, 0)
 
 
 @dataclass(frozen=True)
@@ -39,8 +130,16 @@ class RuntimeWALRecord:
         if not record_type:
             raise ValueError("runtime_wal_record_type_required")
         object.__setattr__(self, "record_type", record_type)
-        object.__setattr__(self, "payload", copy.deepcopy(dict(self.payload or {})))
-        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata or {})))
+        object.__setattr__(
+            self,
+            "payload",
+            project_journal_restore_payload(self.payload if isinstance(self.payload, dict) else {}),
+        )
+        object.__setattr__(
+            self,
+            "metadata",
+            project_journal_restore_payload(self.metadata if isinstance(self.metadata, dict) else {}),
+        )
         if not self.record_id:
             seed = {
                 "sequence": self.sequence,
@@ -68,8 +167,8 @@ class RuntimeWALRecord:
             "sequence": self.sequence,
             "record_type": self.record_type,
             "timestamp": self.timestamp,
-            "payload": copy.deepcopy(self.payload),
-            "metadata": copy.deepcopy(self.metadata),
+            "payload": project_journal_restore_payload(self.payload),
+            "metadata": project_journal_restore_payload(self.metadata),
         }
         if include_integrity:
             payload["integrity_hash"] = self.integrity_hash
@@ -80,16 +179,23 @@ class RuntimeWALRecord:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "RuntimeWALRecord":
+        raw_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+        raw_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        projected_payload = project_journal_restore_payload(raw_payload)
+        projected_metadata = project_journal_restore_payload(raw_metadata)
+        integrity_hash = str(payload.get("integrity_hash") or "")
+        if projected_payload != raw_payload or projected_metadata != raw_metadata:
+            integrity_hash = ""
         return cls(
             sequence=int(payload.get("sequence") or 0),
             record_type=str(payload.get("record_type") or ""),
-            payload=dict(payload.get("payload") or {}),
-            metadata=dict(payload.get("metadata") or {}),
+            payload=projected_payload if isinstance(projected_payload, dict) else {},
+            metadata=projected_metadata if isinstance(projected_metadata, dict) else {},
             timestamp=str(payload.get("timestamp") or utc_timestamp()),
             record_id=str(payload.get("record_id") or ""),
             runtime_version=str(payload.get("runtime_version") or RUNTIME_KERNEL_VERSION),
             abi_version=str(payload.get("abi_version") or RUNTIME_ABI_VERSION),
-            integrity_hash=str(payload.get("integrity_hash") or ""),
+            integrity_hash=integrity_hash,
         )
 
 
@@ -180,38 +286,38 @@ class RuntimeJournal:
             "last_sequence": records[-1].sequence if records else 0,
             "integrity": self.verify_integrity().to_dict(),
             "state_transitions": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type == "runtime_event"
                 and record.payload.get("event_type") == "RuntimeStateTransitionEvent"
             ],
             "transaction_boundaries": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type.startswith("transaction_")
             ],
             "memory_snapshots": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type == "runtime_memory_snapshot"
             ],
             "capability_state": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type == "runtime_capability_graph"
             ],
             "intent_state": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type == "runtime_intent_evaluation"
             ],
             "scheduler_state": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type == "runtime_scheduler_state"
             ],
             "distributed_state": [
-                record.payload
+                project_journal_restore_payload(record.payload)
                 for record in records
                 if record.record_type == "runtime_distributed_replay"
             ],
@@ -264,4 +370,10 @@ class RuntimeJournal:
             handle.write(json.dumps(record.to_dict(), sort_keys=True, default=str) + "\n")
 
 
-__all__ = ["RuntimeJournal", "RuntimeJournalEntry", "RuntimeWALRecord"]
+__all__ = [
+    "JOURNAL_RESTORE_TRUNCATION_MARKER",
+    "RuntimeJournal",
+    "RuntimeJournalEntry",
+    "RuntimeWALRecord",
+    "project_journal_restore_payload",
+]

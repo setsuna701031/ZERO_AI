@@ -6,6 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
 class RuntimeContractIntegrityTest(unittest.TestCase):
     def _make_step_executor(self, workspace_root: Path) -> Any:
         from core.runtime.step_executor import StepExecutor
+        from tests.authority_test_support import owned_step_executor
 
         signature = inspect.signature(StepExecutor)
         kwargs: Dict[str, Any] = {}
@@ -33,7 +39,7 @@ class RuntimeContractIntegrityTest(unittest.TestCase):
         if "debug" in signature.parameters:
             kwargs["debug"] = False
 
-        return StepExecutor(**kwargs)
+        return owned_step_executor(**kwargs)
 
     def _execute_steps(self, executor: Any, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         method = executor.execute_steps

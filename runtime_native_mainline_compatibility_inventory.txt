@@ -1,0 +1,23 @@
+Runtime Native Mainline Compatibility Inventory
+
+Purpose
+Deterministic compatibility inventory for the canonical Runtime native mainline.
+
+Scope
+Repository source; report-only and non-executing.
+
+Token Inventory
+normalize_runtime_native_entry_request count: 5
+
+Marked Blocks
+ZERO_PACKAGE19_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_PHASE2_BEGIN
+ZERO_PACKAGE19_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_PHASE2_END
+
+Function Inventory
+normalize_runtime_native_entry_request remains the compatibility normalization boundary.
+
+Classification
+Preserved compatibility shim; no execution authority is granted.
+
+Non-mainline issue reporting
+Non-mainline Issues Found: none in the bounded inventory.

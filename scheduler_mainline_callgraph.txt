@@ -1,0 +1,390 @@
+Scheduler Mainline Call Graph Audit
+
+repo_root: E:\zero_ai
+target: core\tasks\scheduler.py
+inventory: scheduler_mainline_inventory.txt
+audit_mode: static_ast_plus_inventory_refs
+
+Run One Step Overlay Chain
+--------------------------
+- method definition: Scheduler.run_one_step (line 768; active_refs=unknown)
+- helper definition: _zero_v352_scheduler_run_one_step (line 8045; active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+- helper definition: _zero_scheduler_run_one_step_v8 (line 8133; active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding)
+- helper definition: _zero_scheduler_run_one_step_v16 (line 8219; active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding)
+- binding: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (line 8071; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (line 8147; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- final Scheduler.run_one_step binding: _zero_scheduler_run_one_step_v16 (line 8229)
+
+Surface Call Graphs
+-------------------
+run_one_step:
+  Scheduler.xxx assignment chain:
+    - line 8071: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+    - line 8147: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+    - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 7705: _zero_v11_scheduler_str (active_refs=unknown)
+    - line 7712: _zero_v11_scheduler_copy_dict (active_refs=unknown)
+    - line 7721: _zero_v11_extract_scheduler_error_type (active_refs=unknown)
+    - line 7746: _zero_v11_extract_scheduler_error_text (active_refs=unknown)
+    - line 7771: _zero_v11_extract_scheduler_runtime_mode (active_refs=2; archived_refs=0; report_refs=5; binding_class=runtime_binding)
+    - line 7790: _zero_v11_extract_scheduler_trace (active_refs=unknown)
+    - line 7813: _zero_v11_attach_scheduler_adapter_payload (active_refs=15; archived_refs=0; report_refs=5; binding_class=runtime_binding)
+    - line 8045: _zero_v352_scheduler_run_one_step (active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+    - line 8127: _zero_scheduler_update_step_progress (active_refs=unknown)
+    - line 8133: _zero_scheduler_run_one_step_v8 (active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding)
+    - line 8163: _zero_scheduler_complete_operator (active_refs=6; archived_refs=0; report_refs=4; binding_class=runtime_binding)
+    - line 8219: _zero_scheduler_run_one_step_v16 (active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding)
+    - line 6690: _scheduler_dispatch_compat_handle_run_one_step_exception (active_refs=1; archived_refs=0; report_refs=41; binding_class=runtime_binding)
+  overlay order by line number:
+    - line 6690: def _scheduler_dispatch_compat_handle_run_one_step_exception(...)
+    - line 7705: def _zero_v11_scheduler_str(...)
+    - line 7712: def _zero_v11_scheduler_copy_dict(...)
+    - line 7721: def _zero_v11_extract_scheduler_error_type(...)
+    - line 7746: def _zero_v11_extract_scheduler_error_text(...)
+    - line 7771: def _zero_v11_extract_scheduler_runtime_mode(...)
+    - line 7790: def _zero_v11_extract_scheduler_trace(...)
+    - line 7813: def _zero_v11_attach_scheduler_adapter_payload(...)
+    - line 8045: def _zero_v352_scheduler_run_one_step(...)
+    - line 8071: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
+    - line 8127: def _zero_scheduler_update_step_progress(...)
+    - line 8133: def _zero_scheduler_run_one_step_v8(...)
+    - line 8147: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
+    - line 8163: def _zero_scheduler_complete_operator(...)
+    - line 8219: def _zero_scheduler_run_one_step_v16(...)
+    - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
+  final active binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229)
+  known active_refs from inventory:
+    - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+    - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+    - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+    - _zero_v11_scheduler_str: active_refs=unknown
+    - _zero_v11_scheduler_copy_dict: active_refs=unknown
+    - _zero_v11_extract_scheduler_error_type: active_refs=unknown
+    - _zero_v11_extract_scheduler_error_text: active_refs=unknown
+    - _zero_v11_extract_scheduler_runtime_mode: active_refs=2; archived_refs=0; report_refs=5; binding_class=runtime_binding
+    - _zero_v11_extract_scheduler_trace: active_refs=unknown
+    - _zero_v11_attach_scheduler_adapter_payload: active_refs=15; archived_refs=0; report_refs=5; binding_class=runtime_binding
+    - _zero_v352_scheduler_run_one_step: active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding
+    - _zero_scheduler_update_step_progress: active_refs=unknown
+    - _zero_scheduler_run_one_step_v8: active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding
+    - _zero_scheduler_complete_operator: active_refs=6; archived_refs=0; report_refs=4; binding_class=runtime_binding
+    - _zero_scheduler_run_one_step_v16: active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding
+    - _scheduler_dispatch_compat_handle_run_one_step_exception: active_refs=1; archived_refs=0; report_refs=41; binding_class=runtime_binding
+  risk_level: high
+  recommendation: consolidation candidate
+
+tick:
+  Scheduler.xxx assignment chain:
+    - line 7322: Scheduler.tick = _zero_v724_tick (active_refs=7; archived_refs=8; report_refs=94; binding_class=runtime_binding)
+    - line 7519: Scheduler.tick = _zero_v726_tick (active_refs=7; archived_refs=8; report_refs=94; binding_class=runtime_binding)
+    - line 7641: Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick (active_refs=1; archived_refs=0; report_refs=46; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 7289: _zero_v724_tick (active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding)
+    - line 7504: _zero_v726_tick (active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+  overlay order by line number:
+    - line 7289: def _zero_v724_tick(...)
+    - line 7322: Scheduler.tick = _zero_v724_tick
+    - line 7504: def _zero_v726_tick(...)
+    - line 7519: Scheduler.tick = _zero_v726_tick
+    - line 7641: Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick
+  final active binding: Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick (line 7641); Scheduler.tick = _zero_v726_tick (line 7519)
+  known active_refs from inventory:
+    - Scheduler.tick: active_refs=7; archived_refs=8; report_refs=94; binding_class=runtime_binding
+    - Scheduler.tick: active_refs=7; archived_refs=8; report_refs=94; binding_class=runtime_binding
+    - Scheduler._run_simple_task_tick: active_refs=1; archived_refs=0; report_refs=46; binding_class=runtime_binding
+    - _zero_v724_tick: active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding
+    - _zero_v726_tick: active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding
+  risk_level: high
+  recommendation: consolidation candidate
+
+dispatch:
+  Scheduler.xxx assignment chain:
+    - line 6780: Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result (active_refs=0; archived_refs=2; report_refs=54; binding_class=runtime_binding)
+    - line 6781: Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task (active_refs=0; archived_refs=0; report_refs=52; binding_class=runtime_binding)
+    - line 6782: Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception (active_refs=0; archived_refs=0; report_refs=54; binding_class=runtime_binding)
+    - line 6783: Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task (active_refs=0; archived_refs=1; report_refs=57; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 6669: _scheduler_dispatch_compat_handle_dispatch_result (active_refs=1; archived_refs=0; report_refs=34; binding_class=runtime_binding)
+    - line 6682: _scheduler_dispatch_compat_handle_missing_repo_task (active_refs=1; archived_refs=0; report_refs=36; binding_class=runtime_binding)
+    - line 6690: _scheduler_dispatch_compat_handle_run_one_step_exception (active_refs=1; archived_refs=0; report_refs=41; binding_class=runtime_binding)
+    - line 6703: _scheduler_dispatch_compat_finalize_dispatched_task (active_refs=1; archived_refs=0; report_refs=38; binding_class=runtime_binding)
+  overlay order by line number:
+    - line 6669: def _scheduler_dispatch_compat_handle_dispatch_result(...)
+    - line 6682: def _scheduler_dispatch_compat_handle_missing_repo_task(...)
+    - line 6690: def _scheduler_dispatch_compat_handle_run_one_step_exception(...)
+    - line 6703: def _scheduler_dispatch_compat_finalize_dispatched_task(...)
+    - line 6780: Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result
+    - line 6781: Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task
+    - line 6782: Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception
+    - line 6783: Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task
+  final active binding: Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task (line 6783); Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result (line 6780); Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task (line 6781); Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception (line 6782)
+  known active_refs from inventory:
+    - Scheduler._handle_dispatch_result: active_refs=0; archived_refs=2; report_refs=54; binding_class=runtime_binding
+    - Scheduler._handle_missing_repo_task: active_refs=0; archived_refs=0; report_refs=52; binding_class=runtime_binding
+    - Scheduler._handle_run_one_step_exception: active_refs=0; archived_refs=0; report_refs=54; binding_class=runtime_binding
+    - Scheduler._finalize_dispatched_task: active_refs=0; archived_refs=1; report_refs=57; binding_class=runtime_binding
+    - _scheduler_dispatch_compat_handle_dispatch_result: active_refs=1; archived_refs=0; report_refs=34; binding_class=runtime_binding
+    - _scheduler_dispatch_compat_handle_missing_repo_task: active_refs=1; archived_refs=0; report_refs=36; binding_class=runtime_binding
+    - _scheduler_dispatch_compat_handle_run_one_step_exception: active_refs=1; archived_refs=0; report_refs=41; binding_class=runtime_binding
+    - _scheduler_dispatch_compat_finalize_dispatched_task: active_refs=1; archived_refs=0; report_refs=38; binding_class=runtime_binding
+  risk_level: high
+  recommendation: consolidation candidate
+
+queue:
+  Scheduler.xxx assignment chain:
+    - line 7321: Scheduler.cleanup_task_queue_hygiene = _zero_v724_cleanup_task_queue_hygiene (active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding)
+    - line 7323: Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot (active_refs=1; archived_refs=0; report_refs=59; binding_class=runtime_binding)
+    - line 7324: Scheduler.get_queue_rows = _zero_v724_get_queue_rows (active_refs=1; archived_refs=0; report_refs=57; binding_class=runtime_binding)
+    - line 7517: Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene (active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 7068: _zero_v724_task_age_seconds (active_refs=unknown)
+    - line 7089: _zero_v724_cleanup_fingerprint_index (active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding)
+    - line 7154: _zero_v724_cleanup_task_queue_hygiene (active_refs=2; archived_refs=0; report_refs=16; binding_class=runtime_binding)
+    - line 7297: _zero_v724_get_queue_snapshot (active_refs=1; archived_refs=0; report_refs=22; binding_class=runtime_binding)
+    - line 7309: _zero_v724_get_queue_rows (active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+    - line 7424: _zero_v726_cleanup_task_queue_hygiene (active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+    - line 6767: _scheduler_repo_state_compat_mark_repo_task_queued (active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding)
+    - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding)
+  overlay order by line number:
+    - line 6767: def _scheduler_repo_state_compat_mark_repo_task_queued(...)
+    - line 7068: def _zero_v724_task_age_seconds(...)
+    - line 7089: def _zero_v724_cleanup_fingerprint_index(...)
+    - line 7154: def _zero_v724_cleanup_task_queue_hygiene(...)
+    - line 7297: def _zero_v724_get_queue_snapshot(...)
+    - line 7309: def _zero_v724_get_queue_rows(...)
+    - line 7321: Scheduler.cleanup_task_queue_hygiene = _zero_v724_cleanup_task_queue_hygiene
+    - line 7323: Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot
+    - line 7324: Scheduler.get_queue_rows = _zero_v724_get_queue_rows
+    - line 7424: def _zero_v726_cleanup_task_queue_hygiene(...)
+    - line 7517: Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene
+    - line 8004: def _zero_scheduler_get_review_queue(...)
+  final active binding: Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene (line 7517); Scheduler.get_queue_rows = _zero_v724_get_queue_rows (line 7324); Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot (line 7323)
+  known active_refs from inventory:
+    - Scheduler.cleanup_task_queue_hygiene: active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding
+    - Scheduler.get_queue_snapshot: active_refs=1; archived_refs=0; report_refs=59; binding_class=runtime_binding
+    - Scheduler.get_queue_rows: active_refs=1; archived_refs=0; report_refs=57; binding_class=runtime_binding
+    - Scheduler.cleanup_task_queue_hygiene: active_refs=1; archived_refs=0; report_refs=83; binding_class=runtime_binding
+    - _zero_v724_task_age_seconds: active_refs=unknown
+    - _zero_v724_cleanup_fingerprint_index: active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding
+    - _zero_v724_cleanup_task_queue_hygiene: active_refs=2; archived_refs=0; report_refs=16; binding_class=runtime_binding
+    - _zero_v724_get_queue_snapshot: active_refs=1; archived_refs=0; report_refs=22; binding_class=runtime_binding
+    - _zero_v724_get_queue_rows: active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding
+    - _zero_v726_cleanup_task_queue_hygiene: active_refs=1; archived_refs=0; report_refs=20; binding_class=runtime_binding
+    - _scheduler_repo_state_compat_mark_repo_task_queued: active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding
+    - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding
+  risk_level: high
+  recommendation: consolidation candidate
+
+repo_state:
+  Scheduler.xxx assignment chain:
+    - line 6784: Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer (active_refs=0; archived_refs=0; report_refs=43; binding_class=runtime_binding)
+    - line 6785: Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished (active_refs=0; archived_refs=2; report_refs=54; binding_class=runtime_binding)
+    - line 6786: Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed (active_refs=0; archived_refs=2; report_refs=52; binding_class=runtime_binding)
+    - line 6787: Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued (active_refs=0; archived_refs=1; report_refs=49; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 6720: _scheduler_repo_state_compat_extract_effective_status_and_answer (active_refs=1; archived_refs=0; report_refs=38; binding_class=runtime_binding)
+    - line 6739: _scheduler_repo_state_compat_mark_repo_task_finished (active_refs=1; archived_refs=0; report_refs=38; binding_class=runtime_binding)
+    - line 6754: _scheduler_repo_state_compat_mark_repo_task_failed (active_refs=1; archived_refs=0; report_refs=36; binding_class=runtime_binding)
+    - line 6767: _scheduler_repo_state_compat_mark_repo_task_queued (active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding)
+  overlay order by line number:
+    - line 6720: def _scheduler_repo_state_compat_extract_effective_status_and_answer(...)
+    - line 6739: def _scheduler_repo_state_compat_mark_repo_task_finished(...)
+    - line 6754: def _scheduler_repo_state_compat_mark_repo_task_failed(...)
+    - line 6767: def _scheduler_repo_state_compat_mark_repo_task_queued(...)
+    - line 6784: Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer
+    - line 6785: Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished
+    - line 6786: Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed
+    - line 6787: Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued
+  final active binding: Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer (line 6784); Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed (line 6786); Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished (line 6785); Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued (line 6787)
+  known active_refs from inventory:
+    - Scheduler._extract_effective_status_and_answer: active_refs=0; archived_refs=0; report_refs=43; binding_class=runtime_binding
+    - Scheduler._mark_repo_task_finished: active_refs=0; archived_refs=2; report_refs=54; binding_class=runtime_binding
+    - Scheduler._mark_repo_task_failed: active_refs=0; archived_refs=2; report_refs=52; binding_class=runtime_binding
+    - Scheduler._mark_repo_task_queued: active_refs=0; archived_refs=1; report_refs=49; binding_class=runtime_binding
+    - _scheduler_repo_state_compat_extract_effective_status_and_answer: active_refs=1; archived_refs=0; report_refs=38; binding_class=runtime_binding
+    - _scheduler_repo_state_compat_mark_repo_task_finished: active_refs=1; archived_refs=0; report_refs=38; binding_class=runtime_binding
+    - _scheduler_repo_state_compat_mark_repo_task_failed: active_refs=1; archived_refs=0; report_refs=36; binding_class=runtime_binding
+    - _scheduler_repo_state_compat_mark_repo_task_queued: active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding
+  risk_level: high
+  recommendation: consolidation candidate
+
+planning:
+  Scheduler.xxx assignment chain:
+    - line 6907: Scheduler._plan_goal = _zero_v702_scheduler_plan_goal (active_refs=1; archived_refs=10; report_refs=78; binding_class=monkey_patch)
+    - line 6908: Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step (active_refs=2; archived_refs=2; report_refs=85; binding_class=monkey_patch)
+    - line 6942: Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation (active_refs=2; archived_refs=2; report_refs=85; binding_class=monkey_patch)
+  top-level helper definitions involved:
+    - line 6802: _zero_v702_normalize_rel_path (active_refs=unknown)
+    - line 6809: _zero_v702_extract_workspace_py_path (active_refs=unknown)
+    - line 6816: _zero_v702_looks_like_autonomous_repair (active_refs=unknown)
+    - line 6828: _zero_v702_build_code_chain_repair_plan (active_refs=unknown)
+    - line 6856: _zero_v702_scheduler_plan_goal (active_refs=unknown)
+    - line 6863: _zero_v702_scheduler_execute_simple_step (active_refs=2; archived_refs=0; report_refs=16; binding_class=runtime_binding)
+    - line 6916: _zero_v7335_scheduler_execute_simple_step_no_direct_mutation (active_refs=2; archived_refs=0; report_refs=17; binding_class=runtime_binding)
+    - line 6993: _zero_v703_scheduler_normalize_replan_metadata (active_refs=unknown)
+    - line 7566: _zero_v731_scheduler_normalize_replan_metadata (active_refs=unknown)
+  overlay order by line number:
+    - line 6802: def _zero_v702_normalize_rel_path(...)
+    - line 6809: def _zero_v702_extract_workspace_py_path(...)
+    - line 6816: def _zero_v702_looks_like_autonomous_repair(...)
+    - line 6828: def _zero_v702_build_code_chain_repair_plan(...)
+    - line 6856: def _zero_v702_scheduler_plan_goal(...)
+    - line 6863: def _zero_v702_scheduler_execute_simple_step(...)
+    - line 6907: Scheduler._plan_goal = _zero_v702_scheduler_plan_goal
+    - line 6908: Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step
+    - line 6916: def _zero_v7335_scheduler_execute_simple_step_no_direct_mutation(...)
+    - line 6942: Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation
+    - line 6993: def _zero_v703_scheduler_normalize_replan_metadata(...)
+    - line 7566: def _zero_v731_scheduler_normalize_replan_metadata(...)
+  final active binding: Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation (line 6942); Scheduler._plan_goal = _zero_v702_scheduler_plan_goal (line 6907)
+  known active_refs from inventory:
+    - Scheduler._plan_goal: active_refs=1; archived_refs=10; report_refs=78; binding_class=monkey_patch
+    - Scheduler._execute_simple_step: active_refs=2; archived_refs=2; report_refs=85; binding_class=monkey_patch
+    - Scheduler._execute_simple_step: active_refs=2; archived_refs=2; report_refs=85; binding_class=monkey_patch
+    - _zero_v702_normalize_rel_path: active_refs=unknown
+    - _zero_v702_extract_workspace_py_path: active_refs=unknown
+    - _zero_v702_looks_like_autonomous_repair: active_refs=unknown
+    - _zero_v702_build_code_chain_repair_plan: active_refs=unknown
+    - _zero_v702_scheduler_plan_goal: active_refs=unknown
+    - _zero_v702_scheduler_execute_simple_step: active_refs=2; archived_refs=0; report_refs=16; binding_class=runtime_binding
+    - _zero_v7335_scheduler_execute_simple_step_no_direct_mutation: active_refs=2; archived_refs=0; report_refs=17; binding_class=runtime_binding
+    - _zero_v703_scheduler_normalize_replan_metadata: active_refs=unknown
+    - _zero_v731_scheduler_normalize_replan_metadata: active_refs=unknown
+  risk_level: medium
+  recommendation: audit further
+
+repair:
+  Scheduler.xxx assignment chain:
+    - line 7036: Scheduler._is_repairable_failure = _zero_v703_scheduler_is_repairable_failure (active_refs=2; archived_refs=2; report_refs=254; binding_class=monkey_patch)
+    - line 7037: Scheduler._normalize_replan_metadata = _zero_v703_scheduler_normalize_replan_metadata (active_refs=0; archived_refs=0; report_refs=63; binding_class=monkey_patch)
+    - line 7516: Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task (active_refs=1; archived_refs=4; report_refs=54; binding_class=monkey_patch)
+    - line 7603: Scheduler._is_repairable_failure = _zero_v731_scheduler_is_repairable_failure (active_refs=2; archived_refs=2; report_refs=254; binding_class=monkey_patch)
+    - line 7604: Scheduler._normalize_replan_metadata = _zero_v731_scheduler_normalize_replan_metadata (active_refs=0; archived_refs=0; report_refs=63; binding_class=monkey_patch)
+  top-level helper definitions involved:
+    - line 6975: _zero_v703_scheduler_is_repairable_failure (active_refs=unknown)
+    - line 6993: _zero_v703_scheduler_normalize_replan_metadata (active_refs=unknown)
+    - line 7354: _zero_v726_pending_lock_task_id (active_refs=unknown)
+    - line 7358: _zero_v726_release_pending_repair_lock (active_refs=unknown)
+    - line 7380: _zero_v726_pending_lock_age_seconds (active_refs=unknown)
+    - line 7392: _zero_v726_find_active_duplicate_repair_task (active_refs=unknown)
+    - line 7548: _zero_v731_scheduler_is_repairable_failure (active_refs=unknown)
+    - line 7566: _zero_v731_scheduler_normalize_replan_metadata (active_refs=unknown)
+    - line 6816: _zero_v702_looks_like_autonomous_repair (active_refs=unknown)
+  overlay order by line number:
+    - line 6816: def _zero_v702_looks_like_autonomous_repair(...)
+    - line 6975: def _zero_v703_scheduler_is_repairable_failure(...)
+    - line 6993: def _zero_v703_scheduler_normalize_replan_metadata(...)
+    - line 7036: Scheduler._is_repairable_failure = _zero_v703_scheduler_is_repairable_failure
+    - line 7037: Scheduler._normalize_replan_metadata = _zero_v703_scheduler_normalize_replan_metadata
+    - line 7354: def _zero_v726_pending_lock_task_id(...)
+    - line 7358: def _zero_v726_release_pending_repair_lock(...)
+    - line 7380: def _zero_v726_pending_lock_age_seconds(...)
+    - line 7392: def _zero_v726_find_active_duplicate_repair_task(...)
+    - line 7516: Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task
+    - line 7548: def _zero_v731_scheduler_is_repairable_failure(...)
+    - line 7566: def _zero_v731_scheduler_normalize_replan_metadata(...)
+    - line 7603: Scheduler._is_repairable_failure = _zero_v731_scheduler_is_repairable_failure
+    - line 7604: Scheduler._normalize_replan_metadata = _zero_v731_scheduler_normalize_replan_metadata
+  final active binding: Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task (line 7516); Scheduler._is_repairable_failure = _zero_v731_scheduler_is_repairable_failure (line 7603); Scheduler._normalize_replan_metadata = _zero_v731_scheduler_normalize_replan_metadata (line 7604)
+  known active_refs from inventory:
+    - Scheduler._is_repairable_failure: active_refs=2; archived_refs=2; report_refs=254; binding_class=monkey_patch
+    - Scheduler._normalize_replan_metadata: active_refs=0; archived_refs=0; report_refs=63; binding_class=monkey_patch
+    - Scheduler._find_active_duplicate_repair_task: active_refs=1; archived_refs=4; report_refs=54; binding_class=monkey_patch
+    - Scheduler._is_repairable_failure: active_refs=2; archived_refs=2; report_refs=254; binding_class=monkey_patch
+    - Scheduler._normalize_replan_metadata: active_refs=0; archived_refs=0; report_refs=63; binding_class=monkey_patch
+    - _zero_v703_scheduler_is_repairable_failure: active_refs=unknown
+    - _zero_v703_scheduler_normalize_replan_metadata: active_refs=unknown
+    - _zero_v726_pending_lock_task_id: active_refs=unknown
+    - _zero_v726_release_pending_repair_lock: active_refs=unknown
+    - _zero_v726_pending_lock_age_seconds: active_refs=unknown
+    - _zero_v726_find_active_duplicate_repair_task: active_refs=unknown
+    - _zero_v731_scheduler_is_repairable_failure: active_refs=unknown
+    - _zero_v731_scheduler_normalize_replan_metadata: active_refs=unknown
+    - _zero_v702_looks_like_autonomous_repair: active_refs=unknown
+  risk_level: high
+  recommendation: consolidation candidate
+
+review:
+  Scheduler.xxx assignment chain:
+    - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding)
+    - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item (active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding)
+    - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue (active_refs=0; archived_refs=0; report_refs=110; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 7844: _zero_review_action_find_task (active_refs=1; archived_refs=0; report_refs=3; binding_class=runtime_binding)
+    - line 7900: _zero_review_action_apply_result (active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding)
+    - line 7950: _zero_scheduler_approve_review_item (active_refs=1; archived_refs=0; report_refs=58; binding_class=runtime_binding)
+    - line 7975: _zero_scheduler_reject_review_item (active_refs=1; archived_refs=0; report_refs=52; binding_class=runtime_binding)
+    - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding)
+  overlay order by line number:
+    - line 7844: def _zero_review_action_find_task(...)
+    - line 7900: def _zero_review_action_apply_result(...)
+    - line 7950: def _zero_scheduler_approve_review_item(...)
+    - line 7975: def _zero_scheduler_reject_review_item(...)
+    - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+    - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+    - line 8004: def _zero_scheduler_get_review_queue(...)
+    - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+  final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+  known active_refs from inventory:
+    - Scheduler.approve_review_item: active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding
+    - Scheduler.reject_review_item: active_refs=0; archived_refs=0; report_refs=115; binding_class=runtime_binding
+    - Scheduler.get_review_queue: active_refs=0; archived_refs=0; report_refs=110; binding_class=runtime_binding
+    - _zero_review_action_find_task: active_refs=1; archived_refs=0; report_refs=3; binding_class=runtime_binding
+    - _zero_review_action_apply_result: active_refs=2; archived_refs=0; report_refs=3; binding_class=runtime_binding
+    - _zero_scheduler_approve_review_item: active_refs=1; archived_refs=0; report_refs=58; binding_class=runtime_binding
+    - _zero_scheduler_reject_review_item: active_refs=1; archived_refs=0; report_refs=52; binding_class=runtime_binding
+    - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding
+  risk_level: medium
+  recommendation: audit further
+
+path:
+  Scheduler.xxx assignment chain:
+    - line 6662: Scheduler._resolve_step_path = staticmethod(resolve_step_path) (active_refs=0; archived_refs=0; report_refs=30; binding_class=monkey_patch)
+    - line 6663: Scheduler._resolve_read_path_with_fallback = staticmethod(resolve_read_path_with_fallback) (active_refs=0; archived_refs=0; report_refs=38; binding_class=runtime_binding)
+    - line 6664: Scheduler._needs_scheduler_path_resolution = staticmethod(needs_scheduler_path_resolution) (active_refs=0; archived_refs=0; report_refs=34; binding_class=monkey_patch)
+    - line 6665: Scheduler._normalize_step_scope = staticmethod(normalize_step_scope) (active_refs=0; archived_refs=0; report_refs=32; binding_class=monkey_patch)
+    - line 6666: Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path (active_refs=0; archived_refs=0; report_refs=39; binding_class=runtime_binding)
+  top-level helper definitions involved:
+    - line 6646: _scheduler_path_compat_resolve_guard_target_path (active_refs=1; archived_refs=0; report_refs=34; binding_class=runtime_binding)
+    - line 6802: _zero_v702_normalize_rel_path (active_refs=unknown)
+    - line 6809: _zero_v702_extract_workspace_py_path (active_refs=unknown)
+  overlay order by line number:
+    - line 6646: def _scheduler_path_compat_resolve_guard_target_path(...)
+    - line 6662: Scheduler._resolve_step_path = staticmethod(resolve_step_path)
+    - line 6663: Scheduler._resolve_read_path_with_fallback = staticmethod(resolve_read_path_with_fallback)
+    - line 6664: Scheduler._needs_scheduler_path_resolution = staticmethod(needs_scheduler_path_resolution)
+    - line 6665: Scheduler._normalize_step_scope = staticmethod(normalize_step_scope)
+    - line 6666: Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path
+    - line 6802: def _zero_v702_normalize_rel_path(...)
+    - line 6809: def _zero_v702_extract_workspace_py_path(...)
+  final active binding: Scheduler._needs_scheduler_path_resolution = staticmethod(needs_scheduler_path_resolution) (line 6664); Scheduler._normalize_step_scope = staticmethod(normalize_step_scope) (line 6665); Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path (line 6666); Scheduler._resolve_read_path_with_fallback = staticmethod(resolve_read_path_with_fallback) (line 6663); Scheduler._resolve_step_path = staticmethod(resolve_step_path) (line 6662)
+  known active_refs from inventory:
+    - Scheduler._resolve_step_path: active_refs=0; archived_refs=0; report_refs=30; binding_class=monkey_patch
+    - Scheduler._resolve_read_path_with_fallback: active_refs=0; archived_refs=0; report_refs=38; binding_class=runtime_binding
+    - Scheduler._needs_scheduler_path_resolution: active_refs=0; archived_refs=0; report_refs=34; binding_class=monkey_patch
+    - Scheduler._normalize_step_scope: active_refs=0; archived_refs=0; report_refs=32; binding_class=monkey_patch
+    - Scheduler._resolve_guard_target_path: active_refs=0; archived_refs=0; report_refs=39; binding_class=runtime_binding
+    - _scheduler_path_compat_resolve_guard_target_path: active_refs=1; archived_refs=0; report_refs=34; binding_class=runtime_binding
+    - _zero_v702_normalize_rel_path: active_refs=unknown
+    - _zero_v702_extract_workspace_py_path: active_refs=unknown
+  risk_level: medium
+  recommendation: audit further
+
+Summary
+-------
+- run_one_step: risk=high; recommendation=consolidation candidate; final=Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229)
+- tick: risk=high; recommendation=consolidation candidate; final=Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick (line 7641); Scheduler.tick = _zero_v726_tick (line 7519)
+- dispatch: risk=high; recommendation=consolidation candidate; final=Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task (line 6783); Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result (line 6780); Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task (line 6781); Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception (line 6782)
+- queue: risk=high; recommendation=consolidation candidate; final=Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene (line 7517); Scheduler.get_queue_rows = _zero_v724_get_queue_rows (line 7324); Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot (line 7323)
+- repo_state: risk=high; recommendation=consolidation candidate; final=Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer (line 6784); Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed (line 6786); Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished (line 6785); Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued (line 6787)
+- planning: risk=medium; recommendation=audit further; final=Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation (line 6942); Scheduler._plan_goal = _zero_v702_scheduler_plan_goal (line 6907)
+- repair: risk=high; recommendation=consolidation candidate; final=Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task (line 7516); Scheduler._is_repairable_failure = _zero_v731_scheduler_is_repairable_failure (line 7603); Scheduler._normalize_replan_metadata = _zero_v731_scheduler_normalize_replan_metadata (line 7604)
+- review: risk=medium; recommendation=audit further; final=Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- path: risk=medium; recommendation=audit further; final=Scheduler._needs_scheduler_path_resolution = staticmethod(needs_scheduler_path_resolution) (line 6664); Scheduler._normalize_step_scope = staticmethod(normalize_step_scope) (line 6665); Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path (line 6666); Scheduler._resolve_read_path_with_fallback = staticmethod(resolve_read_path_with_fallback) (line 6663); Scheduler._resolve_step_path = staticmethod(resolve_step_path) (line 6662)
+
+Non-Mainline Issues
+-------------------
+- Static audit only. No production scheduler code was changed.
+- Dynamic getattr, imports, and runtime dispatch may hide additional edges.

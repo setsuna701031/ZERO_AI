@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -68,7 +69,7 @@ class TaskSummary:
             text = step.get("step_text")
             status = step.get("status")
 
-            if status == "finished" and text:
+            if canonical_runtime_status(status) == "completed" and text:
                 important.append(text)
 
         return important[:10]

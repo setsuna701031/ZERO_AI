@@ -1,4 +1,8 @@
-﻿from pathlib import Path
+from pathlib import Path
+
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
 
 TARGET = Path("core/tasks/scheduler.py")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
 import time
 from dataclasses import asdict
@@ -103,7 +104,7 @@ class ToolExecutor:
             )
         )
         return ToolResult(
-            ok=bool(raw_result.ok and status == "success"),
+            ok=bool(raw_result.ok and canonical_runtime_status(status) == "completed"),
             tool=str(raw_result.tool or request.tool),
             output=output,
             error=raw_result.error or output.get("error"),

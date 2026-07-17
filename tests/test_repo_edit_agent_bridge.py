@@ -45,7 +45,7 @@ def test_repo_edit_decision_blocks_high_risk_core_files() -> None:
     assert "high-risk core file" in result["decision"]["reason"]
 
 
-def test_repo_edit_decision_routes_explicit_safe_edit() -> None:
+def test_repo_edit_decision_blocks_unsealed_mapping_edit() -> None:
     repo_root = Path.cwd()
     target = repo_root / "workspace" / "repo_edit_agent_bridge_sample.py"
 
@@ -62,13 +62,12 @@ def test_repo_edit_decision_routes_explicit_safe_edit() -> None:
         }
     )
 
-    assert result["status"] == "success"
+    assert result["status"] == "blocked"
     assert result["tool"] == "repo_edit"
-    assert result["routed"] is True
-    assert "-VALUE = 1" in result["result"]["diff"]
-    assert "+VALUE = 2" in result["result"]["diff"]
+    assert result["routed"] is False
+    assert "sealed runtime dispatch" in result["reason"]
 
-    # Original repo file remains unchanged; edit happens in sandbox.
+    # An unsealed compatibility route cannot mutate the repository.
     assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
 
     target.unlink()

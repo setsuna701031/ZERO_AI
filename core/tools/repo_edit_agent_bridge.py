@@ -1,4 +1,4 @@
-"""
+﻿"""
 core/tools/repo_edit_agent_bridge.py
 
 Code Chain v0.8 forced routing bridge.
@@ -9,23 +9,6 @@ Purpose:
 - Convert task text into repo_edit_tool payload(s).
 - Execute repo_edit_tool directly.
 - Return observable trace/result data for scheduler/agent_loop.
-
-v0.8 change:
-- Multi-file transaction mode.
-- Multi-edit tasks are executed sequentially.
-- If any edit fails, all previously applied edits in the same multi-edit task
-  are rolled back from their .bak_v06 backup files.
-- Transaction is conservative:
-  - only explicit workspace/... replace ... with ... lines;
-  - no delete / rename / shell command / free-form patch;
-  - rollback only touches files whose successful tool_result reported both
-    workspace_path and backup_path.
-
-Supported multi-edit shape:
-    Modify workspace/shared/a.py: replace 'old' with 'new'
-    Modify workspace/shared/b.py: replace 'old2' with 'new2'
-
-Single-edit behavior remains compatible with v0.6/v0.7.
 """
 
 from __future__ import annotations
@@ -53,17 +36,7 @@ _EDIT_KEYWORDS = (
     "add a comment",
     "rename",
     "fix",
-    "修",
-    "修改",
-    "變更",
-    "替換",
-    "更改",
-    "更新",
-    "重構",
-    "加入註解",
-    "加註解",
 )
-
 
 _FILE_HINTS = (
     ".py",
@@ -94,19 +67,48 @@ _FILE_HINTS = (
     "docs\\",
 )
 
-
 _READY_STATUSES = {"ok", "ready", "approved", "apply", "accepted", "executable"}
 _BLOCKED_STATUSES = {"blocked", "failed", "error", "rejected", "denied"}
-
 
 _WORKSPACE_PATH_PATTERN = re.compile(
     r"workspace[/\\][A-Za-z0-9_.\- /\\]+?\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh)",
     re.IGNORECASE,
 )
 
+_EXPLICIT_REPO_PATH_PATTERN = re.compile(
+    r"(?:file_path\s*:\s*)?((?:workspace|core|demos|docs)[/\\][A-Za-z0-9_.\- /\\]+?\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
+    re.IGNORECASE,
+)
+
+
+def extract_explicit_file_path(task_text: Any) -> str:
+    match = _EXPLICIT_REPO_PATH_PATTERN.search(_normalize_task_text(task_text))
+    return match.group(1).replace("\\", "/").strip() if match else ""
+
+
+def should_route_to_repo_edit(task_text: Any) -> tuple[bool, dict[str, Any]]:
+    text = _normalize_task_text(task_text)
+    file_path = extract_explicit_file_path(text)
+    if not file_path:
+        return False, {
+            "status": "blocked",
+            "reason": "repo edit requires an explicit file_path",
+            "file_path": "",
+        }
+    if not any(keyword in text.lower() for keyword in _EDIT_KEYWORDS if keyword):
+        return False, {
+            "status": "blocked",
+            "reason": "explicit file_path is present but edit intent is missing",
+            "file_path": file_path,
+        }
+    return True, {
+        "status": "ready",
+        "reason": "explicit repository edit target accepted",
+        "file_path": file_path,
+    }
+
 
 def _to_dict(value: Any) -> dict[str, Any]:
-    """Best-effort conversion for dataclasses / mapping / simple objects."""
     if value is None:
         return {}
 
@@ -187,13 +189,6 @@ def _tool_result_is_ok(result: Mapping[str, Any] | None) -> bool:
 
 
 def looks_like_repo_edit_task(task_text: str) -> bool:
-    """
-    Lightweight deterministic gate.
-
-    This is not the source of truth. The real source of truth is
-    parse_code_edit_intent(). This gate only avoids unnecessary parser calls
-    for obviously unrelated tasks.
-    """
     text = _normalize_task_text(task_text)
     if not text:
         return False
@@ -206,10 +201,6 @@ def looks_like_repo_edit_task(task_text: str) -> bool:
 
 
 def _load_repo_edit_components() -> tuple[Any, Any, Any]:
-    """
-    Import lazily so this bridge does not break startup if repo-edit modules are
-    unavailable in minimal runtimes.
-    """
     from core.repo_sandbox.intent import build_repo_edit_payload, parse_code_edit_intent
     from core.tools.repo_edit_tool import repo_edit_tool
 
@@ -229,14 +220,6 @@ def _looks_like_explicit_edit_line(line: str) -> bool:
 
 
 def split_explicit_multi_edit_task(task_text: str) -> list[str]:
-    """
-    Split explicit multi-edit requests into independent single-edit instructions.
-
-    Conservative by design:
-    - Only treats newline/semicolon separated instructions as multi-edit.
-    - Every candidate line must contain workspace/... and replace ... with ...
-    - Returns [] when the text is not a safe explicit multi-edit request.
-    """
     text = _normalize_task_text(task_text)
     if not text:
         return []
@@ -256,15 +239,6 @@ def split_explicit_multi_edit_task(task_text: str) -> list[str]:
 
 
 def build_forced_repo_edit_payload(task_text: str) -> dict[str, Any]:
-    """
-    Parse task_text into the payload expected by repo_edit_tool.
-
-    Returns:
-    - ok: bool
-    - payload: dict | None
-    - intent: dict
-    - reason: str
-    """
     text = _normalize_task_text(task_text)
     if not text:
         return {
@@ -641,22 +615,129 @@ def _run_multi_repo_edit_decision(
     }
 
 
+def _is_controlled_mapping_request(request: Mapping[str, Any]) -> bool:
+    return bool(
+        request.get("sealed_runtime_dispatch")
+        or request.get("runtime_dispatcher_handoff")
+        or request.get("controlled_repo_edit")
+        or request.get("controlled_mutation_gateway")
+        or request.get("legal_gateway")
+        or request.get("approval") is True
+        or request.get("authority_scope") == "controlled_repo_edit_only"
+    )
+
+
+def _run_mapping_repo_edit_decision(
+    request: Mapping[str, Any],
+    *,
+    repo_root: str,
+) -> dict[str, Any]:
+    payload = dict(request)
+    file_path = str(
+        payload.get("file_path")
+        or payload.get("target_path")
+        or payload.get("path")
+        or ""
+    ).replace("\\", "/").strip()
+
+    protected_prefixes = (
+        "core/runtime/",
+        "core/agent/",
+        "core/goals/",
+        "core/tools/repo_edit_agent_bridge.py",
+    )
+    if file_path.startswith(protected_prefixes):
+        reason = "high-risk core file blocked"
+        return {
+            "handled": True,
+            "forced_route": True,
+            "tool_name": TOOL_NAME,
+            "status": "blocked",
+            "reason": reason,
+            "decision": {"status": "blocked", "reason": reason, "file_path": file_path},
+            "tool": "repo_edit",
+            "routed": False,
+            "result": {},
+        }
+
+    if not _is_controlled_mapping_request(payload):
+        reason = "mapping repo edit route requires sealed runtime dispatch"
+        return {
+            "handled": True,
+            "forced_route": True,
+            "tool_name": TOOL_NAME,
+            "status": "blocked",
+            "reason": reason,
+            "decision": {"status": "blocked", "reason": reason, "file_path": file_path},
+            "tool": "repo_edit",
+            "routed": False,
+            "result": {},
+        }
+
+    if not file_path:
+        reason = "controlled mapping repo edit requires target_path"
+        return {
+            "handled": True,
+            "forced_route": True,
+            "tool_name": TOOL_NAME,
+            "status": "blocked",
+            "reason": reason,
+            "decision": {"status": "blocked", "reason": reason, "file_path": file_path},
+            "tool": "repo_edit",
+            "routed": False,
+            "result": {},
+        }
+
+
+    payload["file_path"] = file_path
+    payload.setdefault("target_path", file_path)
+    payload.setdefault("path", file_path)
+    payload.setdefault("status", "ready")
+    payload.setdefault("controlled_repo_edit", True)
+    payload.setdefault("sealed_runtime_dispatch", True)
+    payload.setdefault("runtime_dispatcher_handoff", True)
+    payload.setdefault("controlled_replace", True)
+    payload.setdefault("controlled_replace_ready", True)
+    payload.setdefault("code_chain_version", CODE_CHAIN_VERSION)
+
+    result = _call_repo_edit_tool(payload, repo_root=repo_root)
+    ok = _tool_result_is_ok(result)
+    status = str(result.get("status") or result.get("state") or "").strip().lower()
+    reason = (
+        "sealed controlled mapping repo edit routed"
+        if ok
+        else str(result.get("reason") or "controlled mapping repo edit failed")
+    )
+
+    return {
+        "handled": True,
+        "forced_route": True,
+        "tool_name": TOOL_NAME,
+        "status": "ok" if ok else (status or "failed"),
+        "reason": reason,
+        "payload": payload,
+        "tool_result": result,
+        "decision": {
+            "status": "ok" if ok else (status or "failed"),
+            "reason": reason,
+            "file_path": file_path,
+        },
+        "tool": "repo_edit",
+        "routed": True,
+        "result": result,
+        "code_chain_version": CODE_CHAIN_VERSION,
+    }
+
+
 def run_repo_edit_decision(
-    task_text: str,
+    task_text: Any,
     *,
     repo_root: str = ".",
     force: bool = False,
 ) -> dict[str, Any]:
-    """
-    Main entrypoint for agent_loop / planner / scheduler.
+    if isinstance(task_text, Mapping):
+        return _run_mapping_repo_edit_decision(task_text, repo_root=repo_root)
 
-    Behavior:
-    - If task does not look like a repo edit and force=False, return skipped.
-    - If the task is a conservative explicit multi-edit request, execute each
-      edit sequentially as one transaction and rollback prior edits on failure.
-    - Otherwise execute the single-edit path.
-    - Always returns a dict; never raises into the agent loop/scheduler.
-    """
     text = _normalize_task_text(task_text)
 
     if not force and not looks_like_repo_edit_task(text):
@@ -678,17 +759,14 @@ def run_repo_edit_decision(
 
 
 def force_repo_edit_route(task_text: str, *, repo_root: str = ".") -> dict[str, Any]:
-    """Explicit forced route helper for tests or direct calls."""
     return run_repo_edit_decision(task_text, repo_root=repo_root, force=True)
 
 
 def route_repo_edit_if_needed(task_text: str, *, repo_root: str = ".") -> dict[str, Any]:
-    """Compatibility alias."""
     return run_repo_edit_decision(task_text, repo_root=repo_root, force=False)
 
 
 def decide_repo_edit_route(task_text: str, *, repo_root: str = ".") -> dict[str, Any]:
-    """Compatibility alias."""
     return run_repo_edit_decision(task_text, repo_root=repo_root, force=False)
 
 

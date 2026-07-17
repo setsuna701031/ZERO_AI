@@ -1,0 +1,31 @@
+TaskRunner Registry Closure Seal Report
+
+Purpose
+Seal TaskRunner admission through the canonical registry boundary.
+
+Scope
+core/runtime/task_runner.py
+
+Canonical Registry
+_aer_registry_admit
+
+Candidate count
+candidate_for_unified_admission count: 0
+
+Remaining registry calls
+Only canonical and specialized governed calls are preserved.
+
+Preserved specialized flows
+repair, rollback, and evidence flows remain governed.
+
+Ready for final cleanup
+Yes; no standalone unified-admission candidates remain.
+
+Validation
+Bounded AST inventory.
+
+Non-mainline issue reporting
+Non-mainline Issues Found: none.
+
+Final Decision
+GO for local full-regression revalidation.

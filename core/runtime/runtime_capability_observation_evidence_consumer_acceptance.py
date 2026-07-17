@@ -1,0 +1,17 @@
+from __future__ import annotations
+from copy import deepcopy
+from typing import Any,Mapping
+from core.runtime.runtime_capability_execution_session_admission import _hash
+from core.runtime.runtime_capability_observation_evidence_closure_validation import validate_capability_observation_evidence_closure
+from core.runtime.runtime_capability_read_only_observation_result_validation import validate_capability_read_only_observation_result
+CONTRACT="zero.runtime.capability_observation_evidence_consumer_acceptance.v1";SCHEMA_VERSION="1";STATUSES=frozenset({"accepted","not_accepted","blocked","invalid"});KINDS=frozenset({"existence","metadata","text_preview","sha256","directory_listing"})
+def build_capability_observation_evidence_consumer_acceptance(closure:Any,result:Any)->dict[str,Any]:
+ c=deepcopy(dict(closure)) if isinstance(closure,Mapping) else {};x=deepcopy(dict(result)) if isinstance(result,Mapping) else {};cv=validate_capability_observation_evidence_closure(c);xv=validate_capability_read_only_observation_result(x);kind=x.get("observation_kind","")
+ links=c.get("observation_result_id")==x.get("observation_result_id") and c.get("observation_result_fingerprint")==x.get("observation_result_fingerprint");descriptor=isinstance(x.get("evidence_descriptor"),Mapping) and x["evidence_descriptor"].get("bounded") is True and x["evidence_descriptor"].get("kind")==kind
+ if not cv.valid or not xv.valid or not descriptor or not all(isinstance(c.get(n),str) and c.get(n) for n in ("authority_id","authority_fingerprint","request_id","request_fingerprint","bridge_closure_id","bridge_closure_fingerprint","observation_request_id","observation_request_fingerprint","observation_result_id","observation_result_fingerprint")):status="invalid";why="malformed_canonical_evidence"
+ elif c.get("execution_completion_claim") is not False or x.get("side_effects_performed")!=[]:status="blocked";why="evidence_consumption_invariant_violation"
+ elif c.get("verification_status")!="verified_closed" or c.get("closed") is not True or c.get("recommended_v1_2_outcome_status")!="not_completed":status="not_accepted";why="observation_closure_not_eligible"
+ elif not links or kind not in KINDS:status="blocked";why="evidence_linkage_violation"
+ else:status="accepted";why="observation_evidence_accepted"
+ b={"contract":CONTRACT,"schema_version":SCHEMA_VERSION,"observation_closure_id":c.get("observation_closure_id",""),"observation_closure_fingerprint":c.get("observation_closure_fingerprint",""),"authority_id":c.get("authority_id",""),"authority_fingerprint":c.get("authority_fingerprint",""),"execution_request_id":c.get("request_id",""),"execution_request_fingerprint":c.get("request_fingerprint",""),"bridge_closure_id":c.get("bridge_closure_id",""),"bridge_closure_fingerprint":c.get("bridge_closure_fingerprint",""),"observation_request_id":c.get("observation_request_id",""),"observation_request_fingerprint":c.get("observation_request_fingerprint",""),"observation_result_id":x.get("observation_result_id",""),"observation_result_fingerprint":x.get("observation_result_fingerprint",""),"observation_kind":kind if isinstance(kind,str) else "","acceptance_status":status,"accepted":status=="accepted","reasons":[why],"blocked_reasons":[why] if status=="blocked" else []};f=_hash(b);return {**b,"consumer_acceptance_id":"capability-observation-evidence-consumer-acceptance-"+f[:24],"consumer_acceptance_fingerprint":f}
+accept_capability_observation_evidence=build_capability_observation_evidence_consumer_acceptance

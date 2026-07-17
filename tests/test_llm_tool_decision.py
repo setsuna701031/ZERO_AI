@@ -1,4 +1,9 @@
 from core.llm_client import LocalLLMClient
+import pytest
+
+pytestmark = [pytest.mark.llm]
+
+
 
 
 def main() -> None:

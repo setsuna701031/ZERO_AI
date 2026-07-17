@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from core.planning.planner_contract import (
+
     PLANNER_CONTRACT_VERSION,
     normalize_planner_payload,
     sanitize_planner_payload,
     validate_planner_payload,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_normalize_missing_payload_becomes_noop_with_warning():

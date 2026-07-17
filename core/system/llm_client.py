@@ -13,6 +13,9 @@ except ModuleNotFoundError:
 from config.config import CONFIG, get_env_llm_override
 
 
+GENERAL_GENERATION_NUM_PREDICT = 1024
+
+
 def json_dumps_bytes(payload: Dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
@@ -259,7 +262,7 @@ class LocalLLMClient:
         return self.chat_with_model(
             prompt=prompt,
             model_name=self.model,
-            num_predict=160,
+            num_predict=GENERAL_GENERATION_NUM_PREDICT,
             temperature=0.7,
         )
 
@@ -275,7 +278,7 @@ class LocalLLMClient:
         return self.generate_with_model(
             prompt=prompt,
             model_name=self.model,
-            num_predict=160,
+            num_predict=GENERAL_GENERATION_NUM_PREDICT,
             temperature=0.7,
         )
 

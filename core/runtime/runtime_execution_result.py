@@ -294,6 +294,7 @@ class RuntimeExecutionResult:
     risk_level: str = ""
     risk_metadata: dict[str, Any] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
+    plan_result: dict[str, Any] = field(default_factory=dict)
 
     def __init__(
         self,
@@ -329,6 +330,7 @@ class RuntimeExecutionResult:
         risk_level: str = "",
         risk_metadata: dict[str, Any] | None = None,
         evidence: dict[str, Any] | None = None,
+        plan_result: dict[str, Any] | None = None,
         executed: bool | None = None,
         failed: bool | None = None,
         verification_passed: bool | None = None,
@@ -367,6 +369,7 @@ class RuntimeExecutionResult:
             "risk_level": risk_level,
             "risk_metadata": copy.deepcopy(risk_metadata or {}),
             "evidence": copy.deepcopy(evidence or {}),
+            "plan_result": copy.deepcopy(plan_result or {}),
             "verification_passed": (
                 bool(verification_passed) if verification_passed is not None else None
             ),
@@ -436,6 +439,7 @@ class RuntimeExecutionResult:
                 else _copy_mapping(canonical.get("risk_metadata"))
             ),
             "evidence": _copy_mapping(canonical.get("evidence")),
+            "plan_result": _copy_mapping(plan_result),
         }
         for key, value in values.items():
             object.__setattr__(self, key, value)
@@ -492,6 +496,7 @@ class RuntimeExecutionResult:
             ok=bool(canonical.get("ok", False)),
             blocked=bool(canonical.get("blocked", False)),
         )
+        canonical.update(copy.deepcopy(self.plan_result))
         return canonical
 
     @classmethod
@@ -558,6 +563,7 @@ class RuntimeExecutionResult:
             risk_level=str(raw.get("risk_level") or ""),
             risk_metadata=_copy_mapping(raw.get("risk_metadata")),
             evidence=_copy_mapping(canonical.get("evidence")),
+            plan_result=_copy_mapping(raw.get("plan_result")),
         )
 
     @classmethod
@@ -620,6 +626,18 @@ class RuntimeExecutionResult:
             "metadata": _merge_metadata(metadata, extra),
         }
         canonical = _canonical_payload(payload)
+        plan_result = {
+            key: copy.deepcopy(legacy[key])
+            for key in (
+                "needs_correction",
+                "rounds",
+                "final_round_result",
+                "final_verify_result",
+                "replan_history",
+                "replan_rounds_used",
+            )
+            if key in legacy
+        }
         return cls(
             ok=bool(canonical.get("ok", False)),
             execution_id=execution_id,
@@ -643,6 +661,7 @@ class RuntimeExecutionResult:
             risk_metadata=copy.deepcopy(risk_metadata or {}),
             metadata=_merge_metadata(canonical.get("metadata"), metadata, extra),
             evidence=_copy_mapping(canonical.get("evidence")),
+            plan_result=plan_result,
         )
 
 
@@ -684,6 +703,9 @@ def build_runtime_execution_result(
     }
     canonical = _canonical_payload(base)
     canonical["ok"] = bool(base["ok"])
+    if canonical.get("consistency_status") == "mismatch":
+        canonical["ok"] = False
+        canonical["executed"] = False
     canonical["success"] = bool(canonical["ok"])
     canonical["status"] = _status_from_payload(
         canonical,
@@ -710,3 +732,148 @@ def attach_runtime_execution_result(
         step_count=step_count,
     )
     return normalized
+
+# ZERO v7.3.33 - Canonical public runtime output sanitization
+#
+# Contract:
+# - RuntimeExecutionResult.to_dict() and build_runtime_execution_result()
+#   preserve canonical execution evidence.
+# - Public container outputs remove evidence adapter/hook/boundary internals.
+# - A nested ``runtime_execution_result`` is a canonical public ABI object,
+#   so its ``evidence`` field remains present by value.
+# - No hidden-key mappings, monkeypatching, or duplicate builder definitions.
+
+
+def _public_runtime_internal_keys(*, include_canonical_evidence: bool) -> set[str]:
+    try:
+        from core.runtime.runtime_execution_result_fields import (
+            public_runtime_output_internal_keys,
+        )
+
+        keys = set(public_runtime_output_internal_keys())
+    except Exception:
+        keys = {
+            "evidence",
+            "evidence_adapter",
+            "evidence_events",
+            "boundary",
+            "boundary_fingerprint",
+            "adapter_fingerprint",
+            "hook",
+            "hook_fingerprint",
+        }
+
+    if include_canonical_evidence:
+        keys.discard("evidence")
+    return keys
+
+
+def sanitize_runtime_execution_result(
+    value: Any,
+    *,
+    preserve_evidence: bool = True,
+) -> dict[str, Any]:
+    """Return a detached, public-safe canonical execution-result mapping."""
+
+    if not isinstance(value, dict):
+        return {}
+
+    internal_keys = _public_runtime_internal_keys(
+        include_canonical_evidence=preserve_evidence,
+    )
+    sanitized: dict[str, Any] = {}
+
+    for key, item in value.items():
+        if key in internal_keys:
+            continue
+
+        if key == "metadata" and isinstance(item, dict):
+            sanitized[key] = sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=False,
+            )
+            continue
+
+        sanitized[key] = sanitize_runtime_public_output(
+            item,
+            preserve_canonical_evidence=preserve_evidence,
+        )
+
+    return sanitized
+
+
+def sanitize_runtime_execution_result_for_public(payload: Any) -> dict[str, Any]:
+    """Preserve canonical evidence while removing implementation internals."""
+
+    return sanitize_runtime_execution_result(
+        payload,
+        preserve_evidence=True,
+    )
+
+
+def sanitize_runtime_public_output(
+    value: Any,
+    *,
+    preserve_canonical_evidence: bool = False,
+) -> Any:
+    """Recursively detach public runtime output and remove private internals.
+
+    Canonical evidence is preserved only inside a nested
+    ``runtime_execution_result`` or when explicitly requested.
+    """
+
+    internal_keys = _public_runtime_internal_keys(
+        include_canonical_evidence=preserve_canonical_evidence,
+    )
+
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            if key in internal_keys:
+                continue
+
+            if key == "runtime_execution_result" and isinstance(item, dict):
+                sanitized[key] = sanitize_runtime_execution_result_for_public(item)
+                continue
+
+            if key == "raw" and isinstance(item, dict):
+                sanitized[key] = sanitize_runtime_public_output(
+                    item,
+                    preserve_canonical_evidence=False,
+                )
+                continue
+
+            sanitized[key] = sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+        return sanitized
+
+    if isinstance(value, list):
+        return [
+            sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+            for item in value
+        ]
+
+    if isinstance(value, tuple):
+        return tuple(
+            sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+            for item in value
+        )
+
+    if isinstance(value, set):
+        return {
+            sanitize_runtime_public_output(
+                item,
+                preserve_canonical_evidence=preserve_canonical_evidence,
+            )
+            for item in value
+        }
+
+    return copy.deepcopy(value)

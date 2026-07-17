@@ -1,0 +1,314 @@
+RuntimeNativeMainline Retirement Inventory
+==========================================
+
+Status: AER Phase 2 / Package 1
+Purpose: inventory only
+Code changes: none
+Pytest: not required
+Recommended validation: git status --short
+
+============================================================
+1. Current Architectural Position
+============================================================
+
+Runtime admission migration is complete.
+
+Current canonical admission path:
+
+Surface / AgentLoop / CLI / Scheduler / TaskRunner
+    -> RuntimeRouteRegistry
+    -> RuntimeNativeMainline.run_compatibility_entry
+    -> legacy callable / existing execution machinery
+
+RuntimeNativeMainline is no longer the route owner.
+RuntimeRouteRegistry is now the admission owner.
+
+RuntimeNativeMainline currently remains as a compatibility and audit wrapper.
+
+============================================================
+2. RuntimeNativeMainline Responsibilities Still In Use
+============================================================
+
+The following responsibilities must not be removed until they are migrated or sealed elsewhere.
+
+2.1 Compatibility semantics
+
+- dict return receives additive metadata only
+- non-dict return is returned unchanged
+- exception is recorded and re-raised
+- failed compatibility event is emitted before re-raise
+
+Retirement blocker:
+These semantics currently define the compatibility boundary and must remain stable.
+
+2.2 Admission metadata
+
+- runtime_native_mainline_canonical_entry
+- compatibility entrypoint metadata
+- request/goal metadata
+- runtime route metadata passed from RuntimeRouteRegistry
+
+Retirement blocker:
+Equivalent metadata must exist in RuntimeRouteRegistry or runtime_native_entry_adapter before slimming.
+
+2.3 Event / audit record
+
+- successful compatibility admission event
+- failed compatibility admission event
+- saved run record for compatibility invocation
+
+Retirement blocker:
+A replacement event/audit owner must exist before removing the wrapper.
+
+2.4 Delegate recursion protection
+
+- _runtime_native_mainline_delegate active flag
+- Scheduler delegate keyword compatibility
+- TaskRunner delegate keyword compatibility
+- AgentLoop delegate guard
+
+Retirement blocker:
+Registry-level or adapter-level delegate guard must be sealed before removal.
+
+============================================================
+3. Callers Already Routed Through RuntimeRouteRegistry
+============================================================
+
+These surfaces are registry-admitted and no longer require direct RuntimeNativeMainline construction at call sites.
+
+AgentLoop:
+
+- ENGINEERING_TASK
+- WORK_PACKAGE
+- ENGINEERING_GOAL
+- PLANNER_RUNTIME
+- PERSISTENT_RUNTIME
+- PLANNER_OWNED_CODE_CHAIN
+- CODE_CHAIN_CONTROLLED_SELF_EDIT
+- AUTONOMOUS_REPAIR
+- REPAIR_PREFLIGHT
+
+CLI:
+
+- CLI_TASK_RUN
+- CLI_TASK_DRAIN
+- CLI_WORK_PACKAGE_SUBMIT
+- CLI_WORK_PACKAGE_RUN
+- CLI_WORK_PACKAGE_VALIDATION
+- CLI_WORK_PACKAGE_DISPATCH_REQUEST
+- CLI_CONTROL_SUBMIT
+- CLI_GOAL_RUN
+- CLI_GOAL_LOOP
+- CLI_PORTFOLIO_RUN
+- CLI_PORTFOLIO_CYCLE
+- CLI_PROGRAM_RUN
+- CLI_PROGRAM_CYCLE
+
+Scheduler:
+
+- SCHEDULER_TICK
+- SCHEDULER_RUN_STEP
+- SCHEDULER_SUBMIT_TASK
+
+TaskRunner:
+
+- TASK_RUNNER_RUN
+- TASK_RUNNER_TICK
+- TASK_RUNNER_EXECUTE_STEP
+- TASK_RUNNER_EXECUTE_STEPS
+
+Status:
+Registry admission complete.
+
+============================================================
+4. RuntimeNativeMainline Usage Categories
+============================================================
+
+4.1 Safe to slim later
+
+RuntimeNativeMainline.run_compatibility_entry
+
+Reason:
+It is now called primarily from RuntimeRouteRegistry. It can eventually become a thin delegate to runtime_native_entry_adapter.
+
+Required before slimming:
+- adapter owns compatibility result shaping
+- adapter owns exception event shaping
+- adapter owns metadata merge
+- existing Package 2.1 semantics still pass
+
+4.2 Must remain for now
+
+RuntimeNativeMainline.boot
+RuntimeNativeMainline.run_goal
+RuntimeNativeMainline.run_legacy_request
+RuntimeNativeMainline persistence/event helpers
+
+Reason:
+These may still be used by existing native runtime tests or direct runtime-native flows outside the surface registry migration.
+
+Required before retirement:
+- explicit search/inventory of direct run_goal/run_legacy_request users
+- seal tests proving registry-admitted surfaces do not require direct boot/run_goal
+- migration plan for any remaining native loop callers
+
+4.3 Do not delete yet
+
+RuntimeNativeMainlineConfig
+RuntimeNativeMainlineRunResult
+RuntimeNativeMainlineEvent
+stable_mainline_fingerprint
+utc_timestamp
+
+Reason:
+These define public contracts and storage schema. Removal would be a breaking contract change.
+
+============================================================
+5. Candidate Extraction Target
+============================================================
+
+Preferred target:
+
+core/runtime/runtime_native_entry_adapter.py
+
+Responsibilities to move there later:
+
+- compatibility runner invocation
+- dict metadata merge
+- non-dict passthrough
+- exception capture and re-raise
+- compatibility event payload construction
+- delegate guard helper utilities
+
+RuntimeNativeMainline after extraction should only:
+
+- construct or receive adapter
+- call adapter.run(...)
+- persist returned event/run data if needed
+- preserve public API
+
+============================================================
+6. Retirement Blockers
+============================================================
+
+Blocker 1:
+RuntimeRouteRegistry currently delegates into RuntimeNativeMainline.run_compatibility_entry.
+
+Blocker 2:
+Compatibility event persistence is still located in RuntimeNativeMainline.
+
+Blocker 3:
+Scheduler / TaskRunner overlays still require delegate keyword compatibility.
+
+Blocker 4:
+Direct native runtime callers may still use run_goal or run_legacy_request.
+
+Blocker 5:
+Existing tests assert RuntimeNativeMainline contracts by name.
+
+============================================================
+7. Safe Retirement Sequence
+============================================================
+
+Step 1 — Inventory
+Status: current package
+
+Output:
+runtime_native_mainline_retirement_inventory.txt
+
+No code changes.
+
+Step 2 — Adapter Semantics Extraction
+
+Move only compatibility semantics to runtime_native_entry_adapter.py.
+
+Do not change public behavior.
+
+Expected tests:
+- test_runtime_native_compatibility_entry_semantics.py
+- test_runtime_route_registry_admission.py
+- test_aer_mainline_closure_seal.py
+
+Step 3 — Registry Adapter Admission
+
+RuntimeRouteRegistry calls adapter-backed compatibility path.
+RuntimeNativeMainline remains available as wrapper.
+
+Expected result:
+Surface behavior unchanged.
+
+Step 4 — RuntimeNativeMainline Slim
+
+RuntimeNativeMainline.run_compatibility_entry becomes a thin adapter delegate.
+
+Do not remove config/run_goal/event contracts.
+
+Step 5 — Retirement Seal
+
+Add focused seal:
+
+tests/test_runtime_native_mainline_retirement.py
+
+Required assertions:
+- registry admission does not depend on RuntimeNativeMainline routing
+- adapter preserves dict metadata
+- adapter preserves non-dict passthrough
+- adapter re-raises exceptions
+- Scheduler/TaskRunner delegate guards remain intact
+- read-only/control paths remain direct
+
+Step 6 — Optional Public Deprecation
+
+Only after all seals pass:
+Mark direct RuntimeNativeMainline compatibility admission as deprecated for new callers.
+
+Do not delete implementation yet.
+
+============================================================
+8. Do Not Do Yet
+============================================================
+
+Do not delete RuntimeNativeMainline.
+Do not delete RuntimeNativeMainlineConfig.
+Do not remove run_goal.
+Do not remove run_legacy_request.
+Do not move Scheduler execution pipeline.
+Do not move TaskRunner execution pipeline.
+Do not wrap read-only/control paths.
+Do not rewrite StepExecutor or ExecutionFabric.
+Do not collapse compatibility metadata fields.
+Do not remove legacy route markers.
+
+============================================================
+9. Recommended Next Package
+============================================================
+
+Package 16 — RuntimeNative Compatibility Adapter Extraction
+
+Scope:
+- modify core/runtime/runtime_native_entry_adapter.py
+- modify core/runtime/runtime_native_mainline.py only enough to delegate compatibility semantics
+- no Scheduler/TaskRunner/AgentLoop/CLI behavior changes
+- preserve Package 2.1 semantics exactly
+
+Short validation:
+python -m compileall core/runtime tests
+python -m pytest tests/test_runtime_native_compatibility_entry_semantics.py tests/test_runtime_route_registry_admission.py tests/test_aer_mainline_closure_seal.py -q
+
+Do not run full pytest.
+
+============================================================
+10. Overall Readiness
+============================================================
+
+Registry migration readiness:
+COMPLETE
+
+Compatibility extraction readiness:
+READY
+
+RuntimeNativeMainline deletion readiness:
+NOT READY
+
+Recommended action:
+Extract compatibility semantics first. Do not delete RuntimeNativeMainline yet.

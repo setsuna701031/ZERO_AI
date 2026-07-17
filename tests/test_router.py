@@ -1,10 +1,50 @@
-import os
-import sys
+from __future__ import annotations
 
-# 把專案根目錄加入 Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from core.agent.agent_component_invoker import call_router
+from core.system.router import Router
+import pytest
 
-from core.router import Router
+pytestmark = [pytest.mark.llm]
+
+
+
+
+def test_router_accepts_legacy_positional_contract() -> None:
+    router = Router()
+
+    assert router.route("你好")["mode"] == "llm"
+    assert router.route("建立任務 測試")["mode"] == "task"
+
+
+def test_router_accepts_agent_component_keyword_contract() -> None:
+    router = Router()
+
+    result = router.route(
+        context={"mode": "chat"},
+        user_input="讀取 workspace/shared/input.txt",
+        source="agent_loop",
+    )
+
+    assert result["mode"] == "direct"
+    assert result["step"] == {
+        "type": "read_file",
+        "path": "workspace/shared/input.txt",
+    }
+
+
+def test_call_router_no_longer_reports_source_contract_mismatch() -> None:
+    router = Router()
+
+    result = call_router(
+        router,
+        context={"mode": "chat"},
+        user_input="Task name:",
+    )
+
+    assert isinstance(result, dict)
+    assert result.get("component_contract_mismatch") is not True
+    assert result.get("ok") is not False
+    assert result.get("mode") in {"llm", "task", "direct"}
 
 
 def run_router_test():

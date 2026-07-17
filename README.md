@@ -1,801 +1,1429 @@
-# ZERO
-
-ZERO is a local-first AI runtime system for executing real-world tasks.
-
-It is **NOT a chatbot**.\
-It is **NOT an API wrapper**.
-
-ZERO turns a request into a structured execution pipeline:
-
-    prompt → plan → decision → tool execution → result → trace
-
-------------------------------------------------------------------------
-
-## 🎬 Demo (Start Here)
-
-Main demo:
-
-    demos/00_zero_task_to_github_draft_no_api_no_push.mp4
-
-Core flow:
-
-    web_search → file_write → github_draft_bundle
-
-ZERO actually:
-
-1.  Searches external information (mock / safe)
-2.  Generates structured output
-3.  Writes files to workspace
-4.  Produces GitHub-ready draft bundle
-5.  Records full execution trace
-6.  Displays timeline in UI
-
-------------------------------------------------------------------------
-
-
-
-## 🎬 Latest Demo
-
-### Autonomous Repair Loop
-
-New demo:
-
-```text
-demos/zero-autonomous-code-repair-demo.mp4
-```
-
-This demo shows ZERO performing a runtime-aware autonomous repair workflow:
-
-```text
-execution failure
--> semantic reasoning
--> repair routing
--> code-chain diff generation
--> patch apply
--> verification
--> successful rerun
-```
-
-The repair flow demonstrates:
-
-- semantic-aware error interpretation
-- CODE CHAIN diff generation
-- runtime trace visibility
-- planner-driven repair routing
-- patch verification
-- controlled local execution
-- replayable execution trace
-
-Important:
-
-- local-first execution
-- controlled repair workflow
-- traceable execution lifecycle
-- not a hidden black-box repair flow
-
-
-
-
-
-
-## RuntimeExecutionResult Globalization ABI Seal (Latest)
+# AER Runtime Kernel Freeze Candidate
 
 Current engineering checkpoint:
 
 ```text
-runtime-execution-result-globalization-abi-seal
+aer-runtime-kernel-freeze-candidate-v1
 ```
 
-Latest status:
+ZERO has now connected the local governed engineering runtime path:
 
 ```text
-Verified mutation continuation now preserves verification, rollback, replay/recovery continuity, and constitutional re-entry metadata after governed repair transactions.
-Runtime enforcement decisions are now persisted as stable lifecycle metadata for replay, audit, and recovery visibility while default execution remains audit-only.
-Runtime replay/recovery paths now preserve constitutional continuity, enforcement visibility, and replay legality metadata.
-StepExecutor now carries an audit-first constitutional probe that adds execution-chain enforcement visibility without enabling global blocking.
-Runtime execution can now selectively obey constitutional enforcement rules within the StepExecutor boundary while global runtime execution remains audit-first.
-Scheduler and agent-loop layers can now recognize constitutional execution outcomes without enabling global enforcement.
-Runtime loops now support governed autonomous continuation with constitutional interruption handling, replay/recovery continuity preservation, and terminal constitutional boundary detection.
-Autonomous continuation now classifies governed self-repair candidates and terminal constitutional repair blocks without opening automatic mutation authority.
-Runtime enforcement now has audit, dry-run, and opt-in enforce modes while default execution remains audit-only.
-Runtime enforcement can now be explicitly enabled on a narrow runtime-layer transition path while default execution remains audit-only.
-Runtime lifecycle/status transitions now include enforcement-readiness metadata, distinguishing safe hard-block candidates from observe-only legacy shortcuts.
-Runtime lifecycle transitions now carry canonical evidence lineage and transition reasoning metadata across replay/recovery/transaction/lifecycle surfaces.
-Runtime lifecycle/status transitions are now checked against a canonical transition graph without changing legacy runtime behavior.
-Runtime status semantics are now normalized through a canonical runtime_status layer across ABI-adjacent runtime surfaces.
-RuntimeExecutionResult no longer depends on historical overlay monkey-patch chains for canonical ABI fields.
-Runtime execution-result semantics are now shared through canonical field helpers across ABI-adjacent runtime surfaces.
-RuntimeExecutionResult ABI field inference extracted and freeze-tested.
+AgentLoop / CreateTask
+-> Scheduler orchestration
+-> TaskRunner authority propagation
+-> StepExecutor governed execution endpoint
+-> runtime evidence seal
+-> imported / distributed evidence trust boundary
+-> governed code-chain landing path
 ```
 
-ZERO now has a canonical runtime execution result surface shared across legacy step payloads, StepExecutor execution, governed repair mutation paths, and repair transaction mainline execution.
+This checkpoint confirms that ZERO's runtime kernel is no longer only a group of
+separate safety contracts. The sealed authority, mutation, evidence, replay, and
+trust boundaries can now drive a governed code-chain execution path without
+letting AgentLoop, Scheduler, or output artifacts impersonate execution
+authority.
 
-Completed normalization surface:
+Completed stabilization surfaces:
+
+- Scheduler / TaskRunner authority propagation contract
+- Scheduler no-direct-mutation contract
+- AgentLoop / CreateTask mutation bridge contract
+- Evidence / audit output boundary contract
+- External evidence load / verify boundary contract
+- Imported evidence loader boundary contract
+- Distributed worker evidence signature boundary contract
+- Runtime trust policy persistence / rotation contract
+- Runtime trust policy store boundary
+- Distributed worker replay protection boundary
+- Runtime trust refactor seal
+- AER governed code-chain landing contract
+
+Validated checkpoints:
 
 ```text
-RuntimeExecutionResult
--> executed / blocked / failed
--> verification_passed
--> evidence
--> evidence.mutation_summary
--> impacted_files
--> rollback_snapshot
+python -m pytest tests/test_aer_governed_code_chain_landing_contract.py -q
+-> 7 passed
+
+python -m pytest tests/test_agentloop_createtask_mutation_bridge_contract.py -q
+-> 7 passed
+
+python -m pytest tests/test_scheduler_no_direct_mutation_contract.py -q
+-> 7 passed
+
+python -m pytest tests/test_scheduler_taskrunner_authority_propagation_contract.py -q
+-> 5 passed
+
+python -m pytest tests/test_step_executor_side_effect_pre_authority_contract.py -q
+-> 5 passed
+
+python -m pytest tests/test_runtime_mainline_evidence_seal_contract.py -q
+-> 8 passed
 ```
 
-What changed:
-
-- legacy runtime payloads now normalize into the canonical execution-result ABI
-- StepExecutor public results now attach `runtime_execution_result`
-- repair transaction mainline results preserve impacted-file evidence
-- frozen `RuntimeExecutionResult` metadata updates are handled safely
-- downstream replay, audit, recovery, rollback, and evidence systems can consume one stable result surface
-
-Validated checkpoint:
+Additional distributed trust / evidence checks validated during this checkpoint:
 
 ```text
-runtime execution result globalization: 3 passed
-runtime recovery execution/review contracts: 16 passed
-governed runtime action gateway: 9 passed
+python -m pytest tests/test_runtime_trust_policy_store_contract.py -q
+-> 5 passed
+
+python -m pytest tests/test_distributed_worker_replay_protection_contract.py -q
+-> 6 passed
+
+python -m pytest tests/test_runtime_trust_policy_persistence_rotation_contract.py -q
+-> 7 passed
+
+python -m pytest tests/test_distributed_worker_evidence_signature_contract.py -q
+-> 7 passed
+
+python -m pytest tests/test_imported_evidence_loader_contract.py -q
+-> 8 passed
+
+python -m pytest tests/test_external_evidence_load_verify_contract.py -q
+-> 7 passed
+
+python -m pytest tests/test_runtime_evidence_consumer_contract.py -q
+-> 6 passed
 ```
 
-Important boundaries:
+Freeze-candidate boundaries:
 
 ```text
-execution result ABI != new capability
-evidence projection != mutation authority
-StepExecutor attachment != scheduler rewrite
-repair transaction metadata != hidden approval
+AgentLoop != mutation executor
+CreateTask != hidden repo-edit bridge
+Scheduler != execution owner
+Scheduler dispatch == orchestration only
+TaskRunner == authority propagation only
+StepExecutor == governed mutation endpoint
+output artifact != execution evidence
+external evidence != trusted evidence by shape alone
+distributed worker evidence requires trust policy + signature + replay protection
 ```
 
-This checkpoint makes ZERO's execution-result layer more stable for AER observability, replay, audit, rollback verification, and recovery reconstruction.
-
-------------------------------------------------------------------------
-
-## Runtime Boundary Freeze Baseline (Latest)
-
-### Runtime Admission Governance v0 Frozen Baseline
-
-Current admission governance checkpoint:
+Current verdict:
 
 ```text
-runtime-admission-governance-v0-frozen-baseline
+AER Runtime Kernel Freeze Candidate: YES
 ```
 
-Established:
+Non-blocking post-freeze infrastructure gaps:
 
-- Public Surface -> Connector -> Ownership Gate -> Admission Policy -> Admission Trace -> Execution Lease
-- default-deny baseline
-- request_id / trace_id / lease_id lineage
-- no scheduler/executor/mutation/recovery/replay coupling
-- no execution capability added
-- public behavior unchanged
+```text
+public-key crypto
+remote attestation
+networked worker execution
+persistent nonce database
+distributed quorum / federation
+production worker lifecycle management
+```
+
+These are production distributed-runtime infrastructure items, not blockers for
+the local AER runtime kernel freeze candidate.
+
+---
+
+## AER Runtime Session Continuity v1
+
+Current workflow-runtime branch:
+
+```text
+aer-workflow-runtime-session-v1
+```
+
+ZERO now preserves one workflow identity across the engineering runtime path:
+
+```text
+planner
+-> execution
+-> verify
+-> repair
+-> rollback/retry
+-> replayable runtime session
+-> continuity summary
+```
+
+The session contract carries stable `session_id` and `workflow_id` fields,
+session lineage, repair ancestry, retry chain continuity, replay continuation
+back to the source session, and a persistence-ready dictionary shape for runtime
+state storage.
+
+New runtime surface:
+
+```text
+core/runtime/workflow_runtime_session.py
+```
+
+Connected bridge points:
+
+```text
+TaskRunner._persist_step_result_to_runtime_state
+TaskRunner._finalize_public_result
+RuntimeReplayEngine.build_replayable_workflow_runtime_session
+```
+
+Contract:
+
+```text
+workflow_runtime_session is read-only over execution authority.
+It records and summarizes TaskRunner / StepExecutor results.
+It does not execute commands, apply mutations, bypass policy, or impersonate StepExecutor.
+```
 
 Validation:
 
 ```text
-governance / boundary pack: 36 passed
-regression pack: 80 passed
-total: 116 passed
-existing warning only: datetime.utcnow() deprecation warnings in core/runtime/mutation_boundary.py
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-Current engineering checkpoint:
+Expected result:
 
 ```text
-runtime-boundary-freeze-baseline
+6 passed
 ```
 
-ZERO now has a documented runtime boundary freeze candidate baseline on `main`.
+---
 
-This checkpoint does not declare the whole runtime permanently sealed. It establishes the clean baseline that future cleanup, extraction, and responsibility slimming must preserve.
+## AER Workflow Runtime Use Path v1
 
-Verified mainline:
+ZERO now has a contract-proven practical engineering workflow use path:
 
 ```text
-recovery / replay
--> mutation governance
--> governed repair execution
--> evidence / seal / audit
--> session reconstruction
--> boundary / contract / ownership
--> full-suite regression
+intent/task
+-> plan
+-> execute step
+-> verify result
+-> detect failure
+-> plan repair
+-> inject repair
+-> retry/continue
+-> replay/continuity summary
 ```
 
-Validation checkpoint:
+The use path is deterministic and contract-level. `WorkflowRuntimeSession`
+records the persistent workflow identity and lineage, `TaskRunner` remains the
+workflow coordination and authority-propagation layer, `StepExecutor` remains
+the governed execution endpoint, `RepairPlanner` only plans deterministic repair
+actions, `RepairStepInjector` only injects repair steps with parent ancestry,
+and `RuntimeReplayEngine` points replay continuation back to the original
+workflow session.
+
+Validation:
 
 ```text
-2009 passed, 162 subtests passed
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-Freeze baseline commit:
+Expected result:
 
 ```text
-25202d6 - freeze(runtime): establish runtime boundary freeze baseline
+7 passed
 ```
 
-Boundary rule:
+---
+
+## AER Runtime Resumability / Checkpoint v1
+
+ZERO can now preserve and continue an autonomous engineering workflow session
+across checkpoint, restore, retry, and replay continuation.
+
+The contract-proven path is:
 
 ```text
-NO new capability should be added directly into scheduler.py, agent_loop.py, task_runtime.py, step_executor.py, or task_runner.py.
-New behavior must enter through adapter, boundary, policy, evidence, or contract modules.
-Runtime core changes require regression across boundary, evidence, recovery, replay, mutation, and governed execution tests.
+intent/task
+-> plan
+-> execute step
+-> verify failure
+-> repair plan
+-> injected repair
+-> checkpoint
+-> restore
+-> retry/continue
+-> replay continuation
+-> continuity summary
 ```
 
-High-risk files now tracked for responsibility control:
+`WorkflowRuntimeSession` records checkpoint, restore, and resume/continue
+records as persistence-ready dictionaries. Restore records must point back to a
+checkpoint in the same `workflow_id` / `session_id` lineage, and the continuity
+summary reports `ok=False` when that checkpoint/restore linkage is missing or
+mismatched.
+
+Validation:
 
 ```text
-core/tasks/scheduler.py
-core/agent/agent_loop.py
-core/runtime/task_runtime.py
-core/runtime/step_executor.py
-core/runtime/task_runner.py
-core/tasks/runtime_repair_apply_transaction.py
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-Important boundaries:
+Expected result:
 
 ```text
-boundary freeze != final runtime seal
-cleanup candidate != immediate extraction
-audit / evidence seal != execution permission
-adapter / policy / evidence / contract != scheduler responsibility
+8 passed
 ```
 
-Next work should be documentation/status sync and then a dedicated cleanup plan. Do not begin scheduler or agent-loop extraction without a green baseline and scoped acceptance criteria.
+---
 
-------------------------------------------------------------------------
+## AER Runtime Execution Memory / Recovery Resume v1
 
-## Governed Repair Runtime / Operator Review Loop
+ZERO can now preserve execution memory, execution cursor continuity, recovery
+resume points, and replay continuity across resumed engineering workflow
+sessions.
 
-Current engineering checkpoint:
+The contract-proven recovery path is:
 
 ```text
-runtime-aggregate-convergence-v1
+intent/task
+-> plan
+-> execute step
+-> verify failure
+-> repair plan
+-> injected repair
+-> checkpoint
+-> restore
+-> execution cursor
+-> execution memory journal
+-> recovery resume point
+-> resumed continuation
+-> replay continuation
+-> continuity summary
 ```
 
-ZERO now includes a human-supervised governed repair runtime loop:
+`WorkflowRuntimeSession` remains the continuity authority. It now records
+persistent execution cursors, journaled execution memory entries, recovery
+resume points, and recovery resume records as JSON-serializable dictionaries.
+The continuity summary reports `ok=False` when cursor lineage, recovery resume
+lineage, or replay recovery references are broken.
+
+Validation:
 
 ```text
-governed_repair_mutation
--> MutationBoundary risk classification
--> approval / verification policy
--> governed repair transaction
--> awaiting_review
--> scheduler review_queue
--> operator approve / reject
--> authorized / blocked lifecycle
--> runtime resume semantics
--> control API surface
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-What changed:
-
-- repair-generated mutations now route through boundary risk policy
-- approval-required transactions stop at `awaiting_review`
-- approved reviews transition toward `authorized`
-- rejected reviews transition to `blocked`
-- scheduler exposes a native `review_queue`
-- scheduler exposes `get_review_queue()`, `approve_review_item(...)`, and `reject_review_item(...)`
-- `ZeroControlAPI` exposes review inbox actions without exposing scheduler internals
-
-Important boundaries:
+Expected result:
 
 ```text
-review queue != UI
-approval != hidden execution
-operator action != unrestricted mutation
-control API != scheduler rewrite
+9 passed
 ```
 
-Current validation checkpoint:
+---
+
+## AER Runtime Execution Graph / Recovery Graph v1
+
+ZERO now supports graph-based engineering runtime continuity inside
+`WorkflowRuntimeSession`.
+
+The runtime session can record and validate:
 
 ```text
-1973 passed, 162 subtests passed
+execution graph nodes
+-> graph edges
+-> branch/fork lineage
+-> independent branch continuation
+-> join/merge continuity
+-> recovery dependency graph
+-> replay continuation across branch lineage
+-> graph continuity summary
 ```
 
-This moves ZERO from a governed repair transaction substrate toward a human-supervised autonomous engineering runtime: repair actions can now be risk-classified, queued for review, surfaced to an operator, approved or rejected, persisted, and resumed through controlled lifecycle semantics.
+`WorkflowRuntimeSession` remains the continuity authority. The graph records are
+JSON-serializable dictionaries attached to the workflow session lineage; they do
+not execute commands, migrate ownership into Scheduler, change UI behavior, or
+add new tools. Continuity validation now reports `ok=False` for orphan graph
+edges, broken branch parents, invalid join lineage, replay continuation across
+unrelated branches, and broken recovery dependency graph edges.
 
-------------------------------------------------------------------------
-
-
-
-## Recovery Policy Topology Landing (Latest)
-
-Current engineering checkpoint:
+Validation:
 
 ```text
-recovery-policy-topology-landing-v1
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-ZERO now supports an opt-in runtime recovery gate topology inside the governed repair execution path.
-
-Completed runtime chain:
+Expected result:
 
 ```text
-governed_repair_mutation step
--> governed repair API
--> repair transaction execution bridge
--> governed repair execution
--> runtime_recovery_gate_hook
--> recovery execution contract
--> recovery approval
--> recovery dry-run
--> recovery commit gate
--> allow / block mutation execution
+10 passed
 ```
 
-What changed:
+---
 
-- added `core/runtime/runtime_recovery_gate_hook.py`
-- added optional `gate_hook` support to governed repair execution
-- added `use_runtime_recovery_gate=True` as an opt-in execution flag
-- passed the recovery gate option through the governed repair API and execution bridge
-- connected the `governed_repair_mutation` step handler to the runtime recovery gate option
-- locked the recovery command lifecycle with a command-dispatch regression test
+## AER Runtime Mutation Transaction Graph / Rollback Graph v1
 
-Important boundaries:
+ZERO now preserves mutation, verify, rollback, conflict, reconciliation, retry,
+and deterministic replay lineage inside the engineering runtime graph.
+
+The workflow runtime session can record and validate:
 
 ```text
-recovery gate != mutation executor
-approval / dry-run / commit gate != step handler logic
-command dispatch != governed repair execution
-scheduler / planner / agent remain uncoupled
+mutation transaction graph records
+-> mutation verify records
+-> rollback graph records
+-> rollback recovery dependencies
+-> branch conflict records
+-> graph reconciliation records
+-> deterministic replay graph references
+-> mutation / rollback continuity summary
 ```
 
-Current validation checkpoint:
+`WorkflowRuntimeSession` remains the continuity authority. The mutation and
+rollback graph records serialize as dictionaries in the workflow lineage and do
+not execute commands, move execution ownership into Scheduler, change UI
+behavior, or add tools. Continuity validation now reports `ok=False` for
+rollback records without mutation parents, missing mutation verify records,
+branch conflicts across unrelated branches, reconciliation records missing a
+rollback/retry link, and replay graphs that reference stale mutation lineage.
+
+Validation:
 
 ```text
-493 passed
-503 passed
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-This moves ZERO from having recovery governance modules beside the runtime to having a recovery policy topology that can actually guard governed repair execution before mutation is allowed.
-
-------------------------------------------------------------------------
-
-## Governed Runtime Resume / Rollback Recovery Chain (Latest)
-
-Current engineering checkpoint:
+Expected result:
 
 ```text
-operator-review-runtime-resume-rollback-v1
+11 passed
 ```
 
-ZERO now includes a governed operator review path that can resume runtime execution and recover from verification failure through rollback backup evidence.
+---
 
-Completed runtime chain:
+## AER Runtime Governance State Graph / Authority Continuity v1
+
+ZERO now preserves policy, authority, review, approval, blocked/resumed
+transition, and constitution enforcement lineage inside the engineering runtime
+graph.
+
+The workflow runtime session can record and validate:
 
 ```text
-operator command
--> command dispatch
--> control API review action
--> scheduler review state transition
--> audit event
--> execution link evidence
--> runtime resume
--> mutation execution
--> verification failure detection
--> rollback decision
--> backup snapshot fallback
--> restore execution
--> rollback result evidence
+policy decision lineage
+-> authority continuity
+-> review-required blocked transition
+-> approval lineage
+-> resumed governance transition
+-> execution constitution enforcement
+-> deterministic governance replay references
+-> governance / authority continuity summary
 ```
 
-What changed:
+`WorkflowRuntimeSession` remains the continuity authority. Governance records
+serialize as dictionaries in the workflow lineage and do not execute commands,
+move execution ownership into Scheduler, create hidden mutation shortcuts,
+change UI behavior, or add tools. Continuity validation now reports `ok=False`
+for policy decisions without target nodes, authority workflow/session
+mismatches, approvals without review parents, resumes without approval parents,
+constitution enforcement records that point at unrelated graph targets, and
+replay graphs that reference stale governance lineage.
 
-- added `core/system/command_dispatch.py` for semantic operator review commands
-- added review audit persistence through `core/audit/review_audit.py`
-- added review-to-execution evidence linking through `core/audit/review_execution_link.py`
-- connected approve / reject command dispatch to `ZeroControlAPI` review actions
-- confirmed approve transitions review tasks into resumable runtime state
-- confirmed `resume_task(...)` moves approved work back to queued execution
-- confirmed `run_one(...)` can execute a resumed mutation step and land a workspace artifact
-- fixed scheduler review lookup fallback when `_load_task` is unavailable
-- fixed rollback restore fallback from `backup_snapshot` into `repair_context.rollback.per_file`
-- confirmed rollback can restore a mutated file from backup snapshot evidence
-
-Validated chain:
+Validation:
 
 ```text
-approve review
--> resume_task
--> queued
--> run_one
--> write_file
--> artifact landing
--> verify failure rollback trigger
--> restore from backup snapshot
--> restored_files evidence
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-Important boundaries:
+Expected result:
 
 ```text
-operator command != shell execution
-review approval != unrestricted mutation
-runtime resume != hidden approval
-verification failure != silent failure
-rollback snapshot != new mutation authority
-rollback restore != scheduler rewrite
+12 passed
 ```
 
-Current validation checkpoint:
+---
+
+## AER Runtime Multi-Actor Coordination / Federation Continuity v1
+
+ZERO now preserves distributed execution, replay, governance, authority, and
+recovery lineage across federated engineering runtime workers.
+
+The workflow runtime session can record and validate:
 
 ```text
-1973 passed, 162 subtests passed
+actor / worker graph records
+-> worker federation lineage
+-> distributed execution continuity
+-> cross-worker replay references
+-> federated authority continuity
+-> distributed governance lineage
+-> distributed recovery lineage
+-> federation continuity summary
 ```
 
-This moves ZERO from reviewable repair transactions toward a controlled autonomous engineering runtime where operator approval, runtime continuation, mutation landing, verification failure, rollback recovery, and evidence persistence are all part of one inspectable execution chain.
+`WorkflowRuntimeSession` remains the continuity authority. Federation records
+serialize as dictionaries in the workflow lineage and do not execute commands,
+move execution ownership into Scheduler, create hidden mutation shortcuts,
+change UI behavior, or add tools. Continuity validation now reports `ok=False`
+for worker lineage mismatches, replay across unrelated worker lineage,
+federated authority mismatches, distributed recovery records that reference
+unrelated execution lineage, and distributed governance records that reference
+stale worker lineage.
 
-------------------------------------------------------------------------
-
-## Runtime Aggregate Convergence / Evidence Kernel
-
-Current engineering checkpoint:
+Validation:
 
 ```text
-runtime-aggregate-convergence-v1
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-This branch adds ZERO's deterministic runtime aggregate and evidence substrate.
-It does not connect new runtime contracts directly into `scheduler.py`, `agent_loop.py`, or `step_executor.py`.
-
-The completed runtime primitive chain is:
+Expected result:
 
 ```text
-RuntimeExecutionGraph
--> RuntimeOperation
--> RuntimeTransaction
--> ExecutionPlan
--> ExecutionPlanSnapshot
--> ExecutionReplayRecord
--> ExecutionAuditRecord / ExecutionAuditTrail
--> RollbackVerificationRecord
--> RuntimeEvidenceBundle
--> RuntimeEvidenceSerializer
--> RuntimeEvidenceStore / InMemoryRuntimeEvidenceStore
+13 passed
 ```
 
-The layer provides:
+---
 
-- deterministic dependency topology
-- operation and transaction contracts
-- execution plan identity
-- immutable plan snapshots
-- replay verification records
-- audit trail evidence
-- rollback-order verification
-- portable evidence bundles
-- canonical JSON serialization
-- persistence boundary abstraction with an in-memory store
+## AER Runtime Arbitration / Federated Governance Consensus v1
 
-Important boundaries:
+ZERO now preserves arbitration, quorum, consensus votes, federated governance
+decisions, replay reconciliation, and cross-worker authority lineage inside the
+engineering runtime graph.
+
+The workflow runtime session can record and validate:
 
 ```text
-contract != scheduler action
-replay verification != tool rerun
-audit evidence != execution authority
-rollback verification != rollback execution
-persistence boundary != sqlite/file backend
-serialization != networking
+conflicting worker decisions
+-> arbitration decision lineage
+-> authority quorum records
+-> consensus vote records
+-> federated consensus decision
+-> replay reconciliation against consensus lineage
+-> federated governance decision lineage
+-> arbitration / consensus continuity summary
 ```
 
-Current validation checkpoint:
+`WorkflowRuntimeSession` remains the continuity authority. The arbitration and
+consensus records serialize as dictionaries in the workflow lineage and do not
+execute commands, move execution ownership into Scheduler, create hidden
+mutation shortcuts, change UI behavior, or add tools. Continuity validation now
+reports `ok=False` for arbitration without conflicting worker decision parents,
+quorums with missing authority workers, votes not linked to a quorum,
+consensus records missing arbitration parents or required votes, replay
+reconciliation with stale consensus lineage, and governance decisions pointing
+at unrelated worker lineage.
+
+Validation:
 
 ```text
-tests/run_regression_contracts.py: ALL PASS, 49 test files
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-This checkpoint moves ZERO closer to a deterministic runtime kernel substrate: execution plans can be represented, snapshotted, verified, audited, rollback-checked, bundled, serialized, and stored behind a boundary before any future runtime integration is allowed.
-
-------------------------------------------------------------------------
-
-
-## Runtime Repair Transaction / Governance Kernel
-
-Current engineering checkpoint:
+Expected result:
 
 ```text
-runtime-repair-transaction-layer
+14 passed
 ```
 
-This branch adds ZERO's governed repair transaction path: a deterministic, reviewable, replayable, and policy-gated runtime layer around repair and self-modification workflows.
+---
 
-The latest completed chain is:
+## AER Runtime Self-Observability / Self-Healing Governance v1
+
+ZERO now preserves self-observability, audit, diagnosis, self-repair
+governance, self-healing replay recovery, and adaptive governance stabilization
+lineage inside the engineering runtime graph.
+
+The workflow runtime session can record and validate:
 
 ```text
-transaction
--> preflight
--> sandbox apply
--> diff snapshot
--> human review
--> commit token
--> immutable commit intent
--> execution lease
--> final precheck
--> isolated temp commit
--> commit artifact
--> audit bundle
--> replay
--> reproducibility verification
--> lineage graph
--> knowledge snapshot
--> knowledge index
--> candidate retrieval
--> candidate explanation
--> read-only recommendation draft
--> recommendation review
--> recommendation provenance
--> risk assessment
--> decision trace
--> policy evaluation
--> governance report
+runtime self-observability records
+-> constitutional audit lineage
+-> self-diagnosis records
+-> self-repair governance linked to authority / approval / consensus
+-> self-healing replay recovery
+-> adaptive governance stabilization
+-> deterministic replay references for self-healing lineage
 ```
 
-Important boundaries:
+`WorkflowRuntimeSession` remains the continuity authority. The self-healing
+records serialize as dictionaries in the workflow lineage and do not execute
+commands, move execution ownership into Scheduler, create hidden mutation
+shortcuts, change UI behavior, or add tools. Continuity validation now reports
+`ok=False` for audits without observability parents, diagnoses without audit or
+observability parents, self-repair governance records missing authority,
+approval, or consensus lineage, self-healing recoveries without repair parents,
+stabilizations without recovery parents, and replay graphs that reference stale
+self-healing lineage.
+
+Validation:
 
 ```text
-governance != execution
-advisory != authority
-recommendation != mutation
-policy evaluation != scheduler action
-replay != scheduler resume
-knowledge retrieval != auto-repair
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-The current layer is intentionally controlled:
+Expected result:
 
 ```text
-NO direct formal workspace mutation
-NO automatic scheduler execution
-NO recommendation auto-apply
-NO hidden shell execution
-NO unrestricted self-modification
+15 passed
 ```
 
-Current validation checkpoint:
+---
+
+## AER Runtime Constitutional Preservation / Catastrophic Recovery v1
+
+ZERO now preserves constitutional self-preservation, catastrophic failure
+recovery, constitutional rollback arbitration, adaptive constitutional
+stabilization, and survivability continuity inside the engineering runtime
+graph.
+
+The workflow runtime session can record and validate:
 
 ```text
-692 passed
+constitutional preservation records
+-> self-preservation decisions
+-> catastrophic failure records
+-> catastrophic recovery lineage
+-> constitutional rollback arbitration
+-> adaptive constitutional stabilization
+-> survivability continuity
+-> deterministic replay references for preservation lineage
 ```
 
-This checkpoint moves ZERO beyond a repair-capable runtime into a governed engineering runtime substrate: repair actions can be previewed, reviewed, authorized, replayed, traced, risk-assessed, policy-checked, and summarized before any future controlled mutation path is allowed.
+`WorkflowRuntimeSession` remains the continuity authority. The constitutional
+preservation records serialize as dictionaries in the workflow lineage and do
+not execute commands, move execution ownership into Scheduler, create hidden
+mutation shortcuts, change UI behavior, or add tools. Continuity validation now
+reports `ok=False` for preservation records without active
+constitution/governance parents, self-preservation decisions without
+observability or authority lineage, catastrophic recoveries without failure
+parents, constitutional rollback arbitration without consensus/quorum lineage,
+constitutional stabilization without recovery parents, survivability records
+without preservation/recovery/stabilization lineage, and replay graphs that
+reference stale constitutional preservation lineage.
 
-------------------------------------------------------------------------
-
-
-## Patch Runtime Safety (Latest)
-
-ZERO now includes a governed patch runtime boundary with:
-
-- preflight analysis
-- dependency/conflict detection
-- transaction metadata
-- backup snapshot
-- atomic multi-file apply
-- verify / commit boundary
-- rollback recovery
-- regression seal
-
-Current runtime flow:
+Validation:
 
 ```text
-planned
--> applied
--> verifying
--> committed
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-Failure path:
+Expected result:
 
 ```text
-planned
--> applied
--> verifying
--> rollback
--> failed
+16 passed
 ```
 
-The runtime preserves:
+---
+
+## AER Runtime Autonomous Constitutional Evolution / Fork-Merge Governance v1
+
+ZERO now preserves autonomous constitutional evolution, constitutional
+fork/merge governance, merge arbitration, survivability federation continuity,
+and autonomous governance stabilization loop lineage inside the engineering
+runtime graph.
+
+The workflow runtime session can record and validate:
 
 ```text
-preflight metadata
-transaction metadata
-verify metadata
-rollback evidence
+autonomous constitutional evolution records
+-> constitutional fork records
+-> independent governance decisions on fork branches
+-> constitutional merge arbitration
+-> constitutional merge records
+-> survivability federation continuity
+-> autonomous governance stabilization loop
+-> deterministic replay references for evolution lineage
 ```
 
-while keeping:
+`WorkflowRuntimeSession` remains the continuity authority. The evolution and
+fork/merge records serialize as dictionaries in the workflow lineage and do not
+execute commands, move execution ownership into Scheduler, create hidden
+mutation shortcuts, change UI behavior, or add tools. Continuity validation now
+reports `ok=False` for constitutional evolution without policy/preservation
+lineage, forks without active constitution parents, merge arbitration without
+both fork branches and quorum/consensus lineage, merges without arbitration
+parents, survivability federation records with stale worker/federation lineage,
+stabilization loops without merge/recovery lineage, and replay graphs that
+reference stale constitutional evolution lineage.
+
+Validation:
 
 ```text
-guard = gate
-executor = execution
-verify = boundary
-transaction = state
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
 ```
 
-separated to avoid responsibility collapse inside `scheduler.py`.
+Expected result:
 
+```text
+17 passed
+```
 
-## What ZERO Does
+---
 
-ZERO does not just generate answers.
+## AER Runtime Constitutional Self-Amendment / Mutation Safety v1
 
-It executes real steps, produces real outputs, and records exactly how
-the result was created.
+ZERO now preserves constitutional self-amendment and mutation-safety lineage
+inside the engineering runtime graph.
 
-Core capabilities:
+The new contract records:
 
--   Task lifecycle management
--   Agent execution loop
--   Decision-aware execution
--   Tool orchestration
--   Persistent execution trace
--   Replayable runtime history
+```text
+constitutional mutation proposal
+-> mutation approval / authority lineage
+-> constitutional self-amendment
+-> policy replacement
+-> governance conflict arbitration
+-> rollback availability
+-> deterministic self-amendment replay validation
+```
 
-------------------------------------------------------------------------
+`WorkflowRuntimeSession` remains the continuity authority only. This layer does
+not execute mutations, replace policy by itself, move execution ownership into
+Scheduler, or bypass review/approval/consensus lineage. It only records and
+validates whether a runtime constitutional amendment can be traced back to an
+active constitution/preservation lineage, approval/authority lineage, rollback
+path, and replay-safe amendment lineage.
 
-## GitHub Draft Workflow (Safe)
+Validation:
 
-ZERO uses a controlled output model:
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
 
-    workspace/github_outbox/
+Expected result:
 
-Generated files:
+```text
+18 passed
+```
 
--   commit_message.txt
--   pr_description.md
--   devlog_entry.md
--   publish_plan.md
+---
 
-Important:
+## AER Runtime Constitutional Memory / Epoch Migration v1
 
--   No API calls
--   No push
--   No PR creation
--   No external side effects
+ZERO now preserves constitutional memory, inheritance lineage, governance epoch
+transitions, constitutional migration, migration validation, sovereign
+stabilization, and epoch replay continuity inside the engineering runtime graph.
 
-This is **controlled automation**, not autonomous GitHub control.
+The contract-proven path is:
 
-------------------------------------------------------------------------
+```text
+constitutional self-amendment / preservation graph
+-> constitutional memory
+-> constitutional inheritance
+-> governance epoch transition
+-> constitutional migration
+-> migration validation
+-> sovereign stabilization
+-> epoch replay continuity
+-> continuity summary
+```
 
-## Execution Trace (Core Concept)
+`WorkflowRuntimeSession` remains the continuity authority. These records are
+persistence-ready dictionaries and do not execute commands, migrate execution
+ownership into Scheduler, or create hidden mutation shortcuts. Replay validation
+remains read-only through `RuntimeReplayEngine` helper surfaces.
 
-ZERO makes AI execution observable.
+Validation:
 
-Each task records:
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
 
--   planned steps
--   decisions
--   tool calls
--   arguments
--   execution status (success / denied / error / validation)
--   timestamps
--   outputs
+Expected result:
 
-UI Timeline Example:
+```text
+19 passed
+```
 
-    Step 1: web_search
-    Step 2: file_write
-    Step 3: github_draft_bundle
-    Result
+---
 
-------------------------------------------------------------------------
+## AER Runtime Sovereign Archive / Constitutional Resurrection v1
 
-## Replay
+ZERO now preserves long-horizon constitutional archive and resurrection
+continuity inside the engineering runtime graph.
 
-Replay previous execution:
+The contract-proven path is:
 
-    runtime-replay
+```text
+constitutional archive
+-> long-horizon governance replay
+-> sovereign continuity
+-> constitutional resurrection
+-> resurrection validation
+-> archive replay continuity
+-> continuity summary
+```
 
-Replay does NOT:
+`WorkflowRuntimeSession` remains the continuity authority. Archive,
+resurrection, sovereign-continuity, and replay records are persistence-ready
+JSON dictionaries and do not execute commands, mutate policy, approve governance,
+or move execution ownership into Scheduler. `RuntimeReplayEngine` exposes a
+read-only validation bridge for sovereign archive replay continuity.
 
--   execute tools again
--   modify files
--   create new outputs
+Validation:
 
-It answers:
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
 
-> What did the system actually do?
+Expected result:
 
-------------------------------------------------------------------------
+```text
+20 passed
+```
 
-## Run Demo
+---
 
-    run hybrid-demo
+## AER Runtime Governance Kernel Consolidation / Continuity Index v1
 
-Check state:
+ZERO now consolidates the accumulated workflow, replay, governance,
+constitutional, archive, and resurrection continuity layers into a compact
+runtime-governance kernel surface.
 
-    runtime-status
+The new consolidation path records:
 
-Replay:
+```text
+runtime continuity index
+-> lineage compaction
+-> constitutional snapshot
+-> replay acceleration index
+-> governance archive layer
+-> governance kernel consolidation
+-> deterministic replay validation
+```
 
-    runtime-replay
+`WorkflowRuntimeSession` remains the continuity authority. The consolidation
+records are JSON-serializable dictionaries and do not execute commands, mutate
+files, approve policy, or move execution ownership into Scheduler. The goal is
+not to add another execution path; it is to make the runtime constitution easier
+to index, compact, snapshot, replay, and archive without breaking authority
+boundaries.
 
-Run tests:
+Validation:
 
-    python tests/run_l4_tool_layer_smoke.py
-    python tests/run_l4_tool_decision_smoke.py
-    python tests/run_l5_tool_decision_core_smoke.py
-    python tests/run_l5_external_draft_tools_smoke.py
-    python tests/test_apply_patch_transaction_layer.py
-    python tests/test_step_executor.py
-    python tests/run_regression_contracts.py
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
 
-Windows smoke baseline:
+Expected result:
 
-    python tests/run_mainline_smoke.py
-    python main.py smoke
+```text
+21 passed
+```
 
-Current Windows baseline status: pending full pass.
+---
 
-The mainline smoke runner is expected to complete the full smoke list and report
-pass/fail counts without being interrupted by Windows console encoding. A
-machine-generated baseline may include failing runtime smokes; do not treat it
-as a full-pass declaration unless the runner reports `[mainline-smoke] ALL PASS`.
+## AER Runtime Governance Query / Storage Lifecycle v1
 
-------------------------------------------------------------------------
+ZERO now preserves queryable long-horizon governance continuity for the runtime
+constitution graph.
 
-## Architecture (Simplified)
+This checkpoint consolidates the runtime governance kernel into storage-ready
+surfaces:
 
-**Core Runtime** - Scheduler - Agent Loop - Task Runtime
+```text
+runtime governance query index
+-> constitutional replay window
+-> lineage pruning record
+-> sovereign archive reconstruction
+-> continuity storage lifecycle
+-> replay validation
+```
+
+The new records remain persistence-ready dictionaries. They do not execute
+commands, mutate repository state, approve governance actions, or move execution
+authority into Scheduler. `WorkflowRuntimeSession` remains the continuity
+authority and `RuntimeReplayEngine` only exposes read-only validation helpers.
 
-**Decision Layer** - tool_decision_policy - decision-aware execution
+Validation:
 
-**Tool Layer** - file_read - file_write - web_search (draft) -
-github_draft_bundle
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
 
-**Display Layer** - Persona UI - Execution timeline - Trace replay
+Expected result:
 
-------------------------------------------------------------------------
+```text
+22 passed
+```
 
-## Project Status
 
-L4 Tool Layer: ✔ Complete\
-L5 Decision Core: ✔ Complete\
-L5 Controlled Draft Workflow: ✔ Complete\
-Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized\
-Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed\
-Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop wired
-Operator Review Runtime Resume / Rollback Recovery Chain: ✔ Governed resume, mutation landing, and rollback restore validated
-Runtime Boundary Freeze Baseline: ✔ Freeze candidate documented and full-suite verified
-RuntimeExecutionResult Globalization ABI: ✔ Canonical execution-result surface sealed
+---
 
-Governed self-repair candidates can now enter a controlled mutation bridge while approval, verification, rollback, and audit boundaries remain enforced.
+## Thin Artifact Chain / Artifact Graph Smoke Path v1
 
-Current phase:\
-→ RuntimeExecutionResult globalization ABI is sealed; legacy payloads, StepExecutor results, and repair transaction mainline now expose canonical executed / verification / evidence / impacted-files fields
+Current CLI smoke checkpoint:
 
-Next stage:\
-→ commit the focused RuntimeExecutionResult ABI seal, then continue scoped runtime status sync without scheduler, agent_loop, or new capability expansion
+```text
+thin-artifact-chain-artifact-graph-smoke-v1
+```
 
-------------------------------------------------------------------------
+ZERO now has a fast, local artifact-producing task path through the thin launcher
+without booting the heavy legacy runtime graph:
 
-## What ZERO Is NOT
+```text
+python app.py ask <artifact task>
+-> workspace/tasks.json queued task
+-> python app.py task run 1
+-> thin artifact writer
+-> workspace/shared artifact
+-> workspace/tasks/<task_id>/result.json
+-> workspace/shared/artifact_graph.json
+```
 
--   Not a chatbot
--   Not a prompt wrapper
--   Not a simple script runner
--   Not uncontrolled autonomous AI
+Validated smoke artifacts:
 
-------------------------------------------------------------------------
+```text
+workspace/shared/task_<id>_hello_world.py
+workspace/shared/summary.txt
+workspace/shared/report.md
+workspace/shared/summary_chain.txt
+workspace/shared/report_chain.md
+workspace/shared/summary_graph.txt
+workspace/shared/report_graph.md
+workspace/shared/artifact_graph.json
+```
 
-## Why This Matters
+Validated artifact chain:
+
+```text
+workspace/shared/input.txt
+-> workspace/shared/summary_graph.txt
+-> workspace/shared/report_graph.md
+```
 
-Most AI systems hide execution.
+The artifact graph registry records:
 
-ZERO exposes it.
+```text
+nodes
+edges
+producer_task_id
+operation type
+event log
+```
 
-This makes AI:
+Boundary decision:
 
--   debuggable
--   verifiable
--   reproducible
--   controllable
+```text
+app.py remains a thin launcher.
+cli/task_cli.py owns only the temporary fast CLI smoke route.
+Artifact output is not execution evidence.
+Artifact graph is a lineage/readability aid, not an authority source.
+Legacy runtime boot remains avoided on this smoke path.
+Scheduler / TaskRunner / StepExecutor ownership boundaries remain unchanged.
+```
 
-------------------------------------------------------------------------
+Representative validation commands:
 
-## Summary
+```text
+python -m py_compile cli/task_cli.py
+python app.py ask "summarize workspace/shared/input.txt into workspace/shared/summary_graph.txt"
+python app.py task run 1
+python app.py ask "generate a markdown report from workspace/shared/summary_graph.txt into workspace/shared/report_graph.md"
+python app.py task run 1
+python app.py task graph
+python app.py task graph json
+type workspace/shared/artifact_graph.json
+```
+
+Current verdict:
+
+```text
+Thin Artifact Chain / Artifact Graph Smoke Path v1: PASS
+```
+
+Next mainline direction:
+
+```text
+Move artifact graph and artifact writers out of cli/task_cli.py into dedicated
+core/artifacts modules before expanding this path further.
+```
+
+
+---
+
+## AER Runtime Core Seal Candidate (2026-05-29)
 
-ZERO is an AI runtime system that turns intent into real execution, with
-full visibility and control.
+ZERO has now connected the complete natural-language engineering runtime path:
+
+```text
+User
+-> AgentLoop
+-> Planner
+-> PlannerRuntimeDispatch
+-> PersistentRuntimeOrchestrator
+-> MultiCycleEngineeringLoop
+-> RecoveryReplayClosure
+-> LongEngineeringRuntime
+```
+
+Validated integration checkpoints:
+
+```text
+python -m pytest tests/test_long_engineering_runtime_contract.py \
+tests/test_recovery_replay_multicycle_contract.py \
+tests/test_persistent_runtime_orchestrator_contract.py \
+tests/test_agent_loop_persistent_runtime_route_contract.py \
+tests/test_planner_runtime_dispatch_contract.py \
+tests/test_agent_loop_planner_runtime_dispatch_contract.py -q
+
+-> 22 passed
+```
+
+Newly sealed runtime surfaces:
+
+```text
+LongEngineeringRuntime
+RecoveryReplayClosure
+MultiCycleEngineeringLoop
+PersistentRuntimeOrchestrator
+PlannerRuntimeDispatch
+AgentLoop Planner Runtime Integration
+```
+
+Engineering verdict:
+
+```text
+AER Runtime Core Seal Candidate: YES
+```
+
+This milestone completes the mainline path from natural language planning to
+persistent autonomous engineering runtime execution and recovery continuity.
+---
+
+## Work Package Contract Closure (2026-06-01)
+
+ZERO has now sealed the work-package contract migration path.
+
+This checkpoint consolidates the work-package request contract, controlled
+workspace execution, controlled core-write policy, execution guard behavior,
+evidence output, and report generation into one contract path.
+
+The sealed work-package path is:
+
+```text
+work package request
+-> contract validation
+-> explicit mode
+-> approval gate
+-> controlled write policy
+-> execution guard
+-> evidence record
+-> report output
+```
+
+Completed surfaces:
+
+```text
+core/tasks/work_package_contract.py
+core/tasks/work_package_execution_guard.py
+core/tasks/work_package_intake.py
+tests/test_work_package_controlled_core_write.py
+tests/test_work_package_core_edit_gate.py
+```
+
+Boundary decision:
+
+```text
+Mode decides lifecycle intent.
+Policy decides write authority.
+Kind must not become a second permission system.
+Workspace execution and controlled core-write execution share one policy path.
+Scheduler remains orchestration only.
+Execution evidence remains explicit and separate from normal output artifacts.
+```
+
+Validated checkpoint:
+
+```text
+python -m pytest tests/test_work_package_controlled_workspace_execution.py tests/test_work_package_controlled_core_write.py -q
+
+-> 15 passed
+```
+
+Full regression validation:
+
+```text
+python -m pytest -q tests
+
+-> 4169 passed
+-> 186 subtests passed
+```
+
+Showcase evidence:
+
+```text
+docs/images/2026-06-01_work_package_contract_migration_15_passed.png
+docs/images/2026-06-01_zero_full_test_suite_4169_passed.png
+```
+
+Engineering verdict:
+
+```text
+Work Package Contract Closure: SEALED
+```
+
+This closes the contract drift between workspace execution and controlled
+core-write execution without adding a second hidden execution path.
+
+
+---
+
+## 2026-06-04 - Engineering Goal Portfolio v1
+
+Added a deterministic engineering goal portfolio layer.
+
+Purpose:
+
+```text
+multiple engineering goals
+-> priority selection
+-> runnable-goal filtering
+-> structured portfolio decision
+-> planning loop routing
+```
+
+Completed:
+
+- EngineeringGoalRecord
+- EngineeringGoalPortfolio
+- deterministic highest-priority runnable selection
+- completed/blocked/cancelled goal skipping
+- structured portfolio decision output
+
+Validation:
+
+```text
+python -m pytest tests/test_engineering_goal_portfolio.py -q
+-> 7 passed
+
+python -m pytest tests/test_engineering_stack_boundary.py -q
+-> 10 passed
+
+python -m pytest -q
+-> 4262 passed
+-> 186 subtests passed
+```
+
+Engineering verdict:
+
+```text
+Engineering Goal Portfolio v1: SEALED
+```
+
+---
+
+## 2026-06-04 - Engineering Goal Scheduler v1
+
+Added the Engineering Goal Scheduler layer.
+
+Purpose:
+
+```text
+goal portfolio
+-> scheduler
+-> run-next selection
+-> planning-loop routing
+-> pause/resume/defer/cancel
+```
+
+Completed:
+
+- EngineeringGoalScheduler
+- run-next via EngineeringGoalPortfolio
+- deterministic scheduling order
+- scheduler decision records
+- pause/resume/cancel/defer actions
+
+Boundary decision:
+
+```text
+Scheduler selects goals only.
+Scheduler does not execute.
+Scheduler does not own planning.
+Scheduler does not own lifecycle state.
+Scheduler does not own memory persistence.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_engineering_goal_scheduler.py -q
+-> 9 passed
+
+python -m pytest tests/test_engineering_stack_boundary.py -q
+-> 12 passed
+
+python -m pytest -q
+-> 4273 passed
+-> 186 subtests passed
+```
+
+Showcase artifact:
+
+```text
+docs/images/milestone_engineering_goal_scheduler_v1_4273_passed.png
+```
+
+Engineering verdict:
+
+```text
+Engineering Goal Scheduler v1: SEALED
+```
+
+---
+
+## 2026-06-18 - Goal Lineage Coordination Seal
+
+ZERO has now sealed goal-lineage coordination across multi-session runtime,
+queue, scheduler, resume, evidence, authority, and completion paths.
+
+Purpose:
+
+```text
+root goal
+-> continuation / replan branches
+-> persistent queue identity
+-> scheduler duplicate gate
+-> resume snapshot isolation
+-> decision evidence lineage
+-> evidence authority validation
+-> goal completion authority
+```
+
+This package fixes the identity gap where task, package, continuation, or replan
+IDs could collide across root goals, sessions, runtime sessions, or branch types.
+Identity is now anchored by a canonical goal-lineage contract instead of loose
+name matching.
+
+Completed:
+
+- Canonical Goal Lineage Contract
+- Persistent Queue Contract integration
+- continuation / replan lineage propagation
+- session progression lineage propagation
+- persistent runtime orchestrator lineage handoff
+- scheduler lineage-aware storage key and duplicate gate
+- runtime resume snapshot lineage isolation
+- decision evidence lineage propagation
+- evidence repository lineage-scoped lookup
+- evidence authority lineage validation
+- goal completion authority lineage mismatch rejection
+- persistent queue multi-session reload regression coverage
+
+Canonical scope:
+
+```text
+root_goal_id
++ goal_lineage_id
++ session_id
++ runtime_session_id
+```
+
+Canonical child identity:
+
+```text
+goal_lineage_id
++ session_id
++ runtime_session_id
++ branch_type
++ branch_id
+```
+
+Legacy IDs remain metadata only:
+
+```text
+goal_id
+source_goal_id
+continuation_id
+replan_request_id
+task_id
+package_id
+```
+
+Boundary decision:
+
+```text
+Task/package/continuation/replan names are not identity by themselves.
+Duplicate gates require the full canonical child identity.
+Scheduler remains orchestration only.
+Queue does not become completion authority.
+Resume restores only matching lineage snapshots.
+Evidence cannot complete a goal across the wrong lineage.
+GoalCompletionAuthority must reject lineage-mismatched evidence.
+No legacy direct JSON engineering_task_runner path is allowed to own mainline execution.
+```
+
+Validated checkpoints:
+
+```text
+python -m pytest tests/test_goal_lineage_coordination_seal.py -q
+-> 6 passed
+
+python -m pytest tests/test_multi_session_coordination_seal.py -q
+-> 8 passed
+
+python -m pytest tests/test_persistent_queue_multi_session.py -q
+-> 2 passed
+
+python -m pytest tests/test_persistent_queue_contract_seal.py -q
+-> 8 passed
+
+python -m compileall core cli tests
+-> passed
+
+git diff --check
+-> passed
+```
+
+Non-mainline issue reporting:
+
+```text
+issues_found:
+- Git LF -> CRLF warnings remain environment / line-ending policy warnings.
+- runtime/evidence/evidence_records.jsonl was dirty during validation and was excluded from commit.
+- Local PATH python availability was observed as an environment issue in Codex; workspace Python was used when needed.
+
+issues_deferred:
+- Line-ending policy cleanup is deferred because git diff --check passes.
+- Existing dirty evidence artifacts are not committed as source changes.
+
+blocking_issues:
+- none
+```
+
+Commit:
+
+```text
+0bd13c31 Seal goal lineage coordination
+```
+
+Engineering verdict:
+
+```text
+Goal Lineage Coordination Seal: SEALED
+```
+
+---
+
+## 2026-06-23 - Runtime Authority Stack Closure
+
+ZERO has now sealed the Runtime Authority Stack across dispatch capability,
+execution ownership, runtime status ownership, status projection, AER, and
+inventory surfaces.
+
+Purpose:
+
+```text
+authority envelope
+-> execution authority token
+-> authority context
+-> dispatch capability
+-> execution ownership migration
+-> runtime status ownership
+-> dispatcher status projection
+-> AER / inventory closure
+```
+
+This milestone turns the recent Runtime authority work into a connected,
+validated stack instead of separate contract fragments. Runtime execution now
+routes through the canonical executor surface, status updates route through the
+canonical runtime-status boundary, and dispatcher / resume code keeps normalized
+status projection without becoming the status owner.
+
+Completed:
+
+- Authority envelope contract
+- Execution authority token contract
+- Authority context contract
+- Dispatch capability contract
+- Execution authority closure
+- Runtime execution ownership migration
+- Runtime status ownership seal
+- Runtime status write authority seal
+- Runtime dispatcher status authority seal
+- Work-package runtime regression validation
+- Native runtime regression validation
+- Supervisor / watchdog / resume regression validation
+- AER closure and inventory validation
+- non-AER inventory validation
+
+Boundary decision:
+
+```text
+Runtime Executor is the only Runtime subprocess surface.
+WorkPackageOperator must not call subprocess directly.
+Scheduler remains orchestration only.
+TaskRuntime / project_runtime_status owns runtime status writes.
+Dispatcher and resume paths may project canonical status only through approved boundaries.
+Status projection must remain normalized with normalize_runtime_status(...).
+AER and inventory suites must remain clean after Runtime authority changes.
+```
+
+Validated checkpoints:
+
+```text
+python -m compileall core cli tests
+-> passed
+
+python -m pytest tests/test_runtime_dispatch_capability.py -q
+-> 9 passed
+
+python -m pytest tests/test_execution_authority_closure.py tests/test_runtime_execution_ownership_migration_contract.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+-> 17 passed
+
+python -m pytest tests/test_runtime_dispatcher_status_authority_seal.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+-> 11 passed
+
+python -m pytest tests -q -k "authority or ownership or governance or inventory"
+-> 702 passed
+-> 4798 deselected
+-> 15 subtests passed
+
+python -m pytest tests -q -k "aer"
+-> 127 passed
+-> 5373 deselected
+
+python -m pytest tests -q -k "aer and (inventory or migration or closure)"
+-> 27 passed
+-> 5473 deselected
+
+python -m pytest tests -q -k "inventory and not aer"
+-> 28 passed
+-> 5472 deselected
+```
+
+Supporting mainline checks:
+
+```text
+python -m pytest tests/test_runtime_session_resume_seal_v1.py tests/test_scheduler_taskrunner_authority_propagation_contract.py -q
+-> 13 passed
+
+python -m pytest tests/test_runtime_supervisor_bridge_v1.py tests/test_runtime_supervisor_layer_v1.py tests/test_runtime_watchdog_lease_integration_v1.py -q
+-> 18 passed
+
+python -m pytest tests/test_work_package_intake_runtime_closure.py tests/test_work_package_engineering_session_resume.py tests/test_work_package_execution_package.py -q
+-> 22 passed
+
+python -m pytest tests/test_runtime_native_execution_dispatch_v1.py tests/test_runtime_native_scheduler_v1.py tests/test_runtime_native_agent_loop_seal_v1.py -q
+-> 11 passed
+```
+
+Commit chain:
+
+```text
+5605b9bf feat(runtime): add authority envelope contract
+353c17e8 feat(runtime): add execution authority token contract
+b9552c97 feat(runtime): add authority context contract
+11ca8b96 feat(runtime): add dispatch capability contract
+d7020bb4 fix(runtime): close execution authority and status ownership seals
+```
+
+Current local state:
+
+```text
+branch: debug/persistent-runtime-contract
+working_tree: clean
+ahead_of_origin: 11 commits
+```
+
+Engineering verdict:
+
+```text
+Runtime Authority Stack Closure: SEALED
+```
+
+Next mainline direction:
+
+```text
+Shift from Runtime Core stabilization to long-horizon engineering-loop
+validation:
+Engineering Goal Loop -> Controlled Repo Edit -> Verification -> Evidence ->
+Replan / Resume -> Completion.
+```
+

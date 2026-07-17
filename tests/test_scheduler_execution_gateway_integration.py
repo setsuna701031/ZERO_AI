@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_scheduler_execution_gateway_side_check_valid_step_uses_gateway():

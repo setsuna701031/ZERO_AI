@@ -4,8 +4,13 @@ from pathlib import Path
 
 from core.tools.tool_runner import run_tool
 
+
 # Import side effect: registers "repo_edit"
 import core.tools.repo_edit_tool  # noqa: F401
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_repo_edit_integration() -> None:

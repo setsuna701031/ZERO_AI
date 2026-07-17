@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
@@ -56,6 +57,18 @@ def normalize_repair_injection_mutation(
     repair_context["flow"] = flow[-50:]
     repair_context["repair_steps_injected"] = True
     repair_context["last_phase"] = "repair_steps_injected"
+    authority_context = {}
+    for source in (task, runtime_state, repair_context):
+        if isinstance(source, dict):
+            for key in ("authority_context", "runtime_authority_context"):
+                if isinstance(source.get(key), dict):
+                    authority_context = copy.deepcopy(source[key])
+                    break
+        if authority_context:
+            break
+    if authority_context:
+        repair_context["authority_context"] = copy.deepcopy(authority_context)
+        repair_context["runtime_authority_context"] = copy.deepcopy(authority_context)
     repair_context["proposed_fix"] = {
         "strategy": "minimal_patch",
         "path": repair_meta.get("path", ""),
@@ -68,6 +81,9 @@ def normalize_repair_injection_mutation(
     task["current_step_index"] = step_index
     task.update(replay_continuation_fields())
     task["repair_context"] = repair_context
+    if authority_context:
+        task["authority_context"] = copy.deepcopy(authority_context)
+        task["runtime_authority_context"] = copy.deepcopy(authority_context)
     task["repair_steps_injected"] = True
     task["updated_at"] = now
 
@@ -82,6 +98,8 @@ def normalize_repair_injection_mutation(
                 "last_decision": "continue",
                 "last_decision_reason": "repair_steps_injected",
                 "repair_context": copy.deepcopy(repair_context),
+                "authority_context": copy.deepcopy(authority_context) if authority_context else runtime_state.get("authority_context"),
+                "runtime_authority_context": copy.deepcopy(authority_context) if authority_context else runtime_state.get("runtime_authority_context"),
                 "updated_at": now,
             }
         )
@@ -114,7 +132,7 @@ def execute_repair_injection_transaction(
     replacement_decision = repair_replacement_decision(ok, repair_steps, repair_meta)
     repair_meta = replacement_decision["repair_meta"]
     if replacement_decision["action"] == "repair_injection_failed":
-        task["status"] = status_failed
+        project_runtime_status(task, status_failed, owner="core/tasks/scheduler_core/repair_injection_execution.py")
         task["last_error"] = "retrying repair bridge failed: " + str(repair_meta.get("reason") or "unknown")
         task["failure_message"] = task["last_error"]
         persist_task_payload(task_id=task_id, task=task)

@@ -1,0 +1,363 @@
+{
+  "stage": "Authority + Planner Residual Closure Stage13E",
+  "scope": "discovery_and_ownership_mapping_only",
+  "production_runtime_modified": false,
+  "tests_modified": false,
+  "blockers_fixed": false,
+  "inputs": [
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+    "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json",
+    "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json",
+    "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json"
+  ],
+  "residual_items": [
+    {
+      "blocker_id": "S13E-AP-001",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5449,
+      "symbol": "TaskRunner._build_taskrunner_authority_context",
+      "validated_classification": "confirmed_blocker",
+      "domain": "authority_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._build_taskrunner_authority_context",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:5449 via _zero_boundary_build_taskrunner_authority_context",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._build_taskrunner_authority_context (native definition at core/runtime/task_runner.py:1775)",
+      "owner_endpoint": "TaskRunner._build_taskrunner_authority_context",
+      "owner_responsibility": "Preserve upstream execution authority, delegate a bounded TaskRunner capability, and carry authority identity into StepExecutor without self-granting stronger authority.",
+      "closure_bucket": "authority_context",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "The native TaskRunner authority-context method preserves upstream authority source, capability provenance, identity graph, task/step identity, and runtime-session identity; both execute_owned_step and _run_one_step consume that native method; StepExecutor authority-denial and capability suites pass without the class-level assignment.",
+      "dependency_edges": [
+        {
+          "from": "runtime_dispatcher_capability",
+          "to": "TaskRunner._build_taskrunner_authority_context",
+          "relationship": "upstream_authority_source"
+        },
+        {
+          "from": "runtime_capability_provenance",
+          "to": "TaskRunner._build_taskrunner_authority_context",
+          "relationship": "capability_propagation"
+        },
+        {
+          "from": "TaskRunner._build_taskrunner_authority_context",
+          "to": "TaskRunner._pre_execution_authority_denial",
+          "relationship": "authority_policy_input"
+        },
+        {
+          "from": "TaskRunner._build_taskrunner_authority_context",
+          "to": "StepExecutor.execute_step",
+          "relationship": "downstream_authority_context"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "TaskRunner._build_taskrunner_authority_context",
+          "relationship": "session_identity_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "planner_goal_overlay",
+        "taskrunner_authority_closure",
+        "stepexecutor_authority_boundary",
+        "ownership_mapping_complete"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_boundary_build_taskrunner_authority_context",
+        "helper_definition": {
+          "source_file": "core/runtime/task_runner.py",
+          "start_line": 5343,
+          "end_line": 5446
+        },
+        "native_definition": {
+          "source_file": "core/runtime/task_runner.py",
+          "start_line": 1775,
+          "end_line": 1920
+        },
+        "helper_direct_calls": [
+          "_zero_boundary_extract_authority_context",
+          "_zero_boundary_norm_text",
+          "deepcopy",
+          "delegate_taskrunner_execution_capability",
+          "get",
+          "isinstance",
+          "lower",
+          "propagate_runtime_capability"
+        ],
+        "native_direct_calls": [
+          "append",
+          "bool",
+          "deepcopy",
+          "get",
+          "isinstance",
+          "lower",
+          "replace",
+          "startswith",
+          "str",
+          "strip"
+        ],
+        "native_callers": [
+          {
+            "symbol": "execute_owned_step",
+            "source_line": 352
+          },
+          {
+            "symbol": "_run_one_step",
+            "source_line": 2375
+          }
+        ],
+        "predecessor_references": []
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json#validated_blockers",
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#authority_contract",
+        "core/runtime/task_runner.py:5449",
+        "core/runtime/task_runner.py:1775",
+        "ast_function:core/runtime/task_runner.py::_zero_boundary_build_taskrunner_authority_context",
+        "ast_function:core/runtime/task_runner.py::_build_taskrunner_authority_context"
+      ]
+    },
+    {
+      "blocker_id": "S13E-AP-002",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7909,
+      "symbol": "Scheduler._plan_goal",
+      "validated_classification": "confirmed_blocker",
+      "domain": "planner_contract",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._plan_goal",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:7909 via _zero_v702_scheduler_plan_goal",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._plan_goal (native definition at core/tasks/scheduler.py:6914)",
+      "owner_endpoint": "Scheduler._plan_goal",
+      "owner_responsibility": "Own goal-to-plan conversion, including repair-plan recognition, while preserving the scheduler/planner boundary and canonical plan shape.",
+      "closure_bucket": "planner_goal_overlay",
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "The native Scheduler._plan_goal owns the code-chain repair-plan branch or delegates it through one named native planner endpoint; _create_task_record and _ensure_executable_steps_for_task consume the same canonical plan contract; planner, scheduler, repair-plan, and runtime-gate compatibility suites pass without the class-level assignment or predecessor fallback.",
+      "dependency_edges": [
+        {
+          "from": "authority_context",
+          "to": "Scheduler._plan_goal",
+          "relationship": "authority_precondition"
+        },
+        {
+          "from": "runtime_gate_compatibility_bridge",
+          "to": "Scheduler._plan_goal",
+          "relationship": "compatibility_precondition"
+        },
+        {
+          "from": "Scheduler._plan_goal",
+          "to": "Scheduler._create_task_record",
+          "relationship": "plan_consumer"
+        },
+        {
+          "from": "Scheduler._plan_goal",
+          "to": "Scheduler._ensure_executable_steps_for_task",
+          "relationship": "plan_consumer"
+        },
+        {
+          "from": "_zero_v702_build_code_chain_repair_plan",
+          "to": "Scheduler._plan_goal",
+          "relationship": "repair_plan_branch"
+        },
+        {
+          "from": "Scheduler._plan_goal",
+          "to": "scheduler_contract",
+          "relationship": "goal_to_step_boundary"
+        }
+      ],
+      "unlock_targets": [
+        "planner_contract",
+        "scheduler_goal_to_step_boundary",
+        "ownership_mapping_complete"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v702_scheduler_plan_goal",
+        "helper_definition": {
+          "source_file": "core/tasks/scheduler.py",
+          "start_line": 7858,
+          "end_line": 7862
+        },
+        "native_definition": {
+          "source_file": "core/tasks/scheduler.py",
+          "start_line": 6914,
+          "end_line": 7017
+        },
+        "helper_direct_calls": [
+          "_ZERO_V702_ORIGINAL_SCHEDULER_PLAN_GOAL",
+          "_zero_v702_build_code_chain_repair_plan",
+          "isinstance",
+          "str"
+        ],
+        "native_direct_calls": [
+          "_looks_like_hello_world_python",
+          "_plan_goal_via_agent_planners",
+          "_plan_goal_via_forced_deterministic_planner",
+          "_should_force_deterministic_task_planner",
+          "_try_plan_command",
+          "_try_plan_function_fix",
+          "_try_plan_multi_function_fix",
+          "_try_plan_read_file",
+          "_try_plan_write_file",
+          "deepcopy",
+          "get",
+          "isinstance",
+          "str",
+          "strip"
+        ],
+        "native_callers": [
+          {
+            "symbol": "_create_task_record",
+            "source_line": 4005
+          },
+          {
+            "symbol": "_ensure_executable_steps_for_task",
+            "source_line": 6072
+          }
+        ],
+        "predecessor_references": [
+          "_ZERO_V702_ORIGINAL_SCHEDULER_PLAN_GOAL"
+        ]
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json#validated_blockers",
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#planner_contract",
+        "core/tasks/scheduler.py:7909",
+        "core/tasks/scheduler.py:6914",
+        "ast_function:core/tasks/scheduler.py::_zero_v702_scheduler_plan_goal",
+        "ast_function:core/tasks/scheduler.py::_plan_goal"
+      ]
+    }
+  ],
+  "ownership_map": {
+    "authority_context": "TaskRunner._build_taskrunner_authority_context",
+    "planner_goal_overlay": "Scheduler._plan_goal"
+  },
+  "dependency_graph": {
+    "authority_context": [
+      {
+        "from": "runtime_dispatcher_capability",
+        "to": "TaskRunner._build_taskrunner_authority_context",
+        "relationship": "upstream_authority_source"
+      },
+      {
+        "from": "runtime_capability_provenance",
+        "to": "TaskRunner._build_taskrunner_authority_context",
+        "relationship": "capability_propagation"
+      },
+      {
+        "from": "TaskRunner._build_taskrunner_authority_context",
+        "to": "TaskRunner._pre_execution_authority_denial",
+        "relationship": "authority_policy_input"
+      },
+      {
+        "from": "TaskRunner._build_taskrunner_authority_context",
+        "to": "StepExecutor.execute_step",
+        "relationship": "downstream_authority_context"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "TaskRunner._build_taskrunner_authority_context",
+        "relationship": "session_identity_dependency"
+      }
+    ],
+    "planner_goal_overlay": [
+      {
+        "from": "authority_context",
+        "to": "Scheduler._plan_goal",
+        "relationship": "authority_precondition"
+      },
+      {
+        "from": "runtime_gate_compatibility_bridge",
+        "to": "Scheduler._plan_goal",
+        "relationship": "compatibility_precondition"
+      },
+      {
+        "from": "Scheduler._plan_goal",
+        "to": "Scheduler._create_task_record",
+        "relationship": "plan_consumer"
+      },
+      {
+        "from": "Scheduler._plan_goal",
+        "to": "Scheduler._ensure_executable_steps_for_task",
+        "relationship": "plan_consumer"
+      },
+      {
+        "from": "_zero_v702_build_code_chain_repair_plan",
+        "to": "Scheduler._plan_goal",
+        "relationship": "repair_plan_branch"
+      },
+      {
+        "from": "Scheduler._plan_goal",
+        "to": "scheduler_contract",
+        "relationship": "goal_to_step_boundary"
+      }
+    ],
+    "cross_residual_edges": [
+      {
+        "from": "authority_context",
+        "to": "planner_goal_overlay",
+        "relationship": "closure_precondition"
+      },
+      {
+        "from": "planner_goal_overlay",
+        "to": "ownership_mapping_complete",
+        "relationship": "final_mapping_unlock"
+      }
+    ]
+  },
+  "closure_order": [
+    {
+      "order": 1,
+      "node": "authority_context",
+      "blocker_id": "S13E-AP-001",
+      "blocked_by": [
+        "runtime_dispatcher_capability",
+        "runtime_capability_provenance",
+        "runtime_session_ownership"
+      ],
+      "unlocks": [
+        "planner_goal_overlay",
+        "taskrunner_authority_closure",
+        "stepexecutor_authority_boundary"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "planner_goal_overlay",
+      "blocker_id": "S13E-AP-002",
+      "blocked_by": [
+        "authority_context",
+        "runtime_gate_compatibility_bridge"
+      ],
+      "unlocks": [
+        "planner_contract",
+        "scheduler_goal_to_step_boundary",
+        "ownership_mapping_complete"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "ownership_mapping_complete",
+      "blocked_by": [
+        "authority_context",
+        "planner_goal_overlay"
+      ],
+      "unlocks": [
+        "native_ownership_closure_execution",
+        "freeze_planning"
+      ]
+    }
+  ],
+  "mapping_closure": {
+    "prior_distinct_mapped": 111,
+    "stage13e_new_distinct_mapped": 2,
+    "final_distinct_mapped": 113,
+    "total_confirmed_blockers": 113,
+    "remaining_unmapped": [],
+    "ownership_mapping_percent": 100.0,
+    "status": "113 / 113 mapped"
+  },
+  "unresolved_ambiguities": [],
+  "evidence_standard": "source file + symbol + AST call graph + explicit dependency graph"
+}

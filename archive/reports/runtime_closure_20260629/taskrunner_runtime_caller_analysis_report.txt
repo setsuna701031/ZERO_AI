@@ -1,0 +1,725 @@
+TaskRunner Runtime Caller Analysis
+
+repo_root: E:\zero_ai
+target: core\runtime\task_runner.py
+functions: 177
+runtime_related_functions: 114
+legacy_functions: 41
+reachable_from_mainline: 65
+dead_legacy_no_callers: 16
+unreachable_legacy_from_mainline: 41
+
+
+================================================================================
+Runtime Hub Functions
+================================================================================
+
+Top functions by direct caller count:
+- run_task_tick [line 1082] | callers=5 | callees=11
+  <- run [line 1406]
+  <- run_one_step [line 1376]
+  <- run_one_tick [line 1361]
+  <- run_task [line 1391]
+  <- run_task_tick [line 1082]
+- _zero_boundary_norm_text [line 4280] | callers=5 | callees=0
+  <- _zero_boundary_build_document_execution_authority [line 4410]
+  <- _zero_boundary_build_taskrunner_authority_context [line 4434]
+  <- _zero_boundary_document_pipeline_allowed [line 4327]
+  <- _zero_boundary_step_target [line 4290]
+  <- _zero_boundary_step_type [line 4284]
+- _zero_taskrunner_registry_callsite_admit_v26 [line 5487] | callers=4 | callees=1
+  <- _zero_execute_owned_step_with_registry_admission [line 5501]
+  <- _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26 [line 5500]
+  <- _zero_taskrunner_registry_callsite_wrap_tick_v26 [line 5511]
+  <- _zero_tick_with_registry_admission [line 5512]
+- _zero_stage3b_mapping_v2 [line 4804] | callers=4 | callees=0
+  <- _zero_stage3b_normalize_success_v2 [line 4863]
+  <- _zero_stage3b_runtime_mode_v2 [line 4821]
+  <- _zero_stage3b_select_step_v2 [line 4807]
+  <- _zero_stage3b_state_path_v2 [line 4833]
+- _taskrunner_select_current_step [line 4610] | callers=4 | callees=0
+  <- _is_explicit_repair_chain_task [line 5239]
+  <- _repair_chain_has_live_dispatcher_capability [line 5214]
+  <- _taskrunner_runtime_gate_fallback_step [line 4682]
+  <- run_task_tick [line 1082]
+- _runtime_native_mainline_active [line 259] | callers=4 | callees=0
+  <- _run_via_runtime_native_mainline [line 262]
+  <- execute_owned_step [line 448]
+  <- execute_owned_steps [line 517]
+  <- run_task_tick [line 1082]
+- _ensure_execution_trace_defaults [line 2759] | callers=4 | callees=0
+  <- _maybe_block_direct_missing_subgoal_dependency [line 3008]
+  <- _maybe_run_enabled_capability [line 1589]
+  <- _run_one_step [line 2007]
+  <- run_task_tick [line 1082]
+- _run_via_runtime_native_mainline [line 262] | callers=3 | callees=2
+  <- execute_owned_step [line 448]
+  <- execute_owned_steps [line 517]
+  <- run_task_tick [line 1082]
+- _zero_stage3b_select_step_v2 [line 4807] | callers=3 | callees=1
+  <- _zero_stage3b_normalize_success_v2 [line 4863]
+  <- _zero_stage3b_run_task_tick_v2 [line 4981]
+  <- _zero_stage3b_run_task_v2 [line 5014]
+- _zero_boundary_step_type [line 4284] | callers=3 | callees=1
+  <- _zero_boundary_build_document_execution_authority [line 4410]
+  <- _zero_boundary_document_action_type [line 4399]
+  <- _zero_boundary_document_pipeline_allowed [line 4327]
+- _is_explicit_repair_chain_task [line 5239] | callers=3 | callees=1
+  <- _repair_chain_dispatcher_denial_shape [line 5253]
+  <- _repair_lineage_run_task [line 5325]
+  <- _repair_lineage_run_task_tick [line 5310]
+- _safe_int [line 2832] | callers=3 | callees=0
+  <- _build_repair_chain_consistency_record [line 629]
+  <- _maybe_run_enabled_capability [line 1589]
+  <- run_task_tick [line 1082]
+- _zero_stage3b_normalize_success_v2 [line 4863] | callers=2 | callees=6
+  <- _zero_stage3b_run_task_tick_v2 [line 4981]
+  <- _zero_stage3b_run_task_v2 [line 5014]
+- _taskrunner_runtime_gate_fallback_step [line 4682] | callers=2 | callees=2
+  <- _taskrunner_consolidated_run_task [line 4735]
+  <- _taskrunner_consolidated_run_task_tick [line 4721]
+- _taskrunner_authority_denial_shape [line 4626] | callers=2 | callees=2
+  <- _taskrunner_consolidated_run_task [line 4735]
+  <- _taskrunner_consolidated_run_task_tick [line 4721]
+- _repair_chain_dispatcher_denial_shape [line 5253] | callers=2 | callees=2
+  <- _repair_lineage_run_task [line 5325]
+  <- _repair_lineage_run_task_tick [line 5310]
+- _zero_stage3b_normalize_taskrunner_result_v3 [line 5052] | callers=2 | callees=1
+  <- _zero_stage3b_run_task_tick_v3 [line 5145]
+  <- _zero_stage3b_run_task_v3 [line 5154]
+- _taskrunner_is_soft_authority_gate_failure [line 4579] | callers=2 | callees=1
+  <- _taskrunner_consolidated_run_task [line 4735]
+  <- _taskrunner_consolidated_run_task_tick [line 4721]
+- _repair_chain_has_live_dispatcher_capability [line 5214] | callers=2 | callees=1
+  <- _repair_chain_dispatcher_denial_shape [line 5253]
+  <- run_task_tick [line 1082]
+- _make_public_payload_safe [line 3351] | callers=2 | callees=1
+  <- _compact_runtime_state_for_public_payload [line 3337]
+  <- _make_public_payload_safe [line 3351]
+- _make_json_safe [line 1838] | callers=2 | callees=1
+  <- _make_json_safe [line 1838]
+  <- _maybe_run_enabled_capability [line 1589]
+- _compact_runtime_state_for_public_payload [line 3337] | callers=2 | callees=1
+  <- _finalize_public_result [line 3388]
+  <- _sync_runtime_state_back_to_task [line 2803]
+- _zero_v800_last_step_type [line 3978] | callers=2 | callees=0
+  <- _zero_v800_build_observation [line 3854]
+  <- _zero_v800_represents_failed_step_observation [line 3993]
+- _zero_taskrunner_registry_admit_aer_closure_v24 [line 5378] | callers=2 | callees=0
+  <- _zero_taskrunner_registry_admit_owned_step_v24 [line 5425]
+  <- _zero_taskrunner_registry_admit_tick_v24 [line 5429]
+- _zero_stage3b_taskrunner_record_operator_failure_v4 [line 5168] | callers=2 | callees=0
+  <- _zero_stage3b_run_task_tick_v4 [line 5194]
+  <- _zero_stage3b_run_task_v4 [line 5203]
+- _zero_stage3b_normalize_blocked_v2 [line 4925] | callers=2 | callees=0
+  <- _zero_stage3b_run_task_tick_v2 [line 4981]
+  <- _zero_stage3b_run_task_v2 [line 5014]
+- _terminal_completion_authority [line 1454] | callers=2 | callees=0
+  <- _maybe_run_enabled_capability [line 1589]
+  <- _run_one_step [line 2007]
+- _taskrunner_result_text [line 4565] | callers=2 | callees=0
+  <- _taskrunner_authority_denial_shape [line 4626]
+  <- _taskrunner_is_soft_authority_gate_failure [line 4579]
+- _taskrunner_has_dispatch_authority [line 4593] | callers=2 | callees=0
+  <- _taskrunner_authority_denial_shape [line 4626]
+  <- _taskrunner_runtime_gate_fallback_step [line 4682]
+- _stringify_failure_message [line 3325] | callers=2 | callees=0
+  <- _run_one_step [line 2007]
+  <- _should_convert_policy_block_to_review [line 2874]
+- _stage3b_taskrunner_enrich_success_result [line 4752] | callers=2 | callees=0
+  <- _stage3b_run_task [line 4793]
+  <- _stage3b_run_task_tick [line 4784]
+- _runtime_step_target [line 1920] | callers=2 | callees=0
+  <- _attach_autonomous_repair_mutation_metadata [line 856]
+  <- _build_repair_chain_consistency_record [line 629]
+- _resolve_target_repo_root [line 1764] | callers=2 | callees=0
+  <- _attach_mutation_boundary_after_step [line 946]
+  <- _run_regression_verify_phase [line 3147]
+- _pre_execution_authority_denial [line 326] | callers=2 | callees=0
+  <- _run_one_step [line 2007]
+  <- execute_owned_step [line 448]
+- _is_self_repair_mutation_step [line 621] | callers=2 | callees=0
+  <- _attach_autonomous_repair_mutation_metadata [line 856]
+  <- _build_repair_chain_consistency_record [line 629]
+- _is_autonomous_repair_mutation_step [line 608] | callers=2 | callees=0
+  <- _attach_autonomous_repair_mutation_metadata [line 856]
+  <- _build_repair_chain_consistency_record [line 629]
+- _extract_final_answer_from_step_result [line 2871] | callers=2 | callees=0
+  <- _finalize_public_result [line 3388]
+  <- _run_one_step [line 2007]
+- _build_taskrunner_authority_context [line 1806] | callers=2 | callees=0
+  <- _run_one_step [line 2007]
+  <- execute_owned_step [line 448]
+- _run_one_step [line 2007] | callers=1 | callees=30
+  <- run_task_tick [line 1082]
+- _maybe_run_enabled_capability [line 1589] | callers=1 | callees=7
+  <- run_task_tick [line 1082]
+
+================================================================================
+Mainline Caller Map
+================================================================================
+
+- _run_one_step [line 2007]
+  callers:
+    <- run_task_tick [line 1082]
+  callees:
+    -> _append_step_result_trace_json [line 3464]
+    -> _append_trace_json_event [line 3483]
+    -> _apply_runtime_mode_to_step [line 1910]
+    -> _attach_mutation_boundary_after_step [line 946]
+    -> _attach_system_rollback_capability [line 1824]
+    -> _build_policy_review_id [line 3275]
+    -> _build_taskrunner_authority_context [line 1806]
+    -> _determine_failure_type [line 3287]
+    -> _ensure_execution_trace_defaults [line 2759]
+    -> _ensure_step_execution_trace [line 2765]
+    -> _extract_final_answer_from_step_result [line 2871]
+    -> _get_previous_result [line 2856]
+    -> _is_apply_step [line 3003]
+    -> _mark_syntax_function_rewrite_completion_if_needed [line 3077]
+    -> _maybe_inject_repair_steps_after_failure [line 2936]
+    -> _pre_execution_authority_denial [line 326]
+    -> _run_regression_verify_phase [line 3147]
+    -> _safe_block_engineering_action [line 1975]
+    -> _safe_complete_engineering_action [line 1951]
+    -> _safe_fail_engineering_action [line 1963]
+    -> _safe_record_rollback_restore_action [line 1988]
+    -> _safe_update_current_engineering_action [line 1940]
+    -> _should_advance_failed_step_observation [line 2900]
+    -> _should_convert_policy_block_to_review [line 2874]
+    -> _should_rollback_after_failed_verify [line 2996]
+    -> _stringify_failure_message [line 3325]
+    -> _target_routed_context [line 1776]
+    -> _terminal_completion_authority [line 1454]
+    -> _trace [line 3549]
+    -> _trace_tick_for_step [line 2838]
+
+- _run_via_runtime_native_mainline [line 262]
+  callers:
+    <- execute_owned_step [line 448]
+    <- execute_owned_steps [line 517]
+    <- run_task_tick [line 1082]
+  callees:
+    -> _runtime_native_mainline_active [line 259]
+    -> _runtime_route_key_for_entrypoint [line 295]
+
+- execute_owned_step [line 448]
+  callers:
+    <- execute_owned_step [line 448]
+  callees:
+    -> _build_taskrunner_authority_context [line 1806]
+    -> _pre_execution_authority_denial [line 326]
+    -> _run_via_runtime_native_mainline [line 262]
+    -> _runtime_native_mainline_active [line 259]
+    -> execute_owned_step [line 448]
+
+- execute_owned_steps [line 517]
+  callers:
+    <- execute_owned_steps [line 517]
+  callees:
+    -> _run_via_runtime_native_mainline [line 262]
+    -> _runtime_native_mainline_active [line 259]
+    -> execute_owned_steps [line 517]
+
+- run [line 1406]
+  callers:
+    <- <none>
+  callees:
+    -> run_task_tick [line 1082]
+
+- run_one_step [line 1376]
+  callers:
+    <- <none>
+  callees:
+    -> run_task_tick [line 1082]
+
+- run_one_tick [line 1361]
+  callers:
+    <- <none>
+  callees:
+    -> run_task_tick [line 1082]
+
+- run_task [line 1391]
+  callers:
+    <- _zero_run_task_adaptive [line 4540]
+  callees:
+    -> run_task_tick [line 1082]
+
+- run_task_tick [line 1082]
+  callers:
+    <- run [line 1406]
+    <- run_one_step [line 1376]
+    <- run_one_tick [line 1361]
+    <- run_task [line 1391]
+    <- run_task_tick [line 1082]
+  callees:
+    -> _ensure_execution_trace_defaults [line 2759]
+    -> _finalize_public_result [line 3388]
+    -> _maybe_run_enabled_capability [line 1589]
+    -> _repair_chain_has_live_dispatcher_capability [line 5214]
+    -> _resolve_max_auto_ticks [line 1539]
+    -> _run_one_step [line 2007]
+    -> _run_via_runtime_native_mainline [line 262]
+    -> _runtime_native_mainline_active [line 259]
+    -> _safe_int [line 2832]
+    -> _taskrunner_select_current_step [line 4610]
+    -> run_task_tick [line 1082]
+
+================================================================================
+Legacy Wrapper Caller Map
+================================================================================
+
+- _stage3b_run_task [line 4793]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _stage3b_taskrunner_enrich_success_result [line 4752]
+
+- _stage3b_run_task_tick [line 4784]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _stage3b_taskrunner_enrich_success_result [line 4752]
+
+- _stage3b_taskrunner_enrich_success_result [line 4752]
+  reachable_from_mainline: False
+  callers:
+    <- _stage3b_run_task [line 4793]
+    <- _stage3b_run_task_tick [line 4784]
+  callees:
+    -> <none>
+
+- _taskrunner_consolidated_run_task [line 4735]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _taskrunner_authority_denial_shape [line 4626]
+    -> _taskrunner_is_soft_authority_gate_failure [line 4579]
+    -> _taskrunner_runtime_gate_fallback_step [line 4682]
+
+- _taskrunner_consolidated_run_task_tick [line 4721]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _taskrunner_authority_denial_shape [line 4626]
+    -> _taskrunner_is_soft_authority_gate_failure [line 4579]
+    -> _taskrunner_runtime_gate_fallback_step [line 4682]
+
+- _zero_stage3b_call_registered_handler_v2 [line 4960]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_run_task_tick_v2 [line 4981]
+  callees:
+    -> <none>
+
+- _zero_stage3b_mapping_v2 [line 4804]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_success_v2 [line 4863]
+    <- _zero_stage3b_runtime_mode_v2 [line 4821]
+    <- _zero_stage3b_select_step_v2 [line 4807]
+    <- _zero_stage3b_state_path_v2 [line 4833]
+  callees:
+    -> <none>
+
+- _zero_stage3b_normalize_blocked_v2 [line 4925]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    <- _zero_stage3b_run_task_v2 [line 5014]
+  callees:
+    -> <none>
+
+- _zero_stage3b_normalize_success_v2 [line 4863]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    <- _zero_stage3b_run_task_v2 [line 5014]
+  callees:
+    -> _zero_stage3b_mapping_v2 [line 4804]
+    -> _zero_stage3b_read_state_v2 [line 4837]
+    -> _zero_stage3b_runtime_mode_v2 [line 4821]
+    -> _zero_stage3b_select_step_v2 [line 4807]
+    -> _zero_stage3b_state_path_v2 [line 4833]
+    -> _zero_stage3b_write_state_v2 [line 4851]
+
+- _zero_stage3b_normalize_taskrunner_result_v3 [line 5052]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    <- _zero_stage3b_run_task_v3 [line 5154]
+  callees:
+    -> _zero_stage3b_runtime_state_from_task_v3 [line 5032]
+
+- _zero_stage3b_read_state_v2 [line 4837]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_success_v2 [line 4863]
+  callees:
+    -> <none>
+
+- _zero_stage3b_run_task_tick_v2 [line 4981]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_stage3b_call_registered_handler_v2 [line 4960]
+    -> _zero_stage3b_normalize_blocked_v2 [line 4925]
+    -> _zero_stage3b_normalize_success_v2 [line 4863]
+    -> _zero_stage3b_select_step_v2 [line 4807]
+
+- _zero_stage3b_run_task_tick_v3 [line 5145]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_stage3b_normalize_taskrunner_result_v3 [line 5052]
+
+- _zero_stage3b_run_task_tick_v4 [line 5194]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_stage3b_taskrunner_record_operator_failure_v4 [line 5168]
+
+- _zero_stage3b_run_task_v2 [line 5014]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_stage3b_normalize_blocked_v2 [line 4925]
+    -> _zero_stage3b_normalize_success_v2 [line 4863]
+    -> _zero_stage3b_select_step_v2 [line 4807]
+
+- _zero_stage3b_run_task_v3 [line 5154]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_stage3b_normalize_taskrunner_result_v3 [line 5052]
+
+- _zero_stage3b_run_task_v4 [line 5203]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_stage3b_taskrunner_record_operator_failure_v4 [line 5168]
+
+- _zero_stage3b_runtime_mode_v2 [line 4821]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_success_v2 [line 4863]
+  callees:
+    -> _zero_stage3b_mapping_v2 [line 4804]
+
+- _zero_stage3b_runtime_state_from_task_v3 [line 5032]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_taskrunner_result_v3 [line 5052]
+  callees:
+    -> <none>
+
+- _zero_stage3b_select_step_v2 [line 4807]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_success_v2 [line 4863]
+    <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    <- _zero_stage3b_run_task_v2 [line 5014]
+  callees:
+    -> _zero_stage3b_mapping_v2 [line 4804]
+
+- _zero_stage3b_state_path_v2 [line 4833]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_success_v2 [line 4863]
+  callees:
+    -> _zero_stage3b_mapping_v2 [line 4804]
+
+- _zero_stage3b_taskrunner_record_operator_failure_v4 [line 5168]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    <- _zero_stage3b_run_task_v4 [line 5203]
+  callees:
+    -> <none>
+
+- _zero_stage3b_write_state_v2 [line 4851]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_stage3b_normalize_success_v2 [line 4863]
+  callees:
+    -> <none>
+
+- _zero_v702_runner_extract_workspace_py_path [line 3593]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v702_runner_repair_task_steps_if_needed [line 3612]
+  callees:
+    -> _zero_v702_runner_normalize_rel_path [line 3586]
+
+- _zero_v702_runner_looks_like_autonomous_repair [line 3600]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v702_runner_repair_task_steps_if_needed [line 3612]
+  callees:
+    -> <none>
+
+- _zero_v702_runner_normalize_rel_path [line 3586]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v702_runner_extract_workspace_py_path [line 3593]
+  callees:
+    -> <none>
+
+- _zero_v702_runner_repair_task_steps_if_needed [line 3612]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v702_task_runner_run_one_step [line 3662]
+  callees:
+    -> _zero_v702_runner_extract_workspace_py_path [line 3593]
+    -> _zero_v702_runner_looks_like_autonomous_repair [line 3600]
+
+- _zero_v702_task_runner_run_one_step [line 3662]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_v702_runner_repair_task_steps_if_needed [line 3612]
+
+- _zero_v800_build_observation [line 3854]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_task_runner_run_one_step [line 4014]
+  callees:
+    -> _zero_v800_extract_action [line 3826]
+    -> _zero_v800_extract_error [line 3838]
+    -> _zero_v800_extract_status [line 3832]
+    -> _zero_v800_last_step_type [line 3978]
+    -> _zero_v800_represents_failed_step_observation [line 3993]
+
+- _zero_v800_decide_from_observation [line 3896]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_task_runner_run_one_step [line 4014]
+  callees:
+    -> <none>
+
+- _zero_v800_extract_action [line 3826]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_build_observation [line 3854]
+  callees:
+    -> <none>
+
+- _zero_v800_extract_error [line 3838]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_build_observation [line 3854]
+  callees:
+    -> <none>
+
+- _zero_v800_extract_status [line 3832]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_build_observation [line 3854]
+  callees:
+    -> <none>
+
+- _zero_v800_last_step_type [line 3978]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_build_observation [line 3854]
+    <- _zero_v800_represents_failed_step_observation [line 3993]
+  callees:
+    -> <none>
+
+- _zero_v800_represents_failed_step_observation [line 3993]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v800_build_observation [line 3854]
+  callees:
+    -> _zero_v800_last_step_type [line 3978]
+
+- _zero_v800_task_runner_run_one_step [line 4014]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_v800_build_observation [line 3854]
+    -> _zero_v800_decide_from_observation [line 3896]
+
+- _zero_v801_public_runtime_value [line 4095]
+  reachable_from_mainline: False
+  callers:
+    <- _zero_v801_task_runner_finalize_public_result [line 4109]
+  callees:
+    -> <none>
+
+- _zero_v801_task_runner_finalize_public_result [line 4109]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _zero_v801_public_runtime_value [line 4095]
+
+- _zero_v810_finalize_public_result [line 4250]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> <none>
+
+- _zero_v810_persist_step_result_to_runtime_state [line 4201]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> _sync_runtime_state_back_to_task [line 2803]
+
+- _zero_v810_taskrunner_init [line 4190]
+  reachable_from_mainline: False
+  callers:
+    <- <none>
+  callees:
+    -> <none>
+
+================================================================================
+Dead Legacy Candidates
+================================================================================
+- _stage3b_run_task [line 4793]
+- _stage3b_run_task_tick [line 4784]
+- _taskrunner_consolidated_run_task [line 4735]
+- _taskrunner_consolidated_run_task_tick [line 4721]
+- _zero_stage3b_run_task_tick_v2 [line 4981]
+- _zero_stage3b_run_task_tick_v3 [line 5145]
+- _zero_stage3b_run_task_tick_v4 [line 5194]
+- _zero_stage3b_run_task_v2 [line 5014]
+- _zero_stage3b_run_task_v3 [line 5154]
+- _zero_stage3b_run_task_v4 [line 5203]
+- _zero_v702_task_runner_run_one_step [line 3662]
+- _zero_v800_task_runner_run_one_step [line 4014]
+- _zero_v801_task_runner_finalize_public_result [line 4109]
+- _zero_v810_finalize_public_result [line 4250]
+- _zero_v810_persist_step_result_to_runtime_state [line 4201]
+- _zero_v810_taskrunner_init [line 4190]
+
+================================================================================
+Unreachable Legacy From Mainline
+================================================================================
+- _stage3b_run_task [line 4793]
+- _stage3b_run_task_tick [line 4784]
+- _stage3b_taskrunner_enrich_success_result [line 4752]
+- _taskrunner_consolidated_run_task [line 4735]
+- _taskrunner_consolidated_run_task_tick [line 4721]
+- _zero_stage3b_call_registered_handler_v2 [line 4960]
+- _zero_stage3b_mapping_v2 [line 4804]
+- _zero_stage3b_normalize_blocked_v2 [line 4925]
+- _zero_stage3b_normalize_success_v2 [line 4863]
+- _zero_stage3b_normalize_taskrunner_result_v3 [line 5052]
+- _zero_stage3b_read_state_v2 [line 4837]
+- _zero_stage3b_run_task_tick_v2 [line 4981]
+- _zero_stage3b_run_task_tick_v3 [line 5145]
+- _zero_stage3b_run_task_tick_v4 [line 5194]
+- _zero_stage3b_run_task_v2 [line 5014]
+- _zero_stage3b_run_task_v3 [line 5154]
+- _zero_stage3b_run_task_v4 [line 5203]
+- _zero_stage3b_runtime_mode_v2 [line 4821]
+- _zero_stage3b_runtime_state_from_task_v3 [line 5032]
+- _zero_stage3b_select_step_v2 [line 4807]
+- _zero_stage3b_state_path_v2 [line 4833]
+- _zero_stage3b_taskrunner_record_operator_failure_v4 [line 5168]
+- _zero_stage3b_write_state_v2 [line 4851]
+- _zero_v702_runner_extract_workspace_py_path [line 3593]
+- _zero_v702_runner_looks_like_autonomous_repair [line 3600]
+- _zero_v702_runner_normalize_rel_path [line 3586]
+- _zero_v702_runner_repair_task_steps_if_needed [line 3612]
+- _zero_v702_task_runner_run_one_step [line 3662]
+- _zero_v800_build_observation [line 3854]
+- _zero_v800_decide_from_observation [line 3896]
+- _zero_v800_extract_action [line 3826]
+- _zero_v800_extract_error [line 3838]
+- _zero_v800_extract_status [line 3832]
+- _zero_v800_last_step_type [line 3978]
+- _zero_v800_represents_failed_step_observation [line 3993]
+- _zero_v800_task_runner_run_one_step [line 4014]
+- _zero_v801_public_runtime_value [line 4095]
+- _zero_v801_task_runner_finalize_public_result [line 4109]
+- _zero_v810_finalize_public_result [line 4250]
+- _zero_v810_persist_step_result_to_runtime_state [line 4201]
+- _zero_v810_taskrunner_init [line 4190]
+
+================================================================================
+Runtime-related Functions Without Direct Callers
+================================================================================
+- _build_repair_chain_id [line 2968]
+- _extract_changed_files_from_step_result [line 2000]
+- _extract_runtime_mode_from_mapping [line 1902]
+- _extract_trace_from_step_result [line 2779]
+- _first_repair_action_path [line 2993]
+- _infer_repair_source_path [line 2980]
+- _normalize_runtime_mode [line 1898]
+- _persist_step_result_to_runtime_state [line 2782]
+- _read_repair_source_text [line 2983]
+- _repair_lineage_run_task [line 5325]
+- _repair_lineage_run_task_tick [line 5310]
+- _resolve_runtime_mode [line 1906]
+- _resolve_step_cwd [line 1772]
+- _runtime_action_id [line 1926]
+- _runtime_action_metadata [line 1932]
+- _runtime_linked_session_node [line 1929]
+- _runtime_step_action_type [line 1917]
+- _runtime_step_id [line 1923]
+- _stage3b_run_task [line 4793]
+- _stage3b_run_task_tick [line 4784]
+- _taskrunner_consolidated_run_task [line 4735]
+- _taskrunner_consolidated_run_task_tick [line 4721]
+- _zero_attach_step_authority [line 193]
+- _zero_boundary_build_taskrunner_authority_context [line 4434]
+- _zero_execute_owned_step_with_registry_admission [line 5501]
+- _zero_operator_registry_phase1c_run_task_tick [line 5364]
+- _zero_run_task_adaptive [line 4540]
+- _zero_stage3b_run_task_tick_v2 [line 4981]
+- _zero_stage3b_run_task_tick_v3 [line 5145]
+- _zero_stage3b_run_task_tick_v4 [line 5194]
+- _zero_stage3b_run_task_v2 [line 5014]
+- _zero_stage3b_run_task_v3 [line 5154]
+- _zero_stage3b_run_task_v4 [line 5203]
+- _zero_taskrunner_registry_admit_owned_step_v24 [line 5425]
+- _zero_taskrunner_registry_admit_tick_v24 [line 5429]
+- _zero_taskrunner_registry_callsite_install_v26 [line 5522]
+- _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26 [line 5500]
+- _zero_taskrunner_registry_callsite_wrap_tick_v26 [line 5511]
+- _zero_taskrunner_registry_legacy_cleanup_guard_v28 [line 5546]
+- _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28 [line 5570]
+- _zero_tick_with_registry_admission [line 5512]
+- _zero_v702_task_runner_run_one_step [line 3662]
+- _zero_v703_task_runner_determine_failure_type [line 3701]
+- _zero_v710_task_runner_determine_failure_type [line 3741]
+- _zero_v731_task_runner_determine_failure_type [line 3794]
+- _zero_v800_task_runner_run_one_step [line 4014]
+- _zero_v801_task_runner_finalize_public_result [line 4109]
+- _zero_v810_persist_step_result_to_runtime_state [line 4201]
+- _zero_v810_taskrunner_init [line 4190]
+- delegated_runner [line 274]
+
+================================================================================
+Suggested Package 34 Targets
+================================================================================
+- Do not delete anything from this report alone.
+- First inspect dead legacy candidates manually.
+- Prioritize wrappers that meet all conditions:
+  1. legacy prefix
+  2. no direct callers
+  3. unreachable from mainline
+  4. no test references
+- After that, run targeted tests before any cleanup.
+
+================================================================================
+Non-mainline Issues
+================================================================================
+- This package only analyzes callers. No runtime behavior was changed.
+- Any unrelated failures discovered during validation must be reported explicitly.

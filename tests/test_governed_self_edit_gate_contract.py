@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime.mutation_session import (
+
     MutationApprovalMode,
     MutationVerificationRequirement,
 )
@@ -16,6 +17,10 @@ from core.tasks.runtime_repair_transaction import (
     create_runtime_repair_transaction,
     stage_runtime_repair_mutation,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

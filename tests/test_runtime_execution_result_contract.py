@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 def test_runtime_execution_result_is_canonical_immutable_mapping():
@@ -24,6 +29,32 @@ def test_runtime_execution_result_is_canonical_immutable_mapping():
     assert result["execution_id"] == "execution-1"
     assert isinstance(result.to_dict(), dict)
     assert not isinstance(result, dict)
+
+
+def test_legacy_plan_contract_fields_remain_visible_at_top_level():
+    module = importlib.import_module("core.runtime.runtime_execution_result")
+    legacy_result = {
+        "success": False,
+        "needs_correction": True,
+        "rounds": [{"round": 1}],
+        "final_round_result": {"results": []},
+        "final_verify_result": {"passed": False},
+        "replan_history": [{"round": 1}],
+        "replan_rounds_used": 1,
+    }
+
+    result = module.RuntimeExecutionResult.from_legacy_plan_result(
+        execution_id="execution-plan",
+        execution_start_id="execution-start-plan",
+        execution_type="plan",
+        started_at="2026-01-01T00:00:00Z",
+        finished_at="2026-01-01T00:00:01Z",
+        legacy_result=legacy_result,
+    )
+
+    for key, value in legacy_result.items():
+        if key != "success":
+            assert result[key] == value
 
 
 def test_executor_returns_runtime_execution_result(tmp_path):

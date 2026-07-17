@@ -1,0 +1,163 @@
+RuntimeNativeMainline Usage Inventory
+=====================================
+
+1. AgentLoop
+-------------------------------------
+□ engineering_goal
+□ work_package
+□ planner_runtime
+□ planner_owned_code_chain
+□ repair_preflight
+□ autonomous_repair
+
+Status
+- Routed through RuntimeRouteRegistry
+- RuntimeNativeMainline acts as compatibility wrapper only
+
+Candidate
+YES
+
+-------------------------------------
+
+2. CLI
+-------------------------------------
+
+goal_cli
+portfolio_cli
+program_cli
+task_cli
+work_package_cli
+control_cli
+
+Execution commands
+
+Status
+
+Registry
+↓
+
+RuntimeNativeMainline
+↓
+
+Legacy callable
+
+Candidate
+YES
+
+-------------------------------------
+
+3. Scheduler
+
+tick
+run_one_step
+
+Status
+
+Registry
+↓
+
+RuntimeNativeMainline
+↓
+
+legacy delegate
+
+Candidate
+
+Needs overlay cleanup first
+
+-------------------------------------
+
+4. TaskRunner
+
+execute_owned_step
+
+run_task_tick
+
+Status
+
+Registry
+↓
+
+RuntimeNativeMainline
+↓
+
+legacy delegate
+
+Candidate
+
+Needs compatibility layer cleanup
+
+-------------------------------------
+
+5. Remaining RuntimeNativeMainline responsibilities
+
+Compatibility metadata
+
+Exception shaping
+
+Audit metadata
+
+Admission metadata
+
+delegate recursion guard
+
+non-dict passthrough
+
+These must exist somewhere after retirement.
+
+-------------------------------------
+
+6. Retirement blockers
+
+Scheduler overlay
+
+TaskRunner overlay
+
+delegate keyword compatibility
+
+remaining compatibility tests
+
+-------------------------------------
+
+7. Safe removal order
+
+Step 1
+
+Move compatibility metadata
+↓
+
+RuntimeRouteRegistry
+
+Step 2
+
+Move exception shaping
+↓
+
+RuntimeRouteRegistry
+
+Step 3
+
+Move delegate recursion guard
+↓
+
+RuntimeRouteRegistry
+
+Step 4
+
+Delete RuntimeNativeMainline compatibility wrapper
+
+-------------------------------------
+
+Current readiness
+
+Registry migration
+
+100%
+
+Compatibility migration
+
+0%
+
+Deletion readiness
+
+NOT READY

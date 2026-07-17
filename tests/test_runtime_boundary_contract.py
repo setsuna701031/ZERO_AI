@@ -3,6 +3,11 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -96,21 +101,27 @@ class RuntimeBoundaryContractTest(unittest.TestCase):
         with self.assertRaises(RuntimeBoundaryRejected):
             RuntimeBoundary().request_queue_transition(RuntimeOwner.REPAIR_CHAIN)
 
-    def test_system_can_call_all_boundary_operations(self) -> None:
-        from core.runtime.runtime_boundary import RuntimeBoundary
+    def test_system_owner_is_scoped_for_runtime_boundary_operations(self) -> None:
+        from core.runtime.runtime_boundary import RuntimeBoundary, RuntimeBoundaryRejected
         from core.runtime.runtime_ownership import RuntimeOwner
 
         boundary = RuntimeBoundary()
-        operations = [
+        rejected_operations = [
             boundary.request_queue_transition,
             boundary.request_execution_result_write,
             boundary.request_orchestration_dispatch,
+        ]
+        for operation in rejected_operations:
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaises(RuntimeBoundaryRejected):
+                    operation(RuntimeOwner.SYSTEM)
+
+        allowed_operations = [
             boundary.request_runtime_snapshot,
             boundary.emit_runtime_event,
             boundary.emit_runtime_incident,
         ]
-
-        for operation in operations:
+        for operation in allowed_operations:
             with self.subTest(operation=operation.__name__):
                 self.assertTrue(operation(RuntimeOwner.SYSTEM).allowed)
 

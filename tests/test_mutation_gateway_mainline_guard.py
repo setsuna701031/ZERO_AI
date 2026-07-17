@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_apply_patch_plan_is_only_called_by_runtime_pipeline() -> None:

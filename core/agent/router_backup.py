@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class SimpleRouter:
@@ -14,7 +14,29 @@ class SimpleRouter:
     - llm:    交給聊天/LLM 路徑（目前未啟用時由 agent_loop 回覆）
     """
 
-    def route(self, user_input: str, context: Optional[Dict] = None) -> Dict:
+    def route(
+        self,
+        user_input: str | None = None,
+        context: Optional[Dict] = None,
+        source: str | None = None,
+        **kwargs: Any,
+    ) -> Dict:
+        """Route user input while accepting the agent component contract.
+
+        Compatibility surface:
+        - route(user_input)
+        - route(user_input, context)
+        - route(context=..., user_input=..., source=...)
+
+        ``source`` is accepted for provenance compatibility with
+        core.agent.agent_component_invoker.call_router.  Routing semantics stay
+        unchanged; the router still decides only from ``user_input``.
+        """
+        if user_input is None and "user_input" in kwargs:
+            user_input = kwargs.get("user_input")
+        _ = context
+        _ = source
+
         text = str(user_input or "").strip()
         lowered = text.lower()
 

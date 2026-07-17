@@ -7,6 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -175,12 +180,24 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
         }
 
     def _run_cross_layer_flow(self) -> dict[str, Any]:
+        from core.runtime.runtime_authority_seal import (
+            _TASK_RUNNER_ISSUER_TOKEN,
+            delegate_taskrunner_execution_capability,
+            issue_terminal_execution_evidence,
+            is_task_completion_authority,
+            is_terminal_execution_evidence,
+        )
+        from core.runtime.runtime_dispatcher import RuntimeDispatcher
         from core.runtime.task_runtime import TaskRuntime
+        from core.runtime.task_runner import TaskRunner
 
         adapters = self._adapters()
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)
             task = self._task(tmp)
+            task["package_id"] = "mainline-package"
+            task["session_id"] = "mainline-session"
+            task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
             scheduler = self._scheduler(tmp, task, adapters["scheduler_adapter"])
             runtime = TaskRuntime(
                 workspace_root=str(tmp / "workspace"),
@@ -202,10 +219,42 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             step_result = executor.execute_step(step, task=task)
             step["metadata"]["step_meta"]["items"].append("external-mutation")
             task["metadata"]["task_meta"]["items"].append("external-mutation")
-            finished_result = runtime.mark_finished(
+            self.assertTrue(step_result.get("ok"))
+            taskrunner_capability = delegate_taskrunner_execution_capability(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                task["runtime_execution_capability"],
+                task_id=task["task_id"],
+                step_id=step["id"],
+            )
+            terminal_evidence = issue_terminal_execution_evidence(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                taskrunner_capability,
+                task_id=task["task_id"],
+                package_id=task["package_id"],
+                session_id=task["session_id"],
+                step_id=step["id"],
+            )
+            self.assertTrue(
+                is_terminal_execution_evidence(
+                    terminal_evidence,
+                    task_id=task["task_id"],
+                    package_id=task["package_id"],
+                    session_id=task["session_id"],
+                )
+            )
+            finished_result = TaskRunner(task_runtime=runtime).complete_task(
                 task,
                 current_tick=3,
                 final_answer="sealed",
+                terminal_evidence=terminal_evidence,
+            )
+            self.assertTrue(
+                is_task_completion_authority(
+                    finished_result["task_completion_authority"],
+                    task_id=task["task_id"],
+                    package_id=task["package_id"],
+                    session_id=task["session_id"],
+                )
             )
             scheduler_status = scheduler.status()
 
@@ -223,6 +272,7 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
                 "finished": finished_result,
                 "scheduler_status": scheduler_status,
             },
+            "terminal_evidence": terminal_evidence,
             "transcript": (
                 [("scheduler", event.orchestration_phase) for event in scheduler_events]
                 + [("task_runtime", event.phase) for event in task_events]
@@ -249,6 +299,10 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
         self.assertEqual(flow["results"]["running"]["status"], "running")
         self.assertTrue(flow["results"]["step"].get("ok"))
         self.assertEqual(flow["results"]["finished"]["status"], "finished")
+        self.assertEqual(
+            flow["results"]["finished"]["task_completion_authority"].task_id,
+            flow["terminal_evidence"].task_id,
+        )
 
     def test_deterministic_cross_layer_ordering(self) -> None:
         flow = self._run_cross_layer_flow()
@@ -360,7 +414,7 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
 
     def test_no_evidence_internals_leak_to_runtime_outputs(self) -> None:
         flow = self._run_cross_layer_flow()
-        forbidden = {
+        forbidden_runtime_keys = {
             "evidence",
             "evidence_adapter",
             "evidence_events",
@@ -370,12 +424,56 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             "hook",
             "hook_fingerprint",
         }
+        forbidden_canonical_result_internals = {
+            "evidence_adapter",
+            "evidence_events",
+            "boundary",
+            "boundary_fingerprint",
+            "adapter_fingerprint",
+            "hook",
+            "hook_fingerprint",
+        }
 
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["scheduler_status"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["running"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["running"]["runtime_state"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["step"]))
-        self.assertTrue(forbidden.isdisjoint(flow["results"]["finished"]))
+        self.assertTrue(
+            forbidden_runtime_keys.isdisjoint(flow["results"]["scheduler_status"])
+        )
+        self.assertTrue(forbidden_runtime_keys.isdisjoint(flow["results"]["running"]))
+        self.assertTrue(
+            forbidden_runtime_keys.isdisjoint(
+                flow["results"]["running"]["runtime_state"]
+            )
+        )
+        self.assertTrue(forbidden_runtime_keys.isdisjoint(flow["results"]["step"]))
+        self.assertTrue(forbidden_runtime_keys.isdisjoint(flow["results"]["finished"]))
+
+        runtime_execution_result = flow["results"]["step"].get(
+            "runtime_execution_result"
+        )
+        self.assertIsInstance(runtime_execution_result, dict)
+        self.assertTrue(
+            forbidden_canonical_result_internals.isdisjoint(
+                runtime_execution_result
+            )
+        )
+        self.assertIsInstance(runtime_execution_result.get("evidence"), dict)
+
+        adapter_payload = flow["results"]["step"].get("adapter_payload")
+        if isinstance(adapter_payload, dict) and isinstance(
+            adapter_payload.get("raw"), dict
+        ):
+            self.assertTrue(
+                forbidden_runtime_keys.isdisjoint(adapter_payload["raw"])
+            )
+            nested_runtime_result = adapter_payload["raw"].get(
+                "runtime_execution_result"
+            )
+            if isinstance(nested_runtime_result, dict):
+                self.assertTrue(
+                    forbidden_canonical_result_internals.isdisjoint(
+                        nested_runtime_result
+                    )
+                )
+                self.assertIsInstance(nested_runtime_result.get("evidence"), dict)
 
     def test_hooks_and_adapters_are_observational_only(self) -> None:
         from core.runtime.task_runtime import TaskRuntime
@@ -455,6 +553,112 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             seal.evidence_records["bundle"].aggregate_status,
             "succeeded",
         )
+
+    def test_goal_loop_success_completes_with_validated_evidence(self) -> None:
+        from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+        from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            repository = EngineeringGoalRepository(tmp)
+            repository.save_goal({"goal_id": "goal_success", "summary": "create workspace/example.txt"})
+
+            result = EngineeringGoalLoop(repo_root=tmp, repository=repository).run_until_terminal(
+                "goal_success",
+                max_cycles=1,
+                max_replans=1,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["cycles"][0]["adaptive_decision"], "complete")
+        self.assertEqual(result["cycles"][0]["replan_record"], {})
+        self.assertTrue(result["goal_completion_authority_result"]["accepted"])
+
+    def test_goal_loop_recoverable_failure_creates_sealed_replan_evidence(self) -> None:
+        from core.evidence.evidence_authority import EvidenceAuthority
+        from core.evidence.evidence_repository import EvidenceRepository
+        from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+        from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            repository = EngineeringGoalRepository(tmp)
+            evidence_repository = EvidenceRepository(tmp)
+            evidence_authority = EvidenceAuthority(tmp, evidence_repository=evidence_repository)
+            repository.save_goal(
+                {
+                    "goal_id": "goal_replan",
+                    "summary": "create workspace/report.txt",
+                    "payload": {
+                        "target_path": "workspace/report.txt",
+                        "verify_contains": "missing-from-output",
+                    },
+                }
+            )
+
+            result = EngineeringGoalLoop(
+                repo_root=tmp,
+                repository=repository,
+                evidence_repository=evidence_repository,
+                evidence_authority=evidence_authority,
+            ).run_until_terminal("goal_replan", max_cycles=1, max_replans=1)
+            replan_record = result["cycles"][0]["replan_record"]
+            decision_chain = evidence_authority.get_decision_chain("goal_replan")
+            decision_records = [
+                record for record in evidence_repository.list_records()
+                if record.evidence_id == replan_record["evidence_ref"]
+            ]
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["cycles"][0]["adaptive_decision"], "replan")
+        self.assertEqual(result["replan_count"], 1)
+        self.assertEqual(replan_record["source_goal_id"], "goal_replan")
+        self.assertEqual(replan_record["cycle_index"], 0)
+        self.assertEqual(replan_record["replan_reason"], "verification_failed")
+        self.assertIn("workspace/report.txt", replan_record["missing_artifacts"])
+        self.assertEqual(replan_record["evidence_ref"], replan_record["decision_evidence_id"])
+        self.assertIn(replan_record["evidence_ref"], replan_record["evidence_refs"])
+        self.assertIn(replan_record["evidence_ref"], decision_chain.evidence_ids)
+        self.assertEqual(decision_records[0].goal_id, "goal_replan")
+        self.assertEqual(decision_records[0].metadata["links"]["cycle_index"], 0)
+        self.assertEqual(decision_records[0].metadata["links"]["replan_goal_id"], "goal_replan")
+        self.assertFalse(result["goal_completion_authority_result"]["accepted"])
+
+    def test_goal_loop_policy_blocked_does_not_replan_or_continue(self) -> None:
+        from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+        from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            repository = EngineeringGoalRepository(tmp)
+            repository.save_goal({"goal_id": "goal_policy_blocked", "summary": "create core/agent/agent_loop.py"})
+
+            result = EngineeringGoalLoop(repo_root=tmp, repository=repository).run_until_terminal(
+                "goal_policy_blocked",
+                max_cycles=1,
+                max_replans=1,
+                max_continuations=1,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["cycles"][0]["adaptive_decision"], "blocked")
+        self.assertEqual(result["cycles"][0]["replan_record"], {})
+        self.assertEqual(result["cycles"][0]["continuation_work_item"], {})
+        self.assertEqual(result["goal_completion_authority_result"], {})
+
+    def test_missing_validated_evidence_cannot_complete_goal(self) -> None:
+        from core.goals.goal_completion_authority import GoalCompletionAuthority
+
+        result = GoalCompletionAuthority().complete_goal(
+            goal_id="goal_missing_evidence",
+            from_state="active",
+            evidence_refs=[],
+            all_subgoals_completed=True,
+            reason="operator_claim_without_evidence",
+        )
+
+        self.assertFalse(result.accepted)
+        self.assertFalse(result.completed)
 
 
 if __name__ == "__main__":

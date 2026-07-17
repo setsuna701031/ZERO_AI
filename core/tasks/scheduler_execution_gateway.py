@@ -6,6 +6,8 @@ import traceback
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from core.tasks import execution_gateway_runtime as execution_gateway_runtime
+
 
 @dataclass(frozen=True)
 class SchedulerExecutionGatewayResult:
@@ -185,6 +187,188 @@ def build_noop_execution_result(
     return result
 
 
+def _nested_mapping_values(payload: Any) -> List[Dict[str, Any]]:
+    """Return nested dict payloads that commonly carry executor truth.
+
+    SchedulerExecutionGateway is a transport/compatibility layer. It must not
+    reinterpret a successful StepExecutor payload as failed just because the
+    outer compatibility wrapper did not include an explicit top-level ``ok``.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    values: List[Dict[str, Any]] = []
+    for key in ("result", "output", "data", "payload", "raw", "adapter_payload"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            values.append(nested)
+            values.extend(_nested_mapping_values(nested))
+    return values
+
+
+def _payload_chain(payload: Any) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    return [payload, *_nested_mapping_values(payload)]
+
+
+def _payload_step_type(payload: Any, fallback: str = "") -> str:
+    for source_payload in _payload_chain(payload):
+        for key in ("step_type", "type", "action"):
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
+                return value.strip().lower()
+        step = source_payload.get("step")
+        if isinstance(step, dict):
+            value = step.get("type") or step.get("action")
+            if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
+                return value.strip().lower()
+    return str(fallback or "").strip().lower()
+
+
+def _has_nonempty_text(payload: Any, *keys: str) -> bool:
+    for source_payload in _payload_chain(payload):
+        for key in keys:
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+    return False
+
+
+def _has_path_signal(payload: Any) -> bool:
+    for source_payload in _payload_chain(payload):
+        for key in ("full_path", "path", "target_path", "file_path"):
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+    return False
+
+
+def _has_hard_failure_signal(payload: Any) -> bool:
+    """Return True only for errors that should beat a successful payload shape."""
+    soft_errors = {"execution_failed"}
+    for source_payload in _payload_chain(payload):
+        for key in ("blocked", "failed"):
+            if bool(source_payload.get(key)):
+                return True
+
+        error_type = source_payload.get("error_type")
+        if isinstance(error_type, str) and error_type.strip():
+            return True
+
+        error = source_payload.get("error")
+        if isinstance(error, dict):
+            error_name = str(error.get("type") or "").strip().lower()
+            if error_name and error_name not in soft_errors:
+                return True
+            message = str(error.get("message") or "").strip()
+            if message and error_name not in soft_errors:
+                return True
+        elif isinstance(error, str):
+            error_name = error.strip().lower()
+            if error_name and error_name not in soft_errors:
+                return True
+        elif error not in (None, "", False, {}, []):
+            return True
+    return False
+
+
+def _looks_like_successful_payload(payload: Any, *, fallback_step_type: str = "") -> bool:
+    """Recognize legacy/basic executor success shapes without inventing success.
+
+    Some older scheduler-basic paths return useful read/write payloads but mark
+    ``ok`` false because they treat missing outer executor transport metadata as
+    a failure.  The gateway is the contract boundary, so it may correct those
+    known shapes only when a concrete success signal exists and no hard error is
+    present.
+    """
+    if not isinstance(payload, dict):
+        return bool(payload)
+
+    if _has_hard_failure_signal(payload):
+        return False
+
+    step_type = _payload_step_type(payload, fallback=fallback_step_type)
+
+    if step_type in {"read_file", "workspace_read"}:
+        return _has_path_signal(payload) and _has_nonempty_text(payload, "content", "text", "message", "final_answer")
+
+    if step_type in {"write_file", "workspace_write", "append_file", "workspace_append", "ensure_file"}:
+        return _has_path_signal(payload) and (
+            _has_nonempty_text(payload, "content", "message", "final_answer")
+            or any("bytes" in source_payload or "bytes_appended" in source_payload for source_payload in _payload_chain(payload))
+            or any(source_payload.get("created") is not None for source_payload in _payload_chain(payload))
+        )
+
+    if step_type in {"llm", "llm_generate", "respond", "final_answer"}:
+        return _has_nonempty_text(payload, "text", "content", "message", "final_answer", "response")
+
+    if step_type in {"command", "shell", "run_python"}:
+        for source_payload in _payload_chain(payload):
+            if "returncode" in source_payload:
+                try:
+                    return int(source_payload.get("returncode", 1)) == 0
+                except Exception:
+                    return False
+
+    return False
+
+
+def _infer_execution_ok(payload: Dict[str, Any], *, fallback_step_type: str = "") -> bool:
+    """Infer execution truth without letting legacy wrappers invert success.
+
+    Precedence:
+    1. Explicit hard failure signals.
+    2. Known successful executor payload shapes such as read_file with content.
+    3. Explicit top-level ok/success/executed.
+    4. Explicit nested ok/success/executed.
+    5. False by default.
+    """
+    if not isinstance(payload, dict):
+        return bool(payload)
+
+    if _has_hard_failure_signal(payload):
+        return False
+
+    if _looks_like_successful_payload(payload, fallback_step_type=fallback_step_type):
+        return True
+
+    for key in ("ok", "success", "executed"):
+        if key in payload:
+            return bool(payload.get(key))
+
+    for nested in _nested_mapping_values(payload):
+        for key in ("ok", "success", "executed"):
+            if key in nested:
+                return bool(nested.get(key))
+
+    return False
+
+
+def _extract_execution_text(payload: Dict[str, Any]) -> str:
+    """Extract the best human-facing text from a gateway/executor payload."""
+    keys = (
+        "final_answer",
+        "message",
+        "summary",
+        "summary_text",
+        "content",
+        "text",
+        "response",
+        "answer",
+        "output_text",
+        "stdout",
+    )
+
+    for source_payload in [payload, *_nested_mapping_values(payload)]:
+        for key in keys:
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return ""
+
+
 def normalize_execution_result(
     value: Any,
     *,
@@ -208,14 +392,23 @@ def normalize_execution_result(
         fallback=fallback_action,
     )
 
-    result.setdefault("ok", bool(result.get("success", result.get("executed", False))))
+    inferred_ok = _infer_execution_ok(result, fallback_step_type=_step_type(normalized_step))
+    # Do not let a legacy/basic wrapper keep ok=False when the payload has a
+    # concrete successful executor shape (for example read_file with content).
+    result["ok"] = inferred_ok
     result["action"] = action
     result.setdefault("type", action)
     result.setdefault("step_type", _step_type(normalized_step))
     result.setdefault("step", copy.deepcopy(normalized_step))
-    result.setdefault("message", str(result.get("final_answer") or result.get("summary") or action))
-    result.setdefault("final_answer", str(result.get("message") or action))
-    result.setdefault("error", None if bool(result.get("ok")) else result.get("error") or "execution_failed")
+
+    extracted_text = _extract_execution_text(result)
+    result.setdefault("message", extracted_text or str(result.get("final_answer") or result.get("summary") or action))
+    result.setdefault("final_answer", extracted_text or str(result.get("message") or action))
+
+    if bool(result.get("ok")):
+        result["error"] = None
+    else:
+        result.setdefault("error", result.get("error") or "execution_failed")
 
     target_path = _extract_target_path(result) or _extract_target_path(normalized_step)
     if target_path is not None:
@@ -264,10 +457,17 @@ def build_gateway_result(
         final_gateway_error = error_list[0]
         runtime_error = error_list[0]
 
+    payload_ok = bool(normalized_result.get("ok"))
+    transport_ok = final_gateway_error is None
+
     normalized_result["scheduler_execution_gateway_used"] = bool(used_gateway)
     normalized_result["scheduler_execution_legacy_fallback_used"] = bool(used_legacy_fallback)
-    normalized_result["scheduler_execution_runtime_ok"] = final_gateway_error is None
+    # Transport truth and payload truth are intentionally separate.
+    # ``scheduler_execution_runtime_ok`` means the gateway wrapper did not fail;
+    # ``ok`` remains the executor/legacy payload result.
+    normalized_result["scheduler_execution_runtime_ok"] = transport_ok
     normalized_result["scheduler_execution_runtime_error"] = final_gateway_error
+    normalized_result["scheduler_execution_payload_ok"] = payload_ok
     normalized_result["scheduler_execution_gateway_layer"] = GATEWAY_LAYER
 
     if error_list:
@@ -291,25 +491,46 @@ def build_gateway_result(
 
 
 def _invoke_executor(executor: Any, step: Dict[str, Any], kwargs: Dict[str, Any]) -> Any:
-    if callable(executor):
-        try:
-            return executor(step, **kwargs)
-        except TypeError:
-            return executor(step)
+    """Invoke a scheduler execution target with one canonical contract.
+
+    This function deliberately avoids broad TypeError fallback chains. Those
+    chains used to catch TypeError raised *inside* a handler and retry with
+    ``handler(step)``, hiding the real error and breaking bound handlers.
+
+    Supported contracts:
+    - StepExecutor-like object: execute_step(step=..., task=..., context=..., previous_result=...)
+    - StepExecutor-like object: execute(step=..., task=..., context=..., previous_result=...)
+    - Bound StepHandler callable: handler(step, task, context, previous_result)
+    - Legacy explicit opt-in callable: handler(step) only when no task/context/previous_result exists.
+    """
+    task = kwargs.get("task")
+    context = kwargs.get("context")
+    previous_result = kwargs.get("previous_result")
 
     execute_step = getattr(executor, "execute_step", None)
     if callable(execute_step):
-        try:
-            return execute_step(step=step, **kwargs)
-        except TypeError:
-            return execute_step(step)
+        return execute_step(step=step, **kwargs)
 
     execute = getattr(executor, "execute", None)
     if callable(execute):
+        return execute(step=step, **kwargs)
+
+    if callable(executor):
+        if task is not None or context is not None or previous_result is not None:
+            return executor(step, task, context, previous_result)
         try:
-            return execute(step=step, **kwargs)
-        except TypeError:
-            return execute(step)
+            return executor(step, task, context, previous_result)
+        except TypeError as exc:
+            message = str(exc)
+            contract_error_markers = (
+                "required positional argument",
+                "positional arguments",
+                "unexpected keyword argument",
+                "takes",
+            )
+            if any(marker in message for marker in contract_error_markers):
+                return executor(step)
+            raise
 
     raise TypeError("executor_not_callable")
 

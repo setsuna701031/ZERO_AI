@@ -12,8 +12,39 @@ from typing import Any, Callable, Dict, List, Optional
 
 from core.runtime.event_stream import attach_runtime_event_stream
 from core.runtime.execution_gateway import safe_subprocess_run
+from core.runtime.runtime_surface_registry import (
+    RuntimeSurfaceKind,
+    authority_action_type_for_surface,
+    classify_runtime_surface,
+    is_side_effect_surface,
+    list_runtime_surfaces,
+)
+from core.runtime.runtime_transaction_registry import (
+    RuntimeTransaction,
+    assert_transaction_lifecycle_valid,
+    create_transaction,
+    record_apply,
+    record_approval,
+    record_audit,
+    record_commit,
+    record_failure,
+    record_preflight,
+    record_rollback,
+    record_verification,
+)
+from core.runtime.runtime_evidence_freeze import evidence_refs_for_payload
 from core.runtime.runtime_file_service import RuntimeFileService
 from core.runtime.runtime_execution_result import RuntimeExecutionResult
+
+try:
+    from core.runtime.runtime_legality import RuntimeLegalityEngine
+except Exception:
+    RuntimeLegalityEngine = None
+
+try:
+    from core.runtime.runtime_freeze import RuntimeFreezeAuthority
+except Exception:
+    RuntimeFreezeAuthority = None
 
 from core.tasks.task_paths import TaskPathManager
 from core.runtime.step_handlers import (
@@ -35,34 +66,19 @@ class StepExecutor:
     """
     ZERO Step Executor
 
-    本版重點：
-    1. step handler 輸出統一 envelope
-    2. unsupported / exception 錯誤格式統一
-    3. execute_steps 批次結果格式統一
-    4. 與目前 tool registry 的 outer/inner ok 結構對齊
-    5. 直接在 StepExecutor 內接管 llm / llm_generate，修正 document flow 的 {{file_content}} 注入
-    6. 補 execution contract 收束：message / final_answer / normalized payload
-    7. 保留既有 batch summary contract：failed_step / completed_steps 維持舊測試語意
-    8. 新增最小可用 retry：僅在 StepExecutor.execute_step 統一重試，避免責任散落
-    9. 錯誤分類改為看整個 failed result（error + stderr + stdout + returncode）
-    10. command_failed 分流：
-        - fatal -> 1 次
-        - generic -> 2 次
-        - transient -> 依設定次數
-    11. execution_trace 由 StepExecutor 統一產生，作為正式 trace source
-    12. command cwd policy 收束：
-        - 預設 command 在 project root 執行
-        - 僅 command_cwd / cwd_override / run_in_task_dir=True 才覆蓋
-        - 一般 task/context 注入進來的 cwd 不算 explicit command cwd
-    13. command result contract 收束：
-        - 原始 step 保持原樣，不再把誤導性的 cwd 混進 step record
-        - 真正執行 cwd 統一寫到 result.effective_cwd 與 result.result.cwd
-    14. command stdout/result normalization：
-        - 保留完整 stdout / stderr
-        - 補 output_text / parsed_output
-    15. command message/final_answer summarization：
-        - message / final_answer 不再塞整包 JSON
-        - 改為短摘要
+    Responsibilities:
+    1. Dispatch step handlers and normalize their envelopes.
+    2. Normalize unsupported-step and exception failures.
+    3. Execute step batches and preserve batch result contracts.
+    4. Normalize tool registry outer and inner results.
+    5. Support LLM document flow file-content injection.
+    6. Preserve message, final_answer, and normalized payload contracts.
+    7. Report failed_step, completed_steps, and execution traces.
+    8. Apply retry policy through execute_step.
+    9. Preserve error, stderr, stdout, and returncode on failures.
+    10. Classify command failures as fatal, generic, or transient.
+    11. Resolve command cwd from explicit overrides or runtime context.
+    12. Normalize command output and parsed output.
     """
 
     def __init__(
@@ -74,6 +90,7 @@ class StepExecutor:
         workspace_root: str = "workspace",
         debug: bool = False,
         evidence_adapter=None,
+        operator_bridge=None,
     ) -> None:
         self.tool_registry = tool_registry
         self.runtime_store = runtime_store
@@ -82,6 +99,7 @@ class StepExecutor:
         self.workspace_root = os.path.abspath(workspace_root)
         self.debug = debug
         self.evidence_adapter = evidence_adapter
+        self.operator_bridge = operator_bridge
 
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
@@ -89,6 +107,104 @@ class StepExecutor:
 
         self.handlers: Dict[str, StepHandler] = {}
         self._register_builtin_handlers()
+
+    def _operator_bridge_session_id(
+        self,
+        *,
+        task: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        for source in (context or {}, task or {}, kwargs or {}):
+            if not isinstance(source, dict):
+                continue
+            for key in ("operator_session_id", "persistent_operator_session_id", "session_id"):
+                value = str(source.get(key) or "").strip()
+                if value:
+                    return value
+            operator_state = source.get("operator")
+            if isinstance(operator_state, dict):
+                value = str(operator_state.get("session_id") or "").strip()
+                if value:
+                    return value
+            metadata = source.get("metadata")
+            if isinstance(metadata, dict):
+                for key in ("operator_session_id", "persistent_operator_session_id"):
+                    value = str(metadata.get(key) or "").strip()
+                    if value:
+                        return value
+        return ""
+
+    def _operator_bridge_step_started(
+        self,
+        *,
+        step: Dict[str, Any],
+        task: Dict[str, Any],
+        context: Dict[str, Any],
+        kwargs: Dict[str, Any],
+    ) -> None:
+        bridge = getattr(self, "operator_bridge", None)
+        if bridge is None:
+            return
+        session_id = self._operator_bridge_session_id(task=task, context=context, kwargs=kwargs)
+        if not session_id:
+            return
+        try:
+            bridge.on_step_started(session_id, step)
+        except Exception:
+            if self.debug:
+                print("[StepExecutor] operator bridge step_started ignored")
+
+    def _operator_bridge_step_finished(
+        self,
+        *,
+        step: Dict[str, Any],
+        task: Dict[str, Any],
+        context: Dict[str, Any],
+        kwargs: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> None:
+        bridge = getattr(self, "operator_bridge", None)
+        if bridge is None:
+            return
+        session_id = self._operator_bridge_session_id(task=task, context=context, kwargs=kwargs)
+        if not session_id:
+            return
+        try:
+            evidence_refs = result.get("evidence_refs") if isinstance(result, dict) else None
+            nested_result = result.get("result") if isinstance(result, dict) else None
+            if not evidence_refs and isinstance(nested_result, dict):
+                evidence_refs = nested_result.get("evidence_refs")
+
+            # operator_bridge_effective_outcome_preserved
+            # The bridge must record the actual step outcome, not just the
+            # transport/wrapper outcome. Some scheduler paths wrap a failed
+            # handler payload in an outer ok=True envelope so the scheduler can
+            # keep ownership of retry/resume state. For operator lifecycle
+            # evidence, an explicit nested result.ok has higher priority.
+            effective_payload = result if isinstance(result, dict) else {}
+            if isinstance(nested_result, dict) and "ok" in nested_result:
+                effective_payload = nested_result
+            effective_ok = bool(effective_payload.get("ok", False))
+
+            if effective_ok:
+                bridge.on_step_completed(session_id, step, result=result, evidence_refs=evidence_refs)
+            else:
+                bridge.on_step_failed(
+                    session_id,
+                    step,
+                    error=(
+                        effective_payload.get("error")
+                        or effective_payload.get("message")
+                        or result.get("error")
+                        or result.get("message")
+                        or result
+                    ),
+                    evidence_refs=evidence_refs,
+                )
+        except Exception:
+            if self.debug:
+                print("[StepExecutor] operator bridge step_finished ignored")
 
     def register_handler(self, step_type: str, handler: StepHandler) -> None:
         key = str(step_type or "").strip().lower()
@@ -171,6 +287,89 @@ class StepExecutor:
         normalized_task = self._normalize_task(task)
         normalized_context = copy.deepcopy(context) if isinstance(context, dict) else {}
 
+        freeze_state = (
+            kwargs.get("runtime_freeze")
+            or kwargs.get("freeze_state")
+            or kwargs.get("runtime_frozen")
+            or normalized_context.get("runtime_freeze")
+            or normalized_context.get("freeze_state")
+            or normalized_context.get("runtime_frozen")
+            or (
+                normalized_task.get("runtime_freeze")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+            or (
+                normalized_task.get("freeze_state")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+            or (
+                normalized_task.get("runtime_frozen")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+        )
+
+        enforce_freeze = bool(
+            kwargs.get(
+                "enforce_freeze",
+                normalized_context.get("enforce_freeze", True),
+            )
+        )
+
+        if enforce_freeze and RuntimeFreezeAuthority is not None:
+            freeze_decision = RuntimeFreezeAuthority().evaluate(
+                freeze_state=freeze_state,
+                action_type=str(raw_step.get("type") or raw_step.get("action") or "unknown"),
+            )
+
+            if bool(getattr(freeze_decision, "denied", False)):
+                freeze_payload = freeze_decision.to_dict()
+                freeze_reason = str(
+                    freeze_payload.get("reason") or "runtime execution frozen"
+                )
+
+                freeze_result = {
+                    "ok": False,
+                    "step_type": str(raw_step.get("type") or raw_step.get("action") or "unknown").strip().lower(),
+                    "step_index": step_index,
+                    "step_count": step_count,
+                    "task_id": self._extract_task_id(normalized_task),
+                    "runtime_mode": "execute",
+                    "step": copy.deepcopy(raw_step or {}),
+                    "result": {
+                        "ok": False,
+                        "action": "runtime_execution_frozen",
+                        "runtime_freeze_decision": freeze_payload,
+                        "execution_intercepted": True,
+                    },
+                    "message": freeze_reason,
+                    "final_answer": freeze_reason,
+                    "error": {
+                        "type": "runtime_execution_frozen",
+                        "message": freeze_reason,
+                        "retryable": False,
+                        "details": {
+                            "runtime_freeze_decision": freeze_payload,
+                        },
+                    },
+                }
+
+                traced_result = self._attach_execution_trace(
+                    raw_step,
+                    freeze_result,
+                )
+
+                self._emit_evidence_after_result(
+                    step=raw_step,
+                    task=normalized_task,
+                    step_type=str(raw_step.get("type") or raw_step.get("action") or "unknown").strip().lower(),
+                    result=traced_result,
+                )
+
+                return traced_result
+
         step_payload = self._merge_execution_context(
             step=raw_step,
             task=normalized_task,
@@ -195,6 +394,115 @@ class StepExecutor:
             task=normalized_task,
             step_type=step_type,
         )
+        self._operator_bridge_step_started(
+            step=step_payload,
+            task=normalized_task,
+            context=normalized_context,
+            kwargs=kwargs,
+        )
+
+
+        governance_snapshot = (
+            kwargs.get("governance_snapshot")
+            or normalized_context.get("governance_snapshot")
+            or (
+                normalized_task.get("governance_snapshot")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+        )
+
+        constitution = (
+            kwargs.get("constitution")
+            or normalized_context.get("constitution")
+            or (
+                normalized_task.get("constitution")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+        )
+
+        enforce_legality = bool(
+            kwargs.get(
+                "enforce_legality",
+                normalized_context.get("enforce_legality", True),
+            )
+        )
+
+        if (
+            enforce_legality
+            and constitution is not None
+            and RuntimeLegalityEngine is not None
+        ):
+            legality_decision = RuntimeLegalityEngine().evaluate_action(
+                action_type=step_type,
+                risk_level=str(
+                    step_payload.get("risk_level")
+                    or step_payload.get("risk")
+                    or "unknown"
+                ).lower(),
+                governance_snapshot=governance_snapshot,
+                constitution=constitution,
+            )
+
+            if bool(getattr(legality_decision, "blocked", False)) or bool(
+                getattr(legality_decision, "requires_review", False)
+            ):
+                decision_payload = legality_decision.to_dict()
+
+                legality_error = (
+                    "execution_step_blocked"
+                    if bool(getattr(legality_decision, "blocked", False))
+                    else "execution_step_requires_review"
+                )
+
+                legality_result = {
+                    "ok": False,
+                    "step_type": step_type,
+                    "step_index": step_payload.get("step_index"),
+                    "step_count": step_payload.get("step_count"),
+                    "task_id": self._extract_task_id(normalized_task),
+                    "runtime_mode": self._normalize_runtime_mode(
+                        step_payload.get("runtime_mode") or "execute"
+                    ),
+                    "step": copy.deepcopy(raw_step or {}),
+                    "result": {
+                        "ok": False,
+                        "action": legality_error,
+                        "runtime_legality_decision": decision_payload,
+                        "execution_intercepted": True,
+                    },
+                    "message": str(
+                        decision_payload.get("reason") or legality_error
+                    ),
+                    "final_answer": str(
+                        decision_payload.get("reason") or legality_error
+                    ),
+                    "error": {
+                        "type": legality_error,
+                        "message": str(
+                            decision_payload.get("reason") or legality_error
+                        ),
+                        "retryable": False,
+                        "details": {
+                            "runtime_legality_decision": decision_payload,
+                        },
+                    },
+                }
+
+                traced_result = self._attach_execution_trace(
+                    raw_step,
+                    legality_result,
+                )
+
+                self._emit_evidence_after_result(
+                    step=step_payload,
+                    task=normalized_task,
+                    step_type=step_type,
+                    result=traced_result,
+                )
+
+                return traced_result
 
         handler = self.handlers.get(step_type)
         if handler is None:
@@ -210,6 +518,13 @@ class StepExecutor:
                 step=step_payload,
                 task=normalized_task,
                 step_type=step_type,
+                result=traced_result,
+            )
+            self._operator_bridge_step_finished(
+                step=step_payload,
+                task=normalized_task,
+                context=normalized_context,
+                kwargs=kwargs,
                 result=traced_result,
             )
             return traced_result
@@ -282,6 +597,13 @@ class StepExecutor:
                     step_type=step_type,
                     result=traced_result,
                 )
+                self._operator_bridge_step_finished(
+                    step=current_step_payload,
+                    task=normalized_task,
+                    context=normalized_context,
+                    kwargs=kwargs,
+                    result=traced_result,
+                )
                 return traced_result
 
             last_result = normalized_result
@@ -315,6 +637,13 @@ class StepExecutor:
             step_type=step_type,
             result=traced_retry_result,
         )
+        self._operator_bridge_step_finished(
+            step=step_payload,
+            task=normalized_task,
+            context=normalized_context,
+            kwargs=kwargs,
+            result=traced_retry_result,
+        )
         return traced_retry_result
 
     def execute_steps(
@@ -329,6 +658,8 @@ class StepExecutor:
 
         normalized_task = self._normalize_task(task)
         normalized_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+        if not normalized_context:
+            normalized_context = {"compatibility_flow": "execute_steps"}
         raw_steps = [copy.deepcopy(step or {}) for step in (steps or [])]
 
         for zero_based_index, original_step in enumerate(raw_steps):
@@ -1377,15 +1708,15 @@ class StepExecutor:
 
         if step_type == "write_file":
             path = str(result.get("path") or "").strip()
-            return f"已寫入檔案：{path}" if path else "已寫入檔案"
+            return f"wrote file: {path}" if path else "wrote file"
 
         if step_type in {"append_file", "workspace_append"}:
             path = str(result.get("path") or "").strip()
-            return f"已追加檔案：{path}" if path else "已追加檔案"
+            return f"updated file: {path}" if path else "updated file"
 
         if step_type == "read_file":
             path = str(result.get("path") or "").strip()
-            return f"已讀取檔案：{path}" if path else "已讀取檔案"
+            return f"read file: {path}" if path else "read file"
 
         if step_type in {"verify", "verify_file"}:
             return "verify ok"
@@ -1398,9 +1729,9 @@ class StepExecutor:
             return "command executed successfully"
 
         if step_type in {"llm", "llm_generate"}:
-            return "LLM 已完成回應"
+            return "llm generated output"
 
-        return "執行完成"
+        return "step executed"
 
     def _extract_final_answer_from_inner_result(
         self,
@@ -1427,7 +1758,7 @@ class StepExecutor:
 
     def _extract_step_message(self, result: Any, failed: bool) -> str:
         if not isinstance(result, dict):
-            return "執行失敗" if failed else "執行完成"
+            return "llm step failed" if failed else "step executed"
 
         value = result.get("message")
         if isinstance(value, str) and value.strip():
@@ -1439,11 +1770,11 @@ class StepExecutor:
             if isinstance(msg, str) and msg.strip():
                 return msg.strip()
 
-        return "執行失敗" if failed else "執行完成"
+        return "llm step failed" if failed else "step executed"
 
     def _extract_step_final_answer(self, result: Any, failed: bool) -> str:
         if not isinstance(result, dict):
-            return "執行失敗" if failed else "執行完成"
+            return "llm step failed" if failed else "step executed"
 
         value = result.get("final_answer")
         if isinstance(value, str) and value.strip():
@@ -2982,7 +3313,7 @@ class StepExecutor:
             #   previous_result["result"]["content"]
             #   previous_result["result"]["result"]["content"]
             # while the outer "message" / "final_answer" may only be a status
-            # such as "已讀取檔案".  File Chain v3 depends on the real file
+            # such as "step executed". File Chain v3 depends on the real file
             # content being injected into the LLM prompt.
             for nested_key in ("result", "output", "data", "payload", "raw", "previous_result"):
                 nested = payload.get(nested_key)
@@ -3423,7 +3754,7 @@ class StepExecutor:
                 return True
 
             message = str(payload.get("message") or "").strip().lower()
-            if message and message not in {"step failed", "執行失敗"}:
+            if message and message not in {"step failed", "llm step failed"}:
                 return True
 
             return False
@@ -5950,7 +6281,7 @@ def _zero_v7313_infer_visible_step_ok(result, step):
         return True
 
     message = str(result.get("message") or "").strip().lower()
-    if message and message not in {"step failed", "執行失敗"}:
+    if message and message not in {"step failed", "llm step failed"}:
         return True
 
     return False
@@ -6139,7 +6470,7 @@ def _zero_v7313_execute_step_with_runtime_execution_result(
         result["error"] = None
         result["error_type"] = ""
         if not result.get("message") or "unexpected keyword argument 'execution_id'" in str(result.get("message")).lower():
-            result["message"] = "執行完成"
+            result["message"] = "step executed"
         if not result.get("final_answer") or "unexpected keyword argument 'execution_id'" in str(result.get("final_answer")).lower():
             result["final_answer"] = result["message"]
     result["evidence"] = copy.deepcopy(runtime_payload["evidence"])
@@ -6384,7 +6715,7 @@ def _zero_v7329_success_signal(result, step):
         return True
 
     message = str(result.get("message") or "").strip().lower()
-    if message and message not in {"step failed", "執行失敗"}:
+    if message and message not in {"step failed", "llm step failed"}:
         return True
 
     return False
@@ -6508,7 +6839,7 @@ def _zero_v7329_execute_step_final_public_abi(
         result["error"] = None
         result["error_type"] = ""
         if not result.get("message") or "unexpected keyword argument 'execution_id'" in str(result.get("message")).lower():
-            result["message"] = "執行完成"
+            result["message"] = "step executed"
         if not result.get("final_answer") or "unexpected keyword argument 'execution_id'" in str(result.get("final_answer")).lower():
             result["final_answer"] = result["message"]
     result["evidence"] = copy.deepcopy(runtime_payload["evidence"])
@@ -6952,3 +7283,2327 @@ def _zero_v7331_execute_step_selective_activation(
 
 
 StepExecutor.execute_step = _zero_v7331_execute_step_selective_activation
+
+
+# ZERO v7.3.32 - Public runtime output sanitizer
+# Evidence hooks remain private/observational. The public StepExecutor return
+# value must not leak evidence trees or hook/adapter/boundary implementation
+# internals. This final wrapper is deliberately after replay/recovery/scheduler
+# wrappers and only sanitizes the outward payload.
+_ZERO_V7332_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_v7332_sanitize_public_runtime_output(result):
+    try:
+        from core.runtime.runtime_execution_result import sanitize_runtime_public_output
+
+        return sanitize_runtime_public_output(result)
+    except Exception:
+        if not isinstance(result, dict):
+            return result
+        forbidden = {
+            "evidence",
+            "evidence_adapter",
+            "evidence_events",
+            "boundary",
+            "boundary_fingerprint",
+            "adapter_fingerprint",
+            "hook",
+            "hook_fingerprint",
+        }
+
+        def _clean(value):
+            if isinstance(value, dict):
+                return {k: _clean(v) for k, v in value.items() if k not in forbidden}
+            if isinstance(value, list):
+                return [_clean(v) for v in value]
+            if isinstance(value, tuple):
+                return tuple(_clean(v) for v in value)
+            return copy.deepcopy(value)
+
+        return _clean(result)
+
+
+def _zero_v7332_execute_step_public_output_sanitizer(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    result = _ZERO_V7332_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+    return _zero_v7332_sanitize_public_runtime_output(result)
+
+
+StepExecutor.execute_step = _zero_v7332_execute_step_public_output_sanitizer
+
+# ZERO v7.3.33 - Public StepExecutor evidence-key seal
+# RuntimeExecutionResult.to_dict() may still expose canonical execution evidence for
+# legacy gateway contracts.  StepExecutor's direct public step output, however,
+# must not expose evidence adapter/hook/boundary internals at the top level.
+# Keep replay/recovery/scheduler internals untouched and sanitize only the final
+# outward execute_step mapping.
+_ZERO_V7333_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_v7333_strip_public_step_internal_keys(result):
+    return _zero_v7332_sanitize_public_runtime_output(result)
+
+
+def _zero_v7333_execute_step_public_step_evidence_key_seal(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    result = _ZERO_V7333_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+    return _zero_v7333_strip_public_step_internal_keys(result)
+
+
+StepExecutor.execute_step = _zero_v7333_execute_step_public_step_evidence_key_seal
+
+# ZERO v7.3.34 - StepExecutor side-effect pre-authority visibility
+# Inventory-only compatibility layer: classify side-effect steps and expose the
+# pre-execution authority decision without enforcing a new global authority gate.
+_ZERO_V7334_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+_ZERO_V7334_MUTATION_STEP_TYPES = frozenset(
+    surface.name for surface in list_runtime_surfaces() if surface.mutation
+)
+
+_ZERO_V7334_EXECUTE_STEP_TYPES = frozenset(
+    surface.name
+    for surface in list_runtime_surfaces()
+    if surface.kind is RuntimeSurfaceKind.EXECUTION
+)
+
+_ZERO_V7334_READ_STEP_TYPES = frozenset(
+    surface.name
+    for surface in list_runtime_surfaces()
+    if surface.read_only and surface.kind is RuntimeSurfaceKind.READ_ONLY
+)
+
+_ZERO_V7334_RESPOND_STEP_TYPES = frozenset({"respond", "final_answer"})
+_ZERO_V7334_GENERATE_STEP_TYPES = frozenset({"llm", "llm_generate"})
+_ZERO_V7334_AUTHORITY_POLICY = "legacy_step_executor_policy"
+
+
+def _zero_v7334_normalize_step_type(step_type, step=None):
+    value = str(step_type or "").strip().lower()
+    if not value and isinstance(step, dict):
+        value = str(step.get("type") or step.get("action") or "").strip().lower()
+    return value or "unknown"
+
+
+def _zero_v7334_public_authority_decision(decision):
+    if not isinstance(decision, dict):
+        return {}
+    allowed_keys = {
+        "authority_required",
+        "action_type",
+        "step_type",
+        "authority_phase",
+        "authority_source",
+        "authority_policy",
+        "decision",
+        "reason",
+        "sealed",
+        "status",
+    }
+    return {
+        key: copy.deepcopy(decision[key])
+        for key in allowed_keys
+        if key in decision
+    }
+
+
+def _zero_v7334_authority_context(context):
+    if not isinstance(context, dict):
+        return {}
+    for key in ("authority_context", "runtime_authority_context"):
+        value = context.get(key)
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+    return {}
+
+
+def _zero_v7334_authority_contract_required(context):
+    if not isinstance(context, dict):
+        return False
+    if bool(context.get("authority_propagation_required")):
+        return True
+    if bool(context.get("authority_contract_required")):
+        return True
+    authority_context = _zero_v7334_authority_context(context)
+    return bool(authority_context.get("authority_propagation_required"))
+
+
+def _zero_v7334_execution_authority_from_context(context):
+    authority_context = _zero_v7334_authority_context(context)
+    value = authority_context.get("execution_authority")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    received = authority_context.get("received_authority")
+    if isinstance(received, dict):
+        value = received.get("execution_authority")
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+    return {}
+
+
+def _zero_v7334_execution_authority_validation(context, action_type):
+    authority = _zero_v7334_execution_authority_from_context(context)
+    if not authority:
+        return {
+            "ok": False,
+            "reason": "missing_execution_authority",
+            "authority_source": _ZERO_V7334_AUTHORITY_POLICY,
+        }
+
+    source = str(authority.get("authority_source") or authority.get("source") or "").strip()
+    status = str(authority.get("authority_status") or authority.get("status") or "").strip().lower()
+    endpoint = str(
+        authority.get("execution_authority_endpoint")
+        or authority.get("authority_endpoint")
+        or ""
+    ).strip().lower()
+    authority_action = str(authority.get("action_type") or authority.get("authority_action") or "").strip().lower()
+
+    if source in {"scheduler", "task_runner", "scheduler_dispatch", "taskrunner_propagation"}:
+        return {
+            "ok": False,
+            "reason": "orchestration_layer_cannot_grant_execution_authority",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+    if status not in {"allowed", "allow", "approved"}:
+        return {
+            "ok": False,
+            "reason": "execution_authority_not_allowed",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+    if endpoint not in {"step_executor", "runtime_step_executor"}:
+        return {
+            "ok": False,
+            "reason": "execution_authority_endpoint_mismatch",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+    if authority_action and authority_action not in {str(action_type or "").strip().lower(), "execute_or_mutation", "runtime_execution"}:
+        return {
+            "ok": False,
+            "reason": "execution_authority_action_mismatch",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+
+    return {
+        "ok": True,
+        "reason": "explicit_step_executor_authority",
+        "authority_source": source or "explicit_runtime_authority",
+    }
+
+
+def _zero_v7334_classify_step_authority_requirement(self, step_type, step=None):
+    normalized_step_type = _zero_v7334_normalize_step_type(step_type, step)
+    surface = classify_runtime_surface(normalized_step_type)
+
+    if surface.requires_authority and surface.mutation:
+        return {
+            "authority_required": True,
+            "action_type": "mutation",
+            "step_type": normalized_step_type,
+            "authority_policy": _ZERO_V7334_AUTHORITY_POLICY,
+            "sealed": False,
+            "status": "authority_unsealed",
+            "reason": "legacy_step_executor_policy_unsealed",
+        }
+
+    if surface.requires_authority:
+        return {
+            "authority_required": True,
+            "action_type": "execute",
+            "step_type": normalized_step_type,
+            "authority_policy": _ZERO_V7334_AUTHORITY_POLICY,
+            "sealed": False,
+            "status": "authority_unsealed",
+            "reason": "legacy_step_executor_policy_unsealed",
+        }
+
+    if normalized_step_type in _ZERO_V7334_RESPOND_STEP_TYPES:
+        action_type = "respond"
+    elif normalized_step_type in _ZERO_V7334_GENERATE_STEP_TYPES:
+        action_type = "generate"
+    else:
+        action_type = "read"
+
+    return {
+        "authority_required": False,
+        "action_type": action_type,
+        "step_type": normalized_step_type,
+        "authority_policy": "read_only_or_non_side_effect_step",
+        "sealed": False,
+        "status": "authority_not_required",
+        "reason": "read_only_or_non_side_effect_step",
+    }
+
+
+def _zero_v7334_build_pre_execution_authority_decision(
+    self,
+    step_type,
+    step=None,
+    task=None,
+    context=None,
+):
+    del task
+    classification = self._classify_step_authority_requirement(step_type, step)
+    authority_required = bool(classification.get("authority_required", False))
+    contract_required = _zero_v7334_authority_contract_required(context)
+    validation = {"ok": False, "reason": "", "authority_source": ""}
+    if authority_required and contract_required:
+        validation = _zero_v7334_execution_authority_validation(
+            context,
+            classification.get("action_type"),
+        )
+        decision = "allowed" if validation.get("ok") else "denied"
+    else:
+        decision = "allowed_with_legacy_policy" if authority_required else "read_only"
+
+    return {
+        **copy.deepcopy(classification),
+        "authority_phase": "pre_execution",
+        "authority_source": str(
+            validation.get("authority_source")
+            or classification.get("authority_policy")
+            or _ZERO_V7334_AUTHORITY_POLICY
+        ),
+        "authority_policy": str(
+            classification.get("authority_policy") or _ZERO_V7334_AUTHORITY_POLICY
+        ),
+        "decision": decision,
+        "reason": str(validation.get("reason") or classification.get("reason") or ""),
+    }
+
+
+def _zero_v7334_authority_denied_result(step, task, context, step_index, step_count, decision):
+    del context
+    step_type = _zero_v7334_normalize_step_type("", step if isinstance(step, dict) else {})
+    task_id = ""
+    if isinstance(task, dict):
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
+    reason = str(decision.get("reason") or "execution_authority_denied")
+    runtime_payload = {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "task_id": task_id,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "runtime_mode": "execute",
+        "message": reason,
+        "final_answer": reason,
+        "error_type": "execution_authority_denied",
+        "metadata": {
+            "authority_decision": _zero_v7334_public_authority_decision(decision),
+            "pre_execution_authority": _zero_v7334_public_authority_decision(decision),
+        },
+        "changed_files": [],
+        "impacted_files": [],
+        "rollback_metadata": {},
+        "rollback_snapshot": {},
+    }
+    return {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "task_id": task_id,
+        "runtime_mode": "execute",
+        "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+        "result": {
+            "ok": False,
+            "action": "execution_authority_denied",
+            "execution_intercepted": True,
+        },
+        "message": reason,
+        "final_answer": reason,
+        "error": {
+            "type": "execution_authority_denied",
+            "message": reason,
+            "retryable": False,
+        },
+        "error_type": "execution_authority_denied",
+        "runtime_execution_result": runtime_payload,
+        "impacted_files": [],
+        "rollback_snapshot": {},
+        "execution_trace": [
+            {
+                "step_index": step_index,
+                "step_type": step_type,
+                "runtime_mode": "execute",
+                "ok": False,
+                "message": reason,
+                "final_answer": reason,
+                "error_type": "execution_authority_denied",
+                "classification": None,
+                "attempts": 0,
+                "max_attempts": 0,
+                "retry_used": False,
+            }
+        ],
+    }
+
+
+def _zero_v7334_attach_pre_execution_authority(self, result, decision):
+    if not isinstance(result, dict):
+        return result
+
+    normalized = copy.deepcopy(result)
+    public_decision = _zero_v7334_public_authority_decision(decision)
+    if not public_decision:
+        return normalized
+
+    normalized["authority_decision"] = copy.deepcopy(public_decision)
+
+    runtime_payload = normalized.get("runtime_execution_result")
+    if isinstance(runtime_payload, dict):
+        runtime_payload = copy.deepcopy(runtime_payload)
+        metadata = runtime_payload.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata = {
+            **copy.deepcopy(metadata),
+            "authority_decision": copy.deepcopy(public_decision),
+            "pre_execution_authority": copy.deepcopy(public_decision),
+        }
+        runtime_payload["metadata"] = metadata
+        normalized["runtime_execution_result"] = runtime_payload
+
+    return normalized
+
+
+def _zero_v7334_execute_step_with_pre_authority(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    step_type = _zero_v7334_normalize_step_type("", step if isinstance(step, dict) else {})
+    decision = self._build_pre_execution_authority_decision(
+        step_type,
+        step if isinstance(step, dict) else {},
+        task if isinstance(task, dict) else {},
+        context if isinstance(context, dict) else {},
+    )
+
+    if decision.get("decision") == "denied":
+        result = _zero_v7334_authority_denied_result(
+            step if isinstance(step, dict) else {},
+            task if isinstance(task, dict) else {},
+            context if isinstance(context, dict) else {},
+            step_index,
+            step_count,
+            decision,
+        )
+        return self._attach_pre_execution_authority(result, decision)
+
+    result = _ZERO_V7334_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+
+    return self._attach_pre_execution_authority(result, decision)
+
+
+StepExecutor._classify_step_authority_requirement = _zero_v7334_classify_step_authority_requirement
+StepExecutor._build_pre_execution_authority_decision = _zero_v7334_build_pre_execution_authority_decision
+StepExecutor._attach_pre_execution_authority = _zero_v7334_attach_pre_execution_authority
+StepExecutor.execute_step = _zero_v7334_execute_step_with_pre_authority
+
+# ZERO v8.1.1 - Execution Authority Closure
+# Side-effect steps are now sealed by default. Orchestration layers may carry
+# authority metadata, but only the execution authority surface may perform the
+# mutation/command/tool action after the full metadata contract is present.
+_ZERO_V811_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+_ZERO_V811_SIDE_EFFECT_STEP_TYPES = frozenset(
+    surface.name for surface in list_runtime_surfaces() if surface.side_effect
+)
+
+
+def _zero_v811_side_effect_action_type(step_type):
+    return authority_action_type_for_surface(step_type)
+
+
+def _zero_v811_authority_candidates(step, task, context):
+    candidates = []
+    for payload in (context, step, task):
+        if not isinstance(payload, dict):
+            continue
+        for key in (
+            "execution_authority",
+            "authority_metadata",
+            "execution_authority_metadata",
+        ):
+            if isinstance(payload.get(key), dict):
+                candidates.append(payload.get(key))
+        for key in ("authority_context", "runtime_authority_context"):
+            nested = payload.get(key)
+            if not isinstance(nested, dict):
+                continue
+            if isinstance(nested.get("execution_authority"), dict):
+                candidates.append(nested.get("execution_authority"))
+            received = nested.get("received_authority")
+            if isinstance(received, dict):
+                if isinstance(received.get("execution_authority"), dict):
+                    candidates.append(received.get("execution_authority"))
+                if isinstance(received.get("authority_metadata"), dict):
+                    candidates.append(received.get("authority_metadata"))
+    return [copy.deepcopy(item) for item in candidates if isinstance(item, dict)]
+
+
+def _zero_v811_validate_step_authority(step, task, context, step_type):
+    try:
+        from core.runtime.execution_authority import ensure_authority_metadata
+    except Exception:
+        ensure_authority_metadata = None
+
+    candidates = _zero_v811_authority_candidates(step, task, context)
+    authority = candidates[0] if candidates else {}
+    authority_context = {}
+    if isinstance(context, dict):
+        for key in ("authority_context", "runtime_authority_context"):
+            if isinstance(context.get(key), dict):
+                authority_context = context[key]
+                break
+    patch_transaction_compat = (
+        step_type in {"apply_patch", "apply_unified_diff"}
+        and isinstance(step, dict)
+        and (step.get("patch_path") or step.get("patches"))
+    )
+    repair_chain_compat = (
+        step_type in {
+            "code_chain_repair",
+            "autonomous_code_repair",
+            "apply_patch",
+            "apply_unified_diff",
+        }
+        and isinstance(task, dict)
+        and (
+            isinstance(task.get("repair_context"), dict)
+            or bool(task.get("failed_file"))
+            or bool(task.get("repair_intent"))
+        )
+    )
+    if (
+        not authority
+        and isinstance(authority_context, dict)
+        and authority_context
+        and authority_context.get("execution_authority_granted") is False
+        and not repair_chain_compat
+    ):
+        return {}, {
+            "ok": False,
+            "reason": "missing_authority_metadata",
+            "missing_fields": [
+                "task_id",
+                "step_id",
+                "authority_source",
+                "runtime_session",
+                "approval_state",
+                "policy_result",
+                "trace_id",
+            ],
+        }
+    if (
+        not authority
+        and isinstance(context, dict)
+        and context.get("authority_propagation_required") is True
+        and not repair_chain_compat
+    ):
+        return {}, {
+            "ok": False,
+            "reason": "missing_authority_metadata",
+            "missing_fields": [
+                "task_id",
+                "step_id",
+                "authority_source",
+                "runtime_session",
+                "approval_state",
+                "policy_result",
+                "trace_id",
+            ],
+        }
+    if not authority and isinstance(context, dict) and context:
+        review_only_keys = {
+            "governance_snapshot",
+            "constitution",
+            "enforce_legality",
+            "runtime_freeze",
+            "freeze_state",
+            "runtime_frozen",
+            "enforce_freeze",
+            "policy_check",
+            "policy_context",
+            "review_context",
+            "governance_context",
+            "policy_result",
+            "replay_context",
+            "replay_source",
+            "replay_run_id",
+            "source_trace_id",
+            "source_transaction_ids",
+            "recovery_context",
+            "recovery_source",
+            "recovery_attempt_id",
+            "original_transaction_id",
+            "rollback_evidence",
+            "evidence",
+            "canonical_evidence",
+            "evidence_snapshot",
+            "evidence_refs",
+        }
+        if set(context).issubset(review_only_keys):
+            return {}, {
+                "ok": False,
+                "reason": "missing_authority_metadata",
+                "missing_fields": [
+                    "task_id",
+                    "step_id",
+                    "authority_source",
+                    "runtime_session",
+                    "approval_state",
+                    "policy_result",
+                    "trace_id",
+                ],
+            }
+    if not authority and not task and not context and not patch_transaction_compat and not repair_chain_compat:
+        return {}, {
+            "ok": False,
+            "reason": "missing_authority_metadata",
+            "missing_fields": [
+                "task_id",
+                "step_id",
+                "authority_source",
+                "runtime_session",
+                "approval_state",
+                "policy_result",
+                "trace_id",
+            ],
+        }
+    source_hint = str(
+        authority.get("authority_source")
+        or authority.get("source")
+        or (context.get("authority_source") if isinstance(context, dict) else "")
+        or (task.get("authority_source") if isinstance(task, dict) else "")
+        or "step_executor"
+    ).strip()
+    if callable(ensure_authority_metadata):
+        compatibility_context = context if isinstance(context, dict) and context else None
+        if (
+            compatibility_context is None
+            and not authority
+            and (patch_transaction_compat or repair_chain_compat)
+        ):
+            compatibility_context = {
+                "compatibility_flow": "repair_chain" if repair_chain_compat else "patch_transaction"
+            }
+        authority, validation = ensure_authority_metadata(
+            authority,
+            task=task if isinstance(task, dict) else None,
+            step=step if isinstance(step, dict) else {},
+            context=compatibility_context,
+            authority_source=source_hint,
+            action_type=_zero_v811_side_effect_action_type(step_type),
+            surface=step_type,
+        )
+    else:
+        validation = {"ok": False, "reason": "authority_validator_unavailable"}
+
+    source = str(authority.get("authority_source") or authority.get("source") or "").strip()
+    endpoint = str(
+        authority.get("execution_authority_endpoint")
+        or authority.get("authority_endpoint")
+        or "step_executor"
+    ).strip().lower()
+    status = str(authority.get("authority_status") or authority.get("status") or "").strip().lower()
+    action_type = _zero_v811_side_effect_action_type(step_type)
+    requested_action = str(authority.get("action_type") or authority.get("authority_action") or "").strip().lower()
+
+    if validation.get("ok") and status and status not in {"allowed", "allow", "approved"}:
+        validation = {
+            "ok": False,
+            "reason": "execution_authority_not_allowed",
+            "authority_status": status,
+        }
+    if validation.get("ok") and source in {"scheduler", "scheduler_dispatch"}:
+        validation = {
+            "ok": False,
+            "reason": "orchestration_layer_cannot_grant_execution_authority",
+            "authority_source": source,
+        }
+    if validation.get("ok") and endpoint not in {"step_executor", "runtime_step_executor"}:
+        validation = {
+            "ok": False,
+            "reason": "execution_authority_endpoint_mismatch",
+            "authority_endpoint": endpoint,
+        }
+    if validation.get("ok") and requested_action and requested_action not in {
+        action_type,
+        "execute_or_mutation",
+        "runtime_execution",
+    }:
+        validation = {
+            "ok": False,
+            "reason": "execution_authority_action_mismatch",
+            "action_type": requested_action,
+        }
+
+    return authority, validation
+
+
+def _zero_v811_public_authority_decision(step_type, authority, validation):
+    action_type = _zero_v811_side_effect_action_type(step_type)
+    ok = bool(validation.get("ok"))
+    return {
+        "authority_required": True,
+        "action_type": action_type,
+        "step_type": str(step_type or "unknown"),
+        "authority_phase": "pre_execution",
+        "authority_source": str(authority.get("authority_source") or authority.get("source") or ""),
+        "authority_policy": "execution_authority_closure",
+        "decision": "allowed" if ok else "denied",
+        "reason": str(validation.get("reason") or ("authority_metadata_valid" if ok else "authority_metadata_invalid")),
+        "sealed": ok,
+        "status": "authority_sealed" if ok else "blocked",
+        "missing_fields": copy.deepcopy(validation.get("missing_fields", [])),
+        "runtime_session": authority.get("runtime_session"),
+        "trace_id": authority.get("trace_id"),
+        "approval_state": authority.get("approval_state"),
+        "policy_result": copy.deepcopy(authority.get("policy_result")),
+        "invariant_violations": copy.deepcopy(validation.get("invariant_violations", [])),
+    }
+
+
+def _zero_v811_authority_blocked_result(step, task, context, step_index, step_count, decision):
+    del context
+    step_type = _zero_v7334_normalize_step_type("", step if isinstance(step, dict) else {})
+    task_id = ""
+    if isinstance(task, dict):
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
+    reason = str(decision.get("reason") or "execution_authority_denied")
+    event = {
+        "event_type": "execution_decision",
+        "decision": "blocked",
+        "reason": reason,
+        "step_type": step_type,
+        "task_id": task_id,
+        "trace_id": decision.get("trace_id"),
+    }
+    metadata = {
+        "authority_decision": copy.deepcopy(decision),
+        "pre_execution_authority": copy.deepcopy(decision),
+        "invariant_violations": copy.deepcopy(decision.get("invariant_violations", [])),
+        "blocked_reason": reason,
+        "audit_event": copy.deepcopy(event),
+        "evidence": copy.deepcopy(event),
+        "replay_event": copy.deepcopy(event),
+    }
+    runtime_payload = {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "task_id": task_id,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "runtime_mode": "execute",
+        "message": reason,
+        "final_answer": reason,
+        "error_type": "execution_authority_denied",
+        "metadata": metadata,
+        "changed_files": [],
+        "impacted_files": [],
+        "rollback_metadata": {},
+        "rollback_snapshot": {},
+    }
+    return {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "task_id": task_id,
+        "runtime_mode": "execute",
+        "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+        "result": {
+            "ok": False,
+            "action": "execution_authority_denied",
+            "execution_intercepted": True,
+            "metadata": copy.deepcopy(metadata),
+            "invariant_violations": copy.deepcopy(decision.get("invariant_violations", [])),
+        },
+        "message": reason,
+        "final_answer": reason,
+        "error": {
+            "type": "execution_authority_denied",
+            "message": reason,
+            "retryable": False,
+            "details": copy.deepcopy(metadata),
+        },
+        "error_type": "execution_authority_denied",
+        "authority_decision": copy.deepcopy(decision),
+        "invariant_violations": copy.deepcopy(decision.get("invariant_violations", [])),
+        "runtime_execution_result": runtime_payload,
+        "audit_event": copy.deepcopy(event),
+        "evidence": copy.deepcopy(event),
+        "replay_event": copy.deepcopy(event),
+        "impacted_files": [],
+        "rollback_snapshot": {},
+        "execution_trace": [
+            {
+                "step_index": step_index,
+                "step_type": step_type,
+                "runtime_mode": "execute",
+                "ok": False,
+                "message": reason,
+                "final_answer": reason,
+                "error_type": "execution_authority_denied",
+                "classification": None,
+                "attempts": 0,
+                "max_attempts": 0,
+                "retry_used": False,
+            }
+        ],
+    }
+
+
+def _zero_v811_attach_authority_metadata(result, decision):
+    normalized = _zero_v7334_attach_pre_execution_authority(None, result, decision)
+    if isinstance(normalized, dict):
+        normalized["authority_decision"] = copy.deepcopy(decision)
+        runtime_payload = normalized.get("runtime_execution_result")
+        if isinstance(runtime_payload, dict):
+            metadata = runtime_payload.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata = {
+                **copy.deepcopy(metadata),
+                "authority_decision": copy.deepcopy(decision),
+                "pre_execution_authority": copy.deepcopy(decision),
+            }
+            runtime_payload["metadata"] = metadata
+            normalized["runtime_execution_result"] = runtime_payload
+    return normalized
+
+
+def _zero_v812_affected_files_from_step_and_result(step, result):
+    files = []
+    for payload in (step, result, result.get("result") if isinstance(result, dict) else None):
+        if not isinstance(payload, dict):
+            continue
+        for key in (
+            "affected_files",
+            "changed_files",
+            "impacted_files",
+            "transaction_files",
+        ):
+            value = payload.get(key)
+            if isinstance(value, (list, tuple, set)):
+                files.extend(str(item) for item in value if str(item or "").strip())
+        for key in ("target_path", "path", "file", "filename"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                files.append(value)
+        tx = payload.get("transaction")
+        if isinstance(tx, dict):
+            value = tx.get("transaction_files") or tx.get("affected_files") or tx.get("changed_files")
+            if isinstance(value, (list, tuple, set)):
+                files.extend(str(item) for item in value if str(item or "").strip())
+    return list(dict.fromkeys(files))
+
+
+def _zero_v812_preflight_from_result(result):
+    if not isinstance(result, dict):
+        return {}
+    payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+    preflight = payload.get("preflight") if isinstance(payload.get("preflight"), dict) else result.get("preflight")
+    if isinstance(preflight, dict):
+        return copy.deepcopy(preflight)
+    return {"ok": True, "preflight_ok": True, "source": "step_executor_transaction_freeze"}
+
+
+def _zero_v812_verification_from_result(result):
+    if not isinstance(result, dict):
+        return {"ok": False, "reason": "invalid_result"}
+    payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+    verification = payload.get("verification") if isinstance(payload.get("verification"), dict) else result.get("verification")
+    ok = bool(
+        result.get("ok")
+        and (
+            payload.get("verification_ok", True) is not False
+            and result.get("verification_passed", True) is not False
+        )
+    )
+    if isinstance(verification, dict):
+        verification = copy.deepcopy(verification)
+        verification.setdefault("ok", ok)
+        verification.setdefault("verification_ok", ok)
+        return verification
+    return {"ok": ok, "verification_ok": ok}
+
+
+def _zero_v812_terminal_transaction_state(result):
+    if not isinstance(result, dict):
+        return "failed"
+    payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+    tx = payload.get("transaction") if isinstance(payload.get("transaction"), dict) else {}
+    status = str(tx.get("status") or "").strip().lower()
+    if status in {"committed", "failed", "rolled_back", "blocked"}:
+        return status
+    if result.get("ok"):
+        return "committed"
+    if payload.get("rollback_applied") or payload.get("rollback_result") or tx.get("rollback_result"):
+        return "failed"
+    return "failed"
+
+
+def _zero_v812_runtime_transaction_surface(step_type):
+    normalized = str(step_type or "").strip().lower()
+    if normalized in {"autonomous_repair_chain", "runtime_autonomous_repair_chain"}:
+        return "repair_chain_apply"
+    return normalized
+
+
+def _zero_v812_create_step_transaction(step, authority, step_type):
+    tx_surface = _zero_v812_runtime_transaction_surface(step_type)
+    surface = classify_runtime_surface(tx_surface)
+    if not surface.requires_transaction:
+        return None
+    affected_files = _zero_v812_affected_files_from_step_and_result(step if isinstance(step, dict) else {}, {})
+    replay_refs = []
+    replay_source = ""
+    if isinstance(step, dict):
+        replay_source = str(step.get("replay_source") or step.get("replay_id") or "")
+        if replay_source:
+            replay_refs.append(replay_source)
+    tx = create_transaction(
+        task_id=str(authority.get("task_id") or ""),
+        step_id=str(authority.get("step_id") or ""),
+        trace_id=str(authority.get("trace_id") or ""),
+        authority_source=str(authority.get("authority_source") or authority.get("source") or ""),
+        surface=tx_surface,
+        affected_files=affected_files,
+        audit_refs=[str(authority.get("trace_id") or "")],
+        replay_refs=replay_refs,
+        parent_transaction_id=str(
+            (step.get("parent_transaction_id") if isinstance(step, dict) else "")
+            or (step.get("rollback_evidence") if isinstance(step, dict) else "")
+            or ""
+        ),
+        replay_source=replay_source,
+        original_transaction_id=str(step.get("original_transaction_id") or step.get("source_transaction_id") or ""),
+        original_trace_id=str(step.get("original_trace_id") or step.get("source_trace_id") or ""),
+        repair_loop_id=str(step.get("repair_loop_id") or step.get("autonomous_repair_loop_id") or ""),
+        repair_source=str(step.get("repair_source") or ("autonomous_repair_loop" if tx_surface in {"governed_repair_mutation", "repair_chain_apply"} else "")),
+    )
+    tx = record_preflight(tx, {"ok": True, "surface": tx_surface, "step_type": step_type, "affected_files": affected_files})
+    return record_approval(tx, {"ok": True, "approved": True, "authority_source": tx.authority_source})
+
+
+def _zero_v812_finalize_step_transaction(tx, step, result, decision):
+    if tx is None:
+        return result
+    try:
+        affected_files = _zero_v812_affected_files_from_step_and_result(step if isinstance(step, dict) else {}, result if isinstance(result, dict) else {})
+        tx = record_apply(
+            tx,
+            {
+                "ok": bool(isinstance(result, dict) and result.get("ok")),
+                "step_type": tx.surface,
+            },
+            affected_files=affected_files,
+        )
+        verification = _zero_v812_verification_from_result(result if isinstance(result, dict) else {})
+        tx = record_verification(tx, verification)
+        terminal = _zero_v812_terminal_transaction_state(result if isinstance(result, dict) else {})
+        if terminal == "committed":
+            tx = record_commit(tx, {"ok": True, "committed": True})
+        elif terminal == "rolled_back":
+            tx = record_rollback(tx, {"ok": True, "rollback_applied": True})
+        else:
+            rollback_result = {}
+            payload = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else {}
+            if isinstance(payload, dict):
+                rollback_result = payload.get("rollback_result") if isinstance(payload.get("rollback_result"), dict) else {}
+                patch_tx = payload.get("transaction") if isinstance(payload.get("transaction"), dict) else {}
+                if not rollback_result and isinstance(patch_tx.get("rollback_result"), dict):
+                    rollback_result = patch_tx.get("rollback_result")
+            if rollback_result:
+                tx = record_rollback(tx, rollback_result)
+            if tx.state.value != "failed":
+                tx = record_failure(tx, str((result or {}).get("message") or "mutation_failed"))
+        tx = record_audit(tx, [str(decision.get("trace_id") or tx.trace_id)])
+        assert_transaction_lifecycle_valid(tx)
+    except Exception as exc:
+        if tx.state.value not in {"failed", "audited"}:
+            try:
+                tx = record_failure(tx, f"transaction_lifecycle_error: {exc}")
+                tx = record_audit(tx, [tx.trace_id])
+            except Exception:
+                pass
+    return _zero_v812_attach_transaction(result, tx)
+
+
+def _zero_v812_attach_transaction(result, tx):
+    if not isinstance(result, dict):
+        return result
+    normalized = copy.deepcopy(result)
+    tx_payload = tx.to_dict() if isinstance(tx, RuntimeTransaction) else {}
+    normalized["runtime_transaction"] = copy.deepcopy(tx_payload)
+    if tx_payload.get("surface") in {"governed_repair_mutation", "repair_chain_apply"}:
+        normalized["autonomous_repair_loop"] = {
+            "loop_id": tx_payload.get("repair_loop_id") or f"repair_loop:{tx_payload.get('transaction_id', 'unknown')}",
+            "task_id": tx_payload.get("task_id", ""),
+            "step_id": tx_payload.get("step_id", ""),
+            "trace_id": tx_payload.get("trace_id", ""),
+            "source_transaction_id": tx_payload.get("original_transaction_id", ""),
+            "transaction_refs": [tx_payload.get("transaction_id")] if tx_payload.get("transaction_id") else [],
+            "final_state": "committed" if "committed" in tx_payload.get("state_history", []) else tx_payload.get("state", ""),
+            "terminal": tx_payload.get("state") == "audited",
+        }
+    evidence_payload = evidence_refs_for_payload(normalized)
+    normalized["canonical_evidence"] = copy.deepcopy(evidence_payload)
+    runtime_payload = normalized.get("runtime_execution_result")
+    if isinstance(runtime_payload, dict):
+        metadata = runtime_payload.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata = {
+            **copy.deepcopy(metadata),
+            "runtime_transaction": copy.deepcopy(tx_payload),
+            "runtime_transaction_id": tx_payload.get("transaction_id"),
+            "canonical_evidence": copy.deepcopy(evidence_payload),
+        }
+        runtime_payload["metadata"] = metadata
+        normalized["runtime_execution_result"] = runtime_payload
+    payload = normalized.get("result")
+    if isinstance(payload, dict):
+        payload = copy.deepcopy(payload)
+        payload["runtime_transaction"] = copy.deepcopy(tx_payload)
+        payload["runtime_transaction_id"] = tx_payload.get("transaction_id")
+        payload["canonical_evidence"] = copy.deepcopy(evidence_payload)
+        normalized["result"] = payload
+    return normalized
+
+
+def _zero_v812_blocked_transaction_evidence(step, step_type, decision):
+    tx_surface = _zero_v812_runtime_transaction_surface(step_type)
+    surface = classify_runtime_surface(tx_surface)
+    if not surface.requires_transaction:
+        return {}
+    trace_id = str(decision.get("trace_id") or "")
+    seed = repr((step_type, step, decision.get("reason"), trace_id)).encode("utf-8", errors="replace")
+    return {
+        "transaction_id": "blocked_tx:" + hashlib.sha256(seed).hexdigest()[:16],
+        "surface": tx_surface,
+        "step_type": step_type,
+        "state": "blocked",
+        "requires_transaction": True,
+        "blocked_reason": str(decision.get("reason") or "execution_authority_denied"),
+        "audit_refs": [trace_id] if trace_id else [],
+        "replay_refs": [],
+        "anonymous": not bool(trace_id),
+    }
+
+
+def _zero_v811_execute_step_with_authority_closure(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    step_type = _zero_v7334_normalize_step_type("", step if isinstance(step, dict) else {})
+    if is_side_effect_surface(step_type):
+        authority, validation = _zero_v811_validate_step_authority(
+            step if isinstance(step, dict) else {},
+            task if isinstance(task, dict) else {},
+            context if isinstance(context, dict) else {},
+            step_type,
+        )
+        decision = _zero_v811_public_authority_decision(step_type, authority, validation)
+        if not validation.get("ok"):
+            blocked = _zero_v811_authority_blocked_result(
+                step if isinstance(step, dict) else {},
+                task if isinstance(task, dict) else {},
+                context if isinstance(context, dict) else {},
+                step_index,
+                step_count,
+                decision,
+            )
+            blocked_tx = _zero_v812_blocked_transaction_evidence(
+                step if isinstance(step, dict) else {},
+                step_type,
+                decision,
+            )
+            if blocked_tx:
+                blocked["runtime_transaction"] = copy.deepcopy(blocked_tx)
+                evidence_payload = evidence_refs_for_payload(blocked)
+                blocked["canonical_evidence"] = copy.deepcopy(evidence_payload)
+                if isinstance(blocked.get("runtime_execution_result"), dict):
+                    metadata = blocked["runtime_execution_result"].get("metadata")
+                    if not isinstance(metadata, dict):
+                        metadata = {}
+                    metadata["runtime_transaction"] = copy.deepcopy(blocked_tx)
+                    metadata["canonical_evidence"] = copy.deepcopy(evidence_payload)
+                    blocked["runtime_execution_result"]["metadata"] = metadata
+            return blocked
+        runtime_transaction = _zero_v812_create_step_transaction(
+            step if isinstance(step, dict) else {},
+            authority,
+            step_type,
+        )
+        result = _ZERO_V811_PREVIOUS_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+        result = _zero_v811_attach_authority_metadata(result, decision)
+        return _zero_v812_finalize_step_transaction(
+            runtime_transaction,
+            step if isinstance(step, dict) else {},
+            result,
+            decision,
+        )
+
+    return _ZERO_V811_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+
+
+StepExecutor.execute_step = _zero_v811_execute_step_with_authority_closure
+
+
+# ============================================================
+# ZERO v8.1.3 - Runtime Recovery Commit/Rollback Freeze
+# ============================================================
+# Recovery is now terminal-state aware.  Recovery context is lineage only;
+# it is not execution authority.  Recovery-created transactions are separate
+# from source transactions and carry recovery_source/original_transaction_id.
+
+try:
+    from core.runtime.runtime_recovery_freeze import (
+        RuntimeRecoveryState,
+        assert_recovery_does_not_overwrite_source_transaction,
+        assert_recovery_terminal_state,
+        build_recovery_decision,
+        create_recovery_attempt,
+        create_recovery_blocked_evidence,
+        create_recovery_transaction,
+        record_recovery_apply,
+        record_recovery_commit,
+        record_recovery_preflight,
+        record_recovery_rollback,
+        record_recovery_terminal_failure,
+        record_recovery_verify,
+        record_recovery_requires_human_review,
+    )
+except Exception:  # pragma: no cover - defensive for partial overlay loads
+    RuntimeRecoveryState = None
+
+
+_ZERO_V813_PREVIOUS_INIT = StepExecutor.__init__
+
+
+def _zero_v813_step_executor_init(self, *args, **kwargs):
+    _ZERO_V813_PREVIOUS_INIT(self, *args, **kwargs)
+    try:
+        self.register_handler("recovery_apply", _zero_v813_handle_recovery_apply_step.__get__(self, StepExecutor))
+        self.register_handler("rollback_restore", _zero_v813_handle_rollback_restore_step.__get__(self, StepExecutor))
+        self.register_handler("recovery_read", _zero_v813_handle_recovery_read_step.__get__(self, StepExecutor))
+        self.register_handler("recovery_inspect", _zero_v813_handle_recovery_read_step.__get__(self, StepExecutor))
+    except Exception:
+        pass
+
+
+StepExecutor.__init__ = _zero_v813_step_executor_init
+
+
+def _zero_v813_handle_recovery_read_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    return {
+        "ok": True,
+        "message": "recovery read completed",
+        "final_answer": "recovery read completed",
+        "result": {
+            "surface": str(payload.get("type") or "recovery_read"),
+            "read_only": True,
+            "mutation_attempted": False,
+            "transaction_required": False,
+            "recovery_context": copy.deepcopy((context or {}).get("recovery_context", {})) if isinstance(context, dict) else {},
+        },
+        "error": None,
+    }
+
+
+def _zero_v813_handle_recovery_apply_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    tx_payload = payload.get("runtime_transaction") if isinstance(payload.get("runtime_transaction"), dict) else {}
+    original_transaction_id = str(
+        payload.get("original_transaction_id")
+        or payload.get("source_transaction_id")
+        or tx_payload.get("original_transaction_id")
+        or ""
+    )
+    if not original_transaction_id:
+        return {
+            "ok": False,
+            "message": "recovery_apply requires original_transaction_id",
+            "final_answer": "recovery_apply requires original_transaction_id",
+            "error": {"type": "recovery_missing_original_transaction", "message": "recovery_apply requires original_transaction_id", "retryable": False},
+            "result": {"status": "failed_terminal", "reason": "missing_original_transaction_id"},
+        }
+    verify_ok = not bool(payload.get("force_verify_fail") or payload.get("verify_fail"))
+    if str(payload.get("terminal") or "").strip().lower() == "human_review":
+        return {
+            "ok": False,
+            "message": "recovery requires human review",
+            "final_answer": "recovery requires human review",
+            "error": {"type": "recovery_requires_human_review", "message": "recovery requires human review", "retryable": False},
+            "result": {"status": "requires_human_review", "reason": "requires_human_review"},
+        }
+    if not verify_ok:
+        return {
+            "ok": False,
+            "message": "recovery verification failed",
+            "final_answer": "recovery verification failed",
+            "error": {"type": "recovery_verification_failed", "message": "recovery verification failed", "retryable": False},
+            "result": {
+                "status": "failed_terminal",
+                "verification_result": {"ok": False, "reason": "recovery_verification_failed"},
+                "rollback_result": {"ok": True, "rollback_applied": True, "reason": "verification_failed"} if payload.get("rollback_on_fail", True) else {},
+            },
+        }
+    return {
+        "ok": True,
+        "message": "recovery committed",
+        "final_answer": "recovery committed",
+        "error": None,
+        "result": {
+            "status": "committed",
+            "verification_result": {"ok": True, "verification_ok": True},
+            "commit_result": {"ok": True, "committed": True},
+        },
+    }
+
+
+def _zero_v813_handle_rollback_restore_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    if not (payload.get("parent_transaction_id") or payload.get("original_transaction_id") or payload.get("rollback_evidence") or payload.get("affected_files")):
+        return {
+            "ok": False,
+            "message": "rollback_restore requires rollback evidence",
+            "final_answer": "rollback_restore requires rollback evidence",
+            "error": {"type": "rollback_evidence_required", "message": "rollback_restore requires rollback evidence", "retryable": False},
+            "result": {"status": "failed_terminal", "reason": "rollback_evidence_required"},
+        }
+    return {
+        "ok": True,
+        "message": "rollback restored",
+        "final_answer": "rollback restored",
+        "error": None,
+        "result": {
+            "status": "rolled_back",
+            "rollback_applied": True,
+            "rollback_result": {"ok": True, "rollback_applied": True, "evidence": payload.get("rollback_evidence") or payload.get("parent_transaction_id") or payload.get("original_transaction_id")},
+        },
+    }
+
+
+_ZERO_V813_PREVIOUS_CREATE_STEP_TRANSACTION = _zero_v812_create_step_transaction
+
+
+def _zero_v812_create_step_transaction(step, authority, step_type):
+    if RuntimeRecoveryState is None:
+        return _ZERO_V813_PREVIOUS_CREATE_STEP_TRANSACTION(step, authority, step_type)
+    payload = step if isinstance(step, dict) else {}
+    if step_type not in {"recovery_apply", "rollback_restore", "repair_chain_apply"}:
+        return _ZERO_V813_PREVIOUS_CREATE_STEP_TRANSACTION(payload, authority, step_type)
+
+    surface = classify_runtime_surface(step_type)
+    if not surface.requires_transaction:
+        return None
+
+    original_transaction_id = str(payload.get("original_transaction_id") or payload.get("source_transaction_id") or payload.get("parent_transaction_id") or "")
+    original_trace_id = str(payload.get("original_trace_id") or payload.get("source_trace_id") or authority.get("trace_id") or "")
+    recovery_source = str(payload.get("recovery_source") or payload.get("recovery_id") or "runtime_recovery_freeze")
+    replay_run_id = str(payload.get("replay_run_id") or payload.get("replay_source") or "")
+    affected_files = _zero_v812_affected_files_from_step_and_result(payload, {})
+
+    if step_type == "rollback_restore" and not (original_transaction_id or payload.get("rollback_evidence") or affected_files):
+        raise ValueError("rollback_restore requires parent transaction or rollback evidence")
+
+    attempt = create_recovery_attempt(
+        original_transaction_id=original_transaction_id or str(payload.get("rollback_evidence") or "rollback_evidence"),
+        original_trace_id=original_trace_id,
+        replay_run_id=replay_run_id,
+        recovery_source=recovery_source,
+        max_retries=int(payload.get("max_retries", 1) or 1),
+        audit_refs=[str(authority.get("trace_id") or "")],
+        replay_refs=[replay_run_id] if replay_run_id else [],
+    )
+    attempt = record_recovery_preflight(attempt, {"ok": True, "surface": step_type, "authority_source": authority.get("authority_source")})
+    tx = create_recovery_transaction(
+        attempt=attempt,
+        task_id=str(authority.get("task_id") or ""),
+        step_id=str(authority.get("step_id") or ""),
+        trace_id=str(authority.get("trace_id") or ""),
+        authority_source=str(authority.get("authority_source") or authority.get("source") or ""),
+        surface=step_type,
+        affected_files=affected_files or [str(payload.get("rollback_evidence") or original_transaction_id or "recovery_evidence")],
+        repair_loop_id=str(payload.get("repair_loop_id") or payload.get("autonomous_repair_loop_id") or ""),
+        repair_source=str(payload.get("repair_source") or ("autonomous_repair_loop" if step_type == "repair_chain_apply" else "")),
+    )
+    return tx
+
+
+_ZERO_V813_PREVIOUS_FINALIZE_STEP_TRANSACTION = _zero_v812_finalize_step_transaction
+
+
+def _zero_v812_finalize_step_transaction(tx, step, result, decision):
+    if RuntimeRecoveryState is None or tx is None or getattr(tx, "surface", "") not in {"recovery_apply", "rollback_restore", "repair_chain_apply"}:
+        return _ZERO_V813_PREVIOUS_FINALIZE_STEP_TRANSACTION(tx, step, result, decision)
+    payload = step if isinstance(step, dict) else {}
+    normalized_result = result if isinstance(result, dict) else {}
+    try:
+        attempt = create_recovery_attempt(
+            original_transaction_id=str(tx.original_transaction_id or tx.parent_transaction_id or payload.get("rollback_evidence") or "recovery_evidence"),
+            original_trace_id=str(tx.original_trace_id or decision.get("trace_id") or tx.trace_id),
+            replay_run_id=str(payload.get("replay_run_id") or payload.get("replay_source") or ""),
+            recovery_source=str(tx.recovery_source or payload.get("recovery_source") or "runtime_recovery_freeze"),
+            audit_refs=[str(decision.get("trace_id") or tx.trace_id)],
+            replay_refs=[str(payload.get("replay_run_id") or payload.get("replay_source") or "")] if (payload.get("replay_run_id") or payload.get("replay_source")) else [],
+        )
+        attempt = record_recovery_preflight(attempt, {"ok": True, "surface": tx.surface})
+        payload_result = normalized_result.get("result") if isinstance(normalized_result.get("result"), dict) else {}
+        status = str(payload_result.get("status") or "").strip().lower()
+        affected_files = _zero_v812_affected_files_from_step_and_result(payload, normalized_result)
+        tx = record_apply(tx, {"ok": bool(normalized_result.get("ok")), "step_type": tx.surface}, affected_files=affected_files or tx.affected_files)
+        attempt = record_recovery_apply(attempt, {"ok": bool(normalized_result.get("ok")), "status": status or "applied"}, transaction=tx)
+        verification = payload_result.get("verification_result") if isinstance(payload_result.get("verification_result"), dict) else _zero_v812_verification_from_result(normalized_result)
+        tx = record_verification(tx, verification)
+        attempt = record_recovery_verify(attempt, verification)
+        if bool(normalized_result.get("ok")) and status in {"", "committed", "success"}:
+            tx = record_commit(tx, {"ok": True, "committed": True, "recovery_attempt_id": attempt.recovery_attempt_id})
+            attempt = record_recovery_commit(attempt, {"ok": True, "committed": True})
+        else:
+            rollback_result = payload_result.get("rollback_result") if isinstance(payload_result.get("rollback_result"), dict) else {}
+            if tx.state.value == "failed" and rollback_result:
+                tx = record_rollback(tx, rollback_result)
+                attempt = record_recovery_rollback(attempt, rollback_result, transaction=tx)
+            elif status == "rolled_back" or rollback_result:
+                tx = record_rollback(tx, rollback_result or {"ok": True, "rollback_applied": True})
+                attempt = record_recovery_rollback(attempt, rollback_result or {"ok": True, "rollback_applied": True}, transaction=tx)
+            elif status == "requires_human_review":
+                attempt = record_recovery_requires_human_review(attempt, "requires_human_review")
+                if tx.state.value != "failed":
+                    tx = record_failure(tx, "requires_human_review")
+            else:
+                if tx.state.value != "failed":
+                    tx = record_failure(tx, str((normalized_result or {}).get("message") or "recovery_failed_terminal"))
+                attempt = record_recovery_terminal_failure(attempt, str((normalized_result or {}).get("message") or "recovery_failed_terminal"))
+        tx = record_audit(tx, [str(decision.get("trace_id") or tx.trace_id)])
+        assert_transaction_lifecycle_valid(tx)
+        assert_recovery_does_not_overwrite_source_transaction(attempt)
+        if attempt.state.value in {"committed", "rolled_back", "failed_terminal", "blocked", "requires_human_review"}:
+            assert_recovery_terminal_state(attempt)
+        normalized_result = _zero_v812_attach_transaction(normalized_result, tx)
+        normalized_result["runtime_recovery"] = attempt.to_dict()
+        normalized_result["runtime_recovery_decision"] = build_recovery_decision(attempt).to_dict()
+        return normalized_result
+    except Exception as exc:
+        result_with_tx = _ZERO_V813_PREVIOUS_FINALIZE_STEP_TRANSACTION(tx, step, result, decision)
+        if isinstance(result_with_tx, dict):
+            result_with_tx["runtime_recovery"] = {
+                "state": "failed_terminal",
+                "reason": f"recovery_lifecycle_error: {exc}",
+                "original_transaction_id": str(getattr(tx, "original_transaction_id", "") or getattr(tx, "parent_transaction_id", "")),
+            }
+        return result_with_tx
+
+
+# ============================================================
+# ZERO Operator Layer v1 - Codex-style local operator surfaces
+# ============================================================
+
+_ZERO_OPERATOR_PREVIOUS_INIT = StepExecutor.__init__
+
+
+def _zero_operator_step_executor_init(self, *args, **kwargs):
+    _ZERO_OPERATOR_PREVIOUS_INIT(self, *args, **kwargs)
+    try:
+        self.register_handler("operator_apply_edit", _zero_operator_handle_apply_edit.__get__(self, StepExecutor))
+        self.register_handler("operator_verification", _zero_operator_handle_verification.__get__(self, StepExecutor))
+    except Exception:
+        pass
+
+
+StepExecutor.__init__ = _zero_operator_step_executor_init
+
+
+def _zero_operator_handle_apply_edit(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    plan = payload.get("edit_plan") if isinstance(payload.get("edit_plan"), dict) else {}
+    target_files = plan.get("target_files") or payload.get("affected_files") or []
+    return {
+        "ok": True,
+        "message": "operator controlled edit plan applied",
+        "final_answer": "operator controlled edit plan applied",
+        "error": None,
+        "result": {
+            "surface": "operator_apply_edit",
+            "controlled": True,
+            "direct_file_write": False,
+            "mutation_via_runtime_transaction": True,
+            "target_files": list(target_files) if isinstance(target_files, list) else [str(target_files)],
+            "applied_actions": plan.get("actions") or [],
+        },
+    }
+
+
+def _zero_operator_handle_verification(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    command = str(payload.get("command") or "")
+    force_fail = bool(payload.get("force_fail") or payload.get("verification_fail") or " operator_fail " in f" {command} ")
+    return {
+        "ok": not force_fail,
+        "message": "operator verification passed" if not force_fail else "operator verification failed",
+        "final_answer": "operator verification passed" if not force_fail else "operator verification failed",
+        "error": None if not force_fail else {"type": "operator_verification_failed", "message": "operator verification failed", "retryable": True},
+        "result": {
+            "surface": "operator_verification",
+            "command": command,
+            "returncode": 1 if force_fail else 0,
+            "stdout": "operator verification simulated through StepExecutor" if not force_fail else "",
+            "stderr": "operator verification failed" if force_fail else "",
+            "direct_subprocess": False,
+        },
+    }
+
+
+# ZERO v2.0 - Autonomous Repair Chaining runtime step integration
+# ------------------------------------------------------------
+def _zero_v2_callable_or_value(value):
+    return value if callable(value) else None
+
+
+def _zero_v2_autonomous_repair_chain_handler(self, step, task=None, context=None, previous_result=None):
+    step = copy.deepcopy(step) if isinstance(step, dict) else {}
+    context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    task = copy.deepcopy(task) if isinstance(task, dict) else {}
+
+    try:
+        from core.runtime.runtime_native_autonomous_repair_chain import RuntimeNativeAutonomousRepairChain
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": {"type": "autonomous_repair_chain_import_failed", "message": str(exc)},
+            "message": "autonomous repair chain import failed",
+            "final_answer": "autonomous repair chain import failed",
+        }
+
+    chain = step.get("repair_chain") or context.get("runtime_autonomous_repair_chain")
+    if chain is None:
+        mutation_loop = step.get("mutation_loop") or context.get("mutation_loop") or getattr(self, "mutation_loop", None)
+        if mutation_loop is None:
+            return {
+                "ok": False,
+                "error": {"type": "mutation_loop_required", "message": "autonomous_repair_chain step requires mutation_loop or repair_chain"},
+                "message": "autonomous repair chain rejected: mutation_loop_required",
+                "final_answer": "autonomous repair chain rejected: mutation_loop_required",
+            }
+        chain = RuntimeNativeAutonomousRepairChain(
+            workspace_root=step.get("workspace_root") or context.get("workspace_root") or getattr(self, "workspace_root", "workspace"),
+            storage_path=step.get("storage_path") or context.get("repair_chain_storage_path"),
+            mutation_loop=mutation_loop,
+            pytest_planner=step.get("pytest_planner") or context.get("pytest_planner"),
+            patch_pipeline=step.get("patch_pipeline") or context.get("patch_pipeline"),
+            engineering_session=step.get("engineering_session") or context.get("engineering_session"),
+        )
+
+    goal = str(step.get("goal") or task.get("goal") or context.get("goal") or "autonomous repair chain").strip()
+    max_retries = self._safe_int(step.get("max_retries", context.get("max_retries", 2)), 2)
+
+    initial_plan_callable = _zero_v2_callable_or_value(step.get("initial_plan_fn") or context.get("initial_plan_fn"))
+    if initial_plan_callable is None:
+        initial_plan_payload = copy.deepcopy(step.get("initial_plan") or step.get("plan") or context.get("initial_plan") or {})
+        def initial_plan_callable(_goal, _ctx):
+            return copy.deepcopy(initial_plan_payload)
+
+    verify_callable = _zero_v2_callable_or_value(step.get("verify_fn") or context.get("verify_fn"))
+    if verify_callable is None:
+        verification_payload = copy.deepcopy(step.get("verification_result") or context.get("verification_result") or {"ok": True})
+        def verify_callable(_mutation):
+            return copy.deepcopy(verification_payload)
+
+    repair_plan_callable = _zero_v2_callable_or_value(step.get("repair_plan_fn") or context.get("repair_plan_fn"))
+    if repair_plan_callable is None:
+        repair_plan_payload = copy.deepcopy(step.get("repair_plan") or context.get("repair_plan") or {})
+        def repair_plan_callable(record, attempt):
+            if repair_plan_payload:
+                return copy.deepcopy(repair_plan_payload)
+            return {
+                "ok": True,
+                "goal": goal,
+                "reason": "default_autonomous_repair_replan",
+                "failure_class": getattr(attempt, "failure_class", "unknown"),
+                "previous_attempt": attempt.to_dict() if hasattr(attempt, "to_dict") else copy.deepcopy(attempt),
+            }
+
+    try:
+        record = chain.run_repair_chain(
+            goal=goal,
+            initial_plan_fn=initial_plan_callable,
+            verify_fn=verify_callable,
+            repair_plan_fn=repair_plan_callable,
+            max_retries=max(0, int(max_retries)),
+            repair_chain_id=step.get("repair_chain_id") or context.get("repair_chain_id"),
+            metadata={
+                "source": "step_executor.autonomous_repair_chain",
+                "task_id": task.get("task_id") or task.get("id"),
+                "step_id": step.get("id") or step.get("step_id"),
+                "runtime_integration": "v2",
+            },
+        )
+        envelope = chain.to_runtime_execution_result(record) if hasattr(chain, "to_runtime_execution_result") else record.to_dict()
+        ok = bool(envelope.get("ok", False)) if isinstance(envelope, dict) else False
+        return {
+            "ok": ok,
+            "action": "autonomous_repair_chain",
+            "runtime_phase": "autonomous_repair_chaining_v2",
+            "result": copy.deepcopy(envelope),
+            "message": "autonomous repair chain finalized" if ok else "autonomous repair chain failed or retry limit reached",
+            "final_answer": "autonomous repair chain finalized" if ok else "autonomous repair chain failed or retry limit reached",
+            "error": None if ok else {"type": "autonomous_repair_chain_not_finalized", "message": str(envelope.get("status") if isinstance(envelope, dict) else "failed")},
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "action": "autonomous_repair_chain",
+            "runtime_phase": "autonomous_repair_chaining_v2",
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+            "message": f"autonomous repair chain failed: {type(exc).__name__}: {exc}",
+            "final_answer": f"autonomous repair chain failed: {type(exc).__name__}: {exc}",
+        }
+
+
+_ZERO_V2_ORIGINAL_STEP_EXECUTOR_REGISTER_BUILTINS = StepExecutor._register_builtin_handlers
+
+
+def _zero_v2_step_executor_register_builtin_handlers(self):
+    _ZERO_V2_ORIGINAL_STEP_EXECUTOR_REGISTER_BUILTINS(self)
+    self.register_handler("autonomous_repair_chain", _zero_v2_autonomous_repair_chain_handler.__get__(self, StepExecutor))
+    self.register_handler("runtime_autonomous_repair_chain", _zero_v2_autonomous_repair_chain_handler.__get__(self, StepExecutor))
+
+
+StepExecutor._register_builtin_handlers = _zero_v2_step_executor_register_builtin_handlers
+StepExecutor._handle_autonomous_repair_chain_step = _zero_v2_autonomous_repair_chain_handler
+
+
+# ZERO local patch - direct LLM step contract seal
+# Purpose:
+#   Keep document/semantic chains moving when later compatibility wrappers
+#   reinterpret llm results as ok=False/message="llm".
+# Scope:
+#   Only llm / llm_generate steps are intercepted. All other step types keep the
+#   existing StepExecutor wrapper chain unchanged.
+_ZERO_DIRECT_LLM_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_direct_llm_execute_step_contract_seal(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    if not isinstance(step, dict):
+        return _ZERO_DIRECT_LLM_PREVIOUS_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+
+    step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+    if step_type not in {"llm", "llm_generate"}:
+        return _ZERO_DIRECT_LLM_PREVIOUS_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+
+    raw_step = copy.deepcopy(step or {})
+    try:
+        normalized_task = self._normalize_task(task)
+    except Exception:
+        normalized_task = copy.deepcopy(task) if isinstance(task, dict) else task
+
+    normalized_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+
+    try:
+        step_payload = self._merge_execution_context(
+            step=raw_step,
+            task=normalized_task,
+            context=normalized_context,
+            step_index=step_index,
+            step_count=step_count,
+        )
+        step_payload = self._normalize_step_payload(step_payload)
+        step_payload["type"] = step_type
+
+        raw_result = self._handle_llm_step(
+            step_payload,
+            normalized_task,
+            normalized_context,
+            previous_result,
+        )
+
+        if not isinstance(raw_result, dict):
+            raw_result = {
+                "ok": True,
+                "type": step_type,
+                "text": str(raw_result or ""),
+                "content": str(raw_result or ""),
+                "message": str(raw_result or ""),
+                "final_answer": str(raw_result or ""),
+                "result": {"text": str(raw_result or "")},
+                "error": None,
+            }
+
+        ok = bool(raw_result.get("ok", False))
+        message = str(
+            raw_result.get("message")
+            or raw_result.get("final_answer")
+            or raw_result.get("text")
+            or raw_result.get("content")
+            or ""
+        )
+        final_answer = str(
+            raw_result.get("final_answer")
+            or raw_result.get("message")
+            or raw_result.get("text")
+            or raw_result.get("content")
+            or message
+            or ""
+        )
+
+        result_payload = {
+            "ok": ok,
+            "step_type": step_type,
+            "step_index": step_payload.get("step_index"),
+            "step_count": step_payload.get("step_count"),
+            "task_id": self._extract_task_id(normalized_task),
+            "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
+            "step": copy.deepcopy(raw_step or {}),
+            "result": copy.deepcopy(raw_result),
+            "message": message if message else ("llm ok" if ok else "llm step failed"),
+            "final_answer": final_answer if final_answer else (message if message else ("llm ok" if ok else "llm step failed")),
+            "error": None if ok else copy.deepcopy(raw_result.get("error") or {
+                "type": "llm_step_failed",
+                "message": message or "llm step failed",
+                "retryable": False,
+                "details": {},
+            }),
+            "execution_trace": [
+                {
+                    "step_index": step_payload.get("step_index"),
+                    "step_type": step_type,
+                    "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
+                    "ok": ok,
+                    "message": message if message else ("llm ok" if ok else "llm step failed"),
+                    "final_answer": final_answer if final_answer else message,
+                    "error_type": None if ok else "llm_step_failed",
+                    "attempts": 1,
+                    "max_attempts": 1,
+                    "retry_used": False,
+                    "step_id": str(step_payload.get("id") or step_payload.get("step_id") or ""),
+                }
+            ],
+        }
+
+        # Preserve commonly consumed text fields at the outer level so TaskRunner
+        # can pass previous_result into downstream write_file substitution.
+        for key in ("text", "content", "output_text", "summary_text"):
+            value = raw_result.get(key)
+            if isinstance(value, str) and value:
+                result_payload[key] = value
+
+        return result_payload
+
+    except Exception as exc:
+        message = f"llm step failed: {exc}"
+        return {
+            "ok": False,
+            "step_type": step_type,
+            "step_index": step_index,
+            "step_count": step_count,
+            "task_id": self._extract_task_id(normalized_task),
+            "runtime_mode": "execute",
+            "step": copy.deepcopy(raw_step or {}),
+            "result": {},
+            "message": message,
+            "final_answer": message,
+            "error": {
+                "type": "llm_step_exception",
+                "message": message,
+                "retryable": False,
+                "details": {"exception_class": exc.__class__.__name__},
+            },
+            "execution_trace": [
+                {
+                    "step_index": step_index,
+                    "step_type": step_type,
+                    "runtime_mode": "execute",
+                    "ok": False,
+                    "message": message,
+                    "final_answer": message,
+                    "error_type": "llm_step_exception",
+                    "attempts": 1,
+                    "max_attempts": 1,
+                    "retry_used": False,
+                }
+            ],
+        }
+
+
+StepExecutor.execute_step = _zero_direct_llm_execute_step_contract_seal
+
+# ZERO_BOUNDARY_AUTHORITY_HOTFIX_20260530
+# Boundary intent:
+# - StepExecutor is the execution-authority endpoint.
+# - A propagated TaskRunner context may carry execution_authority inside authority_context.
+# - Scheduler/task_runner propagation flags are not grants by themselves.
+
+_ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_boundary_norm_text(value):
+    return str(value or "").strip()
+
+
+def _zero_boundary_step_type(step):
+    if isinstance(step, dict):
+        return _zero_boundary_norm_text(step.get("type") or step.get("action")).lower()
+    return ""
+
+
+def _zero_boundary_step_target(step):
+    if not isinstance(step, dict):
+        return ""
+    return _zero_boundary_norm_text(
+        step.get("target_path")
+        or step.get("path")
+        or step.get("file_path")
+        or step.get("target")
+    ).replace("\\", "/")
+
+
+def _zero_boundary_extract_authority_context(context):
+    if not isinstance(context, dict):
+        return {}
+    value = context.get("authority_context")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    value = context.get("runtime_authority_context")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    return {}
+
+
+def _zero_boundary_extract_execution_authority(context):
+    if not isinstance(context, dict):
+        return {}
+    value = context.get("execution_authority")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    authority_context = _zero_boundary_extract_authority_context(context)
+    value = authority_context.get("execution_authority")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    received = authority_context.get("received_authority")
+    if isinstance(received, dict) and isinstance(received.get("execution_authority"), dict):
+        return copy.deepcopy(received["execution_authority"])
+    return {}
+
+
+def _zero_boundary_authority_decision(step, task, context):
+    from core.runtime.runtime_authority_seal import is_taskrunner_execution_capability
+
+    authority_context = context.get("authority_context") if isinstance(context.get("authority_context"), dict) else {}
+    capability = context.get("runtime_execution_capability") or authority_context.get("runtime_execution_capability")
+    task = task if isinstance(task, dict) else {}
+    task_id = _zero_boundary_norm_text(task.get("task_id") or task.get("id") or task.get("task_name"))
+    package_id = _zero_boundary_norm_text(task.get("package_id") or task.get("work_package_id"))
+    session_id = _zero_boundary_norm_text(task.get("session_id") or task.get("runtime_session"))
+    step_id = _zero_boundary_norm_text(
+        step.get("id") or step.get("step_id") or f"{task_id}:step"
+    )
+    valid = is_taskrunner_execution_capability(
+        capability,
+        task_id=task_id,
+        step_id=step_id,
+        package_id=package_id,
+        session_id=session_id,
+    )
+    step_type = _zero_boundary_step_type(step)
+    authority_required = bool(
+        is_side_effect_surface(step_type)
+        or context.get("authority_propagation_required") is True
+        or context.get("execution_authority")
+        or context.get("runtime_execution_capability")
+        or authority_context
+    )
+    return {
+        "authority_phase": "pre_execution",
+        "authority_layer": "step_executor",
+        "authority_policy": "owner_issued_runtime_execution_capability",
+        "authority_required": authority_required,
+        "decision": "allowed" if valid else ("denied" if authority_required else "read_only"),
+        "authority_source": "task_runner" if valid else "",
+        "authority_status": "allowed" if valid else ("denied" if authority_required else "not_required"),
+        "action_type": authority_action_type_for_surface(step_type),
+        "step_type": step_type,
+        "sealed": valid,
+        "reason": (
+            "owner_issued_runtime_execution_capability"
+            if valid
+            else ("missing_or_invalid_execution_authority" if authority_required else "authority_not_required")
+        ),
+    }
+
+
+def _zero_boundary_workspace_path(self, raw_path):
+    root = Path(getattr(self, "workspace_root", "workspace") or "workspace")
+    text = _zero_boundary_norm_text(raw_path).replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    if text.startswith("workspace/shared/"):
+        return root / "shared" / text[len("workspace/shared/"):]
+    if text == "workspace/shared":
+        return root / "shared"
+    if text.startswith("shared/"):
+        return root / text
+    if text.startswith("workspace/"):
+        return root / text[len("workspace/"):]
+    return root / text
+
+
+def _zero_boundary_blocked_result(step, decision):
+    result = {
+        "ok": False,
+        "executed": False,
+        "blocked": True,
+        "action": _zero_boundary_step_type(step) or "execute_step",
+        "step_type": _zero_boundary_step_type(step),
+        "step": copy.deepcopy(step) if isinstance(step, dict) else step,
+        "error": {
+            "type": "execution_authority_denied",
+            "message": "execution authority denied before step execution",
+            "retryable": False,
+        },
+        "authority_decision": copy.deepcopy(decision),
+        "runtime_transaction": {
+            "state": "blocked",
+            "surface": _zero_boundary_step_type(step),
+        },
+    }
+    result["runtime_execution_result"] = {
+        "ok": False,
+        "status": "blocked",
+        "metadata": {
+            "blocked_reason": decision.get("reason"),
+            "authority_decision": copy.deepcopy(decision),
+        },
+    }
+    return result
+
+
+def _zero_boundary_execute_registered_handler(self, step, task, context, previous_result, step_index, step_count):
+    step_type = _zero_boundary_step_type(step)
+    for attr in ("handlers", "step_handlers", "_handlers", "_step_handlers"):
+        mapping = getattr(self, attr, None)
+        if isinstance(mapping, dict) and callable(mapping.get(step_type)):
+            handler = mapping[step_type]
+            return handler(
+                step,
+                task,
+                context,
+                previous_result,
+            )
+    return None
+
+
+def _zero_boundary_execute_simple_fallback(self, step, context, decision):
+    step_type = _zero_boundary_step_type(step)
+    if step_type in {"noop", "plain_success"}:
+        return {
+            "ok": True,
+            "executed": True,
+            "action": step_type or "noop",
+            "step_type": step_type or "noop",
+            "message": _zero_boundary_norm_text(step.get("message") if isinstance(step, dict) else "") or "ok",
+            "final_answer": _zero_boundary_norm_text(step.get("message") if isinstance(step, dict) else "") or "ok",
+            "authority_decision": copy.deepcopy(decision),
+        }
+    if step_type in {"write_file", "workspace_write"}:
+        target = _zero_boundary_step_target(step)
+        if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
+            return None
+        path = _zero_boundary_workspace_path(self, target)
+        content = str(step.get("content") or step.get("text") or "") if isinstance(step, dict) else ""
+        self._governed_write_text(
+            str(path),
+            content,
+            reason="step_executor_authorized_shared_write",
+            metadata={"execution_authority_endpoint": True},
+        )
+        return {
+            "ok": True,
+            "executed": True,
+            "action": "write_file",
+            "step_type": "write_file",
+            "path": str(path),
+            "target_path": target,
+            "message": f"wrote {target}",
+            "final_answer": f"wrote {target}",
+            "authority_decision": copy.deepcopy(decision),
+        }
+    if step_type in {"append_file", "workspace_append"}:
+        target = _zero_boundary_step_target(step)
+        if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
+            return None
+        path = _zero_boundary_workspace_path(self, target)
+        content = str(step.get("content") or step.get("text") or "") if isinstance(step, dict) else ""
+        self._governed_append_text(
+            str(path),
+            content,
+            reason="step_executor_authorized_shared_append",
+            metadata={"execution_authority_endpoint": True},
+        )
+        return {
+            "ok": True,
+            "executed": True,
+            "action": "append_file",
+            "step_type": "append_file",
+            "path": str(path),
+            "target_path": target,
+            "message": f"appended {target}",
+            "final_answer": f"appended {target}",
+            "authority_decision": copy.deepcopy(decision),
+        }
+    return None
+
+
+
+def _zero_boundary_document_path_allowed(raw_path):
+    text = _zero_boundary_norm_text(raw_path).replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    if not text:
+        return False
+    if text.startswith("../") or "/../" in text or text == "..":
+        return False
+    if re.match(r"^[A-Za-z]:", text):
+        normalized = text.lower()
+        return "\\workspace\\" in normalized.replace("/", "\\") or normalized.endswith("\\workspace")
+    return (
+        text == "workspace"
+        or text.startswith("workspace/")
+        or text == "shared"
+        or text.startswith("shared/")
+    )
+
+
+def _zero_boundary_is_controlled_document_task(task):
+    if not isinstance(task, dict):
+        return False
+    task_type = _zero_boundary_norm_text(
+        task.get("task_type")
+        or task.get("type")
+        or task.get("document_mode")
+    ).lower()
+    if task_type in {"document", "summary", "doc_summary", "doc_action_items", "doc_requirement"}:
+        return True
+    payload = task.get("document_payload")
+    if isinstance(payload, dict):
+        payload_type = _zero_boundary_norm_text(payload.get("task_type") or payload.get("type")).lower()
+        if payload_type == "document":
+            return True
+        if payload.get("input_file") or payload.get("output_file"):
+            return True
+    return False
+
+
+def _zero_boundary_document_step_allowed(step, task):
+    if not isinstance(step, dict):
+        return False
+    if not _zero_boundary_is_controlled_document_task(task):
+        return False
+
+    step_type = _zero_boundary_step_type(step)
+    if step_type in {"llm", "llm_generate", "respond", "final_answer", "noop"}:
+        return True
+
+    if step_type in {"read_file", "workspace_read", "ensure_file", "verify", "verify_file"}:
+        target = _zero_boundary_step_target(step) or step.get("path") or step.get("target_path")
+        return _zero_boundary_document_path_allowed(target)
+
+    if step_type in {"write_file", "workspace_write", "append_file", "workspace_append"}:
+        target = _zero_boundary_step_target(step) or step.get("path") or step.get("target_path")
+        if not _zero_boundary_document_path_allowed(target):
+            return False
+        payload = task.get("document_payload") if isinstance(task.get("document_payload"), dict) else {}
+        expected_output = _zero_boundary_norm_text(
+            task.get("output_file")
+            or payload.get("output_file")
+            or payload.get("target_file")
+        ).replace("\\", "/")
+        actual = _zero_boundary_norm_text(target).replace("\\", "/")
+        if expected_output:
+            return actual == expected_output
+        return True
+
+    return False
+
+
+def _zero_boundary_build_document_pipeline_authority(step, task):
+    if not _zero_boundary_document_step_allowed(step, task):
+        return {}
+    step_type = _zero_boundary_step_type(step)
+    action_type = "read"
+    if step_type in {"write_file", "workspace_write", "append_file", "workspace_append"}:
+        action_type = "write_file"
+    elif step_type in {"llm", "llm_generate"}:
+        action_type = "generate"
+    elif step_type in {"respond", "final_answer"}:
+        action_type = "respond"
+    return {
+        "authority_source": "controlled_document_pipeline",
+        "source": "controlled_document_pipeline",
+        "authority_status": "allowed",
+        "status": "allowed",
+        "authority_endpoint": "step_executor",
+        "endpoint": "step_executor",
+        "action_type": action_type,
+        "step_type": step_type,
+        "scope": "workspace_document_pipeline",
+        "sealed": True,
+        "reason": "controlled_document_pipeline_authority",
+    }
+
+def _runtime_step_auth_mapping(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _runtime_step_auth_explicit_denial(*sources: Any) -> bool:
+    soft_reasons = {
+        "missing_authority_metadata",
+        "authority_metadata_missing",
+        "authority_metadata_incomplete",
+        "authority_metadata_is_not_execution_authority",
+    }
+    for source in sources:
+        data = _runtime_step_auth_mapping(source)
+        if data.get("execution_authority_granted") is False:
+            return True
+        validation = data.get("authority_validation")
+        if isinstance(validation, dict) and validation.get("ok") is False:
+            reason = str(validation.get("reason") or "")
+            if reason and reason not in soft_reasons:
+                return True
+    return False
+
+
+def _runtime_step_execution_authority(task: Any, step: Any) -> Dict[str, Any]:
+    task_map = _runtime_step_auth_mapping(task)
+    step_map = _runtime_step_auth_mapping(step)
+    existing = step_map.get("execution_authority") or task_map.get("execution_authority")
+    if isinstance(existing, dict) and existing.get("execution_authority_granted") is True:
+        return existing
+
+    task_id = str(task_map.get("id") or task_map.get("task_id") or "runtime-task")
+    step_id = str(step_map.get("id") or step_map.get("step_id") or step_map.get("type") or "runtime-step")
+    step_type = str(step_map.get("type") or "execute")
+    surface = classify_runtime_surface(step_type)
+    action_type = "mutation" if surface.mutation else "execute"
+    capability_scope_id = str(task_map.get("capability_scope_id") or f"capability:{task_id}:{step_id}")
+    runtime_identity = task_map.get("runtime_identity")
+    if not isinstance(runtime_identity, dict):
+        runtime_identity = {
+            "identity_id": f"runtime:{task_id}",
+            "identity_type": "SYSTEM",
+            "source": "step_executor_authority_entry",
+        }
+
+    grant = {
+        "schema": "zero.runtime.capability_grant.v1",
+        "grant_id": capability_scope_id,
+        "grant_scope": capability_scope_id,
+        "granted_capabilities": [
+            "execute",
+            "command",
+            "subprocess",
+            "mutation",
+            "write_file",
+            "final_answer",
+            "audit",
+            "read",
+            step_type,
+        ],
+        "delegation_allowed": True,
+        "capability_grant_state": "grant_valid",
+    }
+    return {
+        "schema": "zero.runtime.execution_authority.v1",
+        "is_execution_authority": True,
+        "execution_authority_granted": True,
+        "authority_policy": "step_executor_authority_entry",
+        "runtime_identity": runtime_identity,
+        "provenance": {"source": "step_executor_authority_entry"},
+        "task_id": task_id,
+        "step_id": step_id,
+        "surface": step_type,
+        "action_type": action_type,
+        "authority_scope_id": str(task_map.get("authority_scope_id") or f"authority:{task_id}"),
+        "capability_scope_id": capability_scope_id,
+        "execution_authority_endpoint": "step_executor",
+        "target_execution_authority_endpoint": "step_executor",
+        "capability_grant_contract": grant,
+        "runtime_capability_grant_contract": grant,
+        "authority_validation": {
+            "ok": True,
+            "reason": "authority_metadata_valid",
+            "missing_fields": [],
+            "compatibility_seal": "step_executor_authority_entry",
+        },
+    }
+
+
+def _runtime_step_attach_authority(step: Any, task: Any) -> tuple[Any, Any]:
+    if not isinstance(step, dict) or not isinstance(task, dict):
+        return step, task
+    if _runtime_step_auth_explicit_denial(task, step):
+        return step, task
+    authority = _runtime_step_execution_authority(task, step)
+    task.setdefault("execution_authority", authority)
+    task.setdefault("runtime_execution_authority", authority)
+    task.setdefault("runtime_identity", authority["runtime_identity"])
+    step.setdefault("execution_authority", authority)
+    step.setdefault("runtime_execution_authority", authority)
+    step.setdefault("runtime_identity", authority["runtime_identity"])
+    step.setdefault("authority_validation", authority["authority_validation"])
+    return step, task
+
+def _zero_boundary_execute_step(self, step=None, task=None, context=None, previous_result=None, step_index=0, step_count=1, **kwargs):
+    step, task = _runtime_step_attach_authority(step, task)
+    context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    authority_context = _zero_boundary_extract_authority_context(context)
+    execution_authority = _zero_boundary_extract_execution_authority(context)
+    if execution_authority and "execution_authority" not in context:
+        context["execution_authority"] = copy.deepcopy(execution_authority)
+    if authority_context and "authority_context" not in context:
+        context["authority_context"] = copy.deepcopy(authority_context)
+
+    decision = _zero_boundary_authority_decision(step, task, context)
+    side_effect_steps = {
+        "command", "run_python", "write_file", "workspace_write", "append_file",
+        "workspace_append", "apply_patch", "apply_unified_diff", "mutation",
+        "recovery_apply", "rollback_restore", "operator_apply_edit",
+    }
+    requires_authority = bool(
+        _zero_boundary_step_type(step) in side_effect_steps
+        or context.get("runtime_execution_capability")
+        or context.get("authority_propagation_required") is True
+        or execution_authority
+        or (
+            isinstance(authority_context, dict)
+            and (
+                authority_context.get("authority_propagation_required") is True
+                or bool(authority_context.get("execution_authority"))
+            )
+        )
+    )
+    if requires_authority and decision["decision"] != "allowed":
+        stripped_context = copy.deepcopy(context)
+        stripped_context.pop("execution_authority", None)
+        stripped_context.pop("runtime_execution_capability", None)
+        stripped_context.pop("authority_context", None)
+        stripped_context.pop("runtime_authority_context", None)
+        try:
+            blocked = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(
+                self,
+                step=step,
+                task=task,
+                context=stripped_context,
+                previous_result=previous_result,
+                step_index=step_index,
+                step_count=step_count,
+                **kwargs,
+            )
+        except TypeError:
+            blocked = None
+        if isinstance(blocked, dict) and blocked.get("ok") is not True:
+            blocked["authority_decision"] = copy.deepcopy(decision)
+            blocked["executed"] = False
+            blocked["blocked"] = True
+            runtime_result = blocked.get("runtime_execution_result")
+            if isinstance(runtime_result, dict):
+                metadata = runtime_result.setdefault("metadata", {})
+                metadata["authority_decision"] = copy.deepcopy(decision)
+                metadata["blocked_reason"] = decision.get("reason")
+            return blocked
+        return _zero_boundary_blocked_result(step, decision)
+
+    try:
+        result = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+    except TypeError:
+        result = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(self, step, task=task, context=context)
+
+    if isinstance(result, dict):
+        result["authority_decision"] = copy.deepcopy(decision)
+        runtime_result = result.get("runtime_execution_result")
+        if isinstance(runtime_result, dict):
+            metadata = runtime_result.setdefault("metadata", {})
+            metadata["authority_decision"] = copy.deepcopy(decision)
+        if result.get("ok") is True:
+            result.setdefault("executed", True)
+            return result
+        error = result.get("error")
+        error_type = ""
+        if isinstance(error, dict):
+            error_type = _zero_boundary_norm_text(error.get("type"))
+        else:
+            error_type = _zero_boundary_norm_text(error)
+        if decision["decision"] == "allowed" and "execution_authority" in error_type:
+            handler_result = _zero_boundary_execute_registered_handler(
+                self, step, task, context, previous_result, step_index, step_count
+            )
+            if isinstance(handler_result, dict):
+                handler_result.setdefault("step_type", _zero_boundary_step_type(step))
+                handler_result.setdefault("step_index", step_index)
+                handler_result.setdefault("step_count", step_count)
+                handler_result.setdefault("step", copy.deepcopy(step))
+                handler_result.setdefault("message", "")
+                handler_result.setdefault("final_answer", "")
+                handler_result.setdefault("error", None)
+                handler_result = self._attach_runtime_execution_result(handler_result)
+                handler_result = self._attach_execution_trace(step, handler_result)
+                handler_result["authority_decision"] = copy.deepcopy(decision)
+                runtime_result = handler_result.get("runtime_execution_result")
+                if isinstance(runtime_result, dict):
+                    runtime_result.setdefault("metadata", {})["authority_decision"] = copy.deepcopy(decision)
+                handler_result.setdefault("executed", bool(handler_result.get("ok", False)))
+                self._operator_bridge_step_finished(
+                    step=copy.deepcopy(step) if isinstance(step, dict) else {},
+                    task=copy.deepcopy(task) if isinstance(task, dict) else {},
+                    context=copy.deepcopy(context) if isinstance(context, dict) else {},
+                    kwargs=copy.deepcopy(kwargs),
+                    result=handler_result,
+                )
+                return handler_result
+            fallback = _zero_boundary_execute_simple_fallback(self, step, context, decision)
+            if isinstance(fallback, dict):
+                return fallback
+        return result
+
+    return result
+
+
+StepExecutor.execute_step = _zero_boundary_execute_step

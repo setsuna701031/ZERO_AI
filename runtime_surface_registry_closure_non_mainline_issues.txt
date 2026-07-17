@@ -1,0 +1,22 @@
+Runtime Surface Registry Closure - Non-mainline Issue Notes
+
+Package 8 scope intentionally left these paths outside RuntimeRouteRegistry:
+
+- CLI read-only/status/control paths:
+  - control inspect/monitor/list/cancel/evidence
+  - work_package status/progress/summary/report/memory/pause/resume/cancel/list
+  - goal list/status/deps/pause/resume/cancel/defer
+  - portfolio/program list/show/state/summary/tree/observability
+  - task graph/list/audit/cleanup
+
+- CLI smoke task creators:
+  - task dag-smoke, mutation-smoke, runtime-plan-smoke, runtime-session-smoke, recovery-finalize, runtime-supervisor
+  - These create queued records and seed files, but do not execute the created tasks. They remain control/test scaffolding.
+
+- Execution machinery internals:
+  - Scheduler RuntimeDispatcher handoff and TaskRunner StepExecutor execution internals were not refactored.
+  - Package 8 only changed existing public native-mainline admission wrappers to route through RuntimeRouteRegistry first.
+
+- AgentLoop natural language patch helper surfaces remain outside this package.
+  - They require a separate migration decision because they are not among the Package 8 CLI/Scheduler/TaskRunner priority surfaces.
+

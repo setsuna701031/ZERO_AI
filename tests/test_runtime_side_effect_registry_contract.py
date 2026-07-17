@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
+
+
 
 
 def test_runtime_side_effect_registry_records_immutable_effects():

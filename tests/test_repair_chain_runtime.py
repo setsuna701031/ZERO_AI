@@ -10,6 +10,11 @@ from core.runtime.task_runtime import TaskRuntime
 from core.runtime.step_executor import StepExecutor
 from core.tasks.scheduler import Scheduler
 from core.tasks.execution_guard import ExecutionGuard
+import pytest
+
+pytestmark = [pytest.mark.external]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -81,11 +86,13 @@ class FinalVerifyFailExecutor:
     def __init__(self, *, delete_backup_before_verify: bool = False) -> None:
         self.real = StepExecutor()
         self.delete_backup_before_verify = delete_backup_before_verify
+        self.calls: list[tuple[str, int]] = []
 
     def execute_step(self, **kwargs: object) -> dict:
         step = kwargs["step"]
         step_index = int(kwargs["step_index"])
         assert isinstance(step, dict)
+        self.calls.append((str(step.get("type") or ""), step_index))
         if step.get("type") == "code_chain_verify" and step_index == 3:
             if self.delete_backup_before_verify:
                 backup_path = REPO_ROOT / "workspace" / "shared" / "code_chain_probe.py.bak_edit_payload"
@@ -220,58 +227,68 @@ def _read_runtime_json() -> dict:
     return json.loads(Path(_repair_task()["runtime_state_file"]).read_text(encoding="utf-8"))
 
 
-def test_repair_chain_runs_verify_repair_apply_verify_and_persists_finished_state() -> None:
+def test_repair_chain_without_dispatcher_lineage_cannot_persist_finished_state() -> None:
     executor = RepairChainExecutor()
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
 
     first = runner.run_task(_repair_task(), current_tick=1)
-    assert first["ok"] is True
-    assert first["current_step_index"] == 1
+    assert first["ok"] is False
+    assert first["status"] == "blocked"
+    assert first["error"]["type"] == "execution_authority_denied"
 
     reloaded = runtime.load_runtime_state(_repair_task())
-    assert reloaded["current_step_index"] == 1
+    assert reloaded["current_step_index"] == 0
 
     second = runner.run_task(_repair_task(), current_tick=2)
     third = runner.run_task(_repair_task(), current_tick=3)
     fourth = runner.run_task(_repair_task(), current_tick=4)
     final_json = _read_runtime_json()
 
-    assert second["current_step_index"] == 2
-    assert third["current_step_index"] == 3
-    assert fourth["status"] == "finished"
-    assert final_json["current_step_index"] == final_json["steps_total"] == 4
-    assert final_json["status"] == "finished"
-    assert final_json["finished_tick"] == 4
-    assert executor.calls == ["code_chain_verify", "code_chain_repair", "apply_unified_diff", "code_chain_verify"]
-    assert [item["step"]["type"] for item in final_json["execution_log"]] == executor.calls
+    assert second["status"] == third["status"] == "blocked"
+    assert fourth["ok"] is False
+    assert fourth["status"] == "blocked"
+    assert fourth["error"]["type"] == "execution_authority_denied"
+    assert final_json["current_step_index"] == 0
+    assert final_json["status"] in {"retrying", "blocked"}
+    assert "runtime dispatcher live capability required" in final_json["last_error"]
+    assert executor.calls == []
+    assert final_json["execution_log"]
+    assert all(item["step_index"] == 0 for item in final_json["execution_log"])
+    assert all(item["result"]["executed"] is False for item in final_json["execution_log"])
 
     repair_context = final_json["repair_context"]
-    assert repair_context["failed_file"] == "workspace/shared/math_ops.py"
-    assert repair_context["failed_reason"] == "initial verify found broken add"
-    assert repair_context["repair_result"]["step"]["type"] == "code_chain_repair"
-    assert repair_context["apply_result"]["step"]["type"] == "apply_unified_diff"
-    assert repair_context["verify_result"]["step"]["type"] == "code_chain_verify"
-    assert [item["phase"] for item in repair_context["flow"]] == ["verify", "repair", "apply", "verify"]
+    assert not repair_context.get("repair_result")
+    assert not repair_context.get("apply_result")
+    assert repair_context["verify_result"]["step_index"] == 0
+    assert repair_context["verify_result"]["result"]["executed"] is False
+    assert not repair_context.get("repo_impact")
+    assert not repair_context.get("rollback_result")
+    assert not repair_context.get("regression_verify")
+    assert final_json.get("completion_authority") is None
+    assert final_json.get("terminal_execution_evidence") is None
 
 
-def test_reload_resume_does_not_rerun_successful_repair_steps() -> None:
+def test_reload_resume_without_dispatcher_lineage_does_not_execute_repair_steps() -> None:
     executor = RepairChainExecutor()
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
 
     TaskRunner(step_executor=executor, task_runtime=runtime).run_task(_repair_task(), current_tick=1)
-    assert runtime.load_runtime_state(_repair_task())["current_step_index"] == 1
+    assert runtime.load_runtime_state(_repair_task())["current_step_index"] == 0
 
     resumed_runner = TaskRunner(step_executor=executor, task_runtime=runtime)
     resumed_runner.run_task(_repair_task(), current_tick=2)
     resumed_runner.run_task(_repair_task(), current_tick=3)
     resumed_runner.run_task(_repair_task(), current_tick=4)
 
-    assert executor.calls == ["code_chain_verify", "code_chain_repair", "apply_unified_diff", "code_chain_verify"]
-    assert _read_runtime_json()["status"] == "finished"
+    state = _read_runtime_json()
+    assert executor.calls == []
+    assert state["current_step_index"] == 0
+    assert state["status"] in {"retrying", "blocked"}
+    assert "runtime dispatcher live capability required" in state["last_error"]
 
 
-def test_repair_step_failure_marks_runtime_failed_with_last_error() -> None:
+def test_custom_repair_executor_cannot_run_without_dispatcher_lineage() -> None:
     executor = RepairChainExecutor(fail_step_type="code_chain_repair")
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
@@ -281,11 +298,12 @@ def test_repair_step_failure_marks_runtime_failed_with_last_error() -> None:
     failed_json = _read_runtime_json()
 
     assert result["ok"] is False
-    assert result["status"] == "failed"
-    assert failed_json["status"] == "failed"
-    assert failed_json["current_step_index"] == 1
-    assert failed_json["last_error"] == "code_chain_repair failed"
-    assert failed_json["repair_context"]["last_error"] == "code_chain_repair failed"
+    assert result["status"] == "blocked"
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert failed_json["status"] in {"retrying", "blocked"}
+    assert failed_json["current_step_index"] == 0
+    assert "runtime dispatcher live capability required" in failed_json["last_error"]
+    assert executor.calls == []
 
 
 def test_duplicate_repair_enqueue_is_suppressed() -> None:
@@ -356,7 +374,7 @@ def _syntax_repair_task(max_strategy_attempts: int = 3) -> dict:
     }
 
 
-def test_real_syntax_repair_generates_valid_edit_payload_applies_and_verifies() -> None:
+def test_real_syntax_repair_without_dispatcher_lineage_is_rolled_back() -> None:
     probe_path = REPO_ROOT / "workspace" / "shared" / "code_chain_probe.py"
     backup_path = Path(str(probe_path) + ".bak_edit_payload")
     probe_path.parent.mkdir(parents=True, exist_ok=True)
@@ -376,27 +394,13 @@ def test_real_syntax_repair_generates_valid_edit_payload_applies_and_verifies() 
         repaired = probe_path.read_text(encoding="utf-8")
 
         assert [item["action"] for item in results].count("strategy_retry") == 0
-        assert results[-1]["action"] == "task_finished"
-        assert repaired == "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n"
-        assert state["status"] == "finished"
-        assert state["current_step_index"] == state["steps_total"] == 4
-        assert state["repair_context"]["original_file_content"] == "def add(a,b)\n    return a+b\n"
-        assert state["repair_context"]["proposed_fix"] == "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n"
-        assert state["repair_context"]["final_edit_payload"]["old_text"] == "def add(a,b)\n    return a+b\n"
-        assert state["repair_context"]["final_edit_payload"]["new_text"] == "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n"
-        assert state["repair_context"]["requested_functions"] == ["add", "multiply"]
-        assert state["repair_context"]["verification_result"]["ok"] is True
-        assert state["repair_context"]["strategy"]["current_strategy"] == "minimal_patch"
-        assert len([item for item in state["repair_context"]["strategy"]["strategy_history"] if item["outcome"] == "failed"]) == 0
-        assert [item["step"]["type"] for item in state["execution_log"]] == [
-            "code_chain_verify",
-            "code_chain_repair",
-            "apply_patch",
-            "code_chain_verify",
-        ]
-        assert state["repair_context"]["rollback"]["restore_available"] is True
-        assert "rollback_result" not in state["repair_context"] or not state["repair_context"]["rollback_result"]
-        assert state["execution_log"][2]["result"]["result"]["backup_path"]
+        assert results[-1]["ok"] is False
+        assert results[-1]["action"] == "retry"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert repaired == "def add(a,b)\n    return a+b\n"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert state["current_step_index"] < state["steps_total"]
     finally:
         if original_exists:
             probe_path.write_text(original_text or "", encoding="utf-8")
@@ -406,7 +410,7 @@ def test_real_syntax_repair_generates_valid_edit_payload_applies_and_verifies() 
             backup_path.unlink()
 
 
-def test_apply_rejects_invalid_repair_payload_and_persists_failed_state() -> None:
+def test_invalid_repair_executor_cannot_reach_apply_without_dispatcher_lineage() -> None:
     probe_path = REPO_ROOT / "workspace" / "shared" / "code_chain_probe.py"
     probe_path.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe_path.exists()
@@ -423,11 +427,12 @@ def test_apply_rejects_invalid_repair_payload_and_persists_failed_state() -> Non
         state = json.loads(Path(_syntax_repair_task()["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert result["status"] in {"failed", "retrying"}
-        assert state["status"] in {"failed", "retrying"}
-        assert state["status"] == "failed"
-        assert state["current_step_index"] == 2
-        assert "missing old_text/new_text replacement pair" in state["last_error"]
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert state["current_step_index"] == 0
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert probe_path.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
     finally:
         if original_exists:
             probe_path.write_text(original_text or "", encoding="utf-8")
@@ -435,7 +440,7 @@ def test_apply_rejects_invalid_repair_payload_and_persists_failed_state() -> Non
             probe_path.unlink()
 
 
-def test_final_verify_failure_rolls_back_applied_patch_and_persists_result() -> None:
+def test_final_verify_executor_cannot_run_without_dispatcher_lineage() -> None:
     probe_path = REPO_ROOT / "workspace" / "shared" / "code_chain_probe.py"
     backup_path = Path(str(probe_path) + ".bak_edit_payload")
     probe_path.parent.mkdir(parents=True, exist_ok=True)
@@ -449,19 +454,20 @@ def test_final_verify_failure_rolls_back_applied_patch_and_persists_result() -> 
             backup_path.unlink()
 
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)
+        executor = FinalVerifyFailExecutor()
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         results = [runner.run_task(_syntax_repair_task(max_strategy_attempts=1), current_tick=tick) for tick in range(1, 5)]
         state = json.loads(Path(_syntax_repair_task(max_strategy_attempts=1)["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert results[-1]["ok"] is False
-        assert results[-1]["status"] == "failed"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe_path.read_text(encoding="utf-8") == broken_text
-        assert state["status"] == "failed"
-        assert state["current_step_index"] == 3
-        assert state["repair_context"]["rollback"]["restore_available"] is True
-        assert state["repair_context"]["rollback_result"]["ok"] is True
-        assert state["repair_context"]["rollback_result"]["restore_source"] == "backup_path"
-        assert "verification_failed" in state["last_error"]
+        assert state["status"] in {"retrying", "blocked"}
+        assert state["current_step_index"] == 0
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert executor.calls == []
+        assert not state["repair_context"].get("rollback_result")
     finally:
         if original_exists:
             probe_path.write_text(original_text or "", encoding="utf-8")
@@ -471,7 +477,7 @@ def test_final_verify_failure_rolls_back_applied_patch_and_persists_result() -> 
             backup_path.unlink()
 
 
-def test_rollback_failure_when_backup_missing_is_persisted() -> None:
+def test_rollback_is_not_attempted_without_dispatcher_lineage() -> None:
     probe_path = REPO_ROOT / "workspace" / "shared" / "code_chain_probe.py"
     backup_path = Path(str(probe_path) + ".bak_edit_payload")
     probe_path.parent.mkdir(parents=True, exist_ok=True)
@@ -484,7 +490,8 @@ def test_rollback_failure_when_backup_missing_is_persisted() -> None:
             backup_path.unlink()
 
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(step_executor=FinalVerifyFailExecutor(delete_backup_before_verify=True), task_runtime=runtime)
+        executor = FinalVerifyFailExecutor(delete_backup_before_verify=True)
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         runner.run_task(_syntax_repair_task(max_strategy_attempts=1), current_tick=1)
         runner.run_task(_syntax_repair_task(max_strategy_attempts=1), current_tick=2)
         runner.run_task(_syntax_repair_task(max_strategy_attempts=1), current_tick=3)
@@ -492,10 +499,11 @@ def test_rollback_failure_when_backup_missing_is_persisted() -> None:
         state = json.loads(Path(_syntax_repair_task(max_strategy_attempts=1)["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert state["status"] == "failed"
-        assert state["repair_context"]["rollback_result"]["ok"] is False
-        assert "rollback failed" in state["last_error"]
-        assert "verification_failed" in state["last_error"]
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert state["repair_context"]["rollback_result"] is None
+        assert executor.calls == []
     finally:
         if original_exists:
             probe_path.write_text(original_text or "", encoding="utf-8")
@@ -519,7 +527,8 @@ def test_successful_rollback_is_idempotent_on_later_tick() -> None:
             backup_path.unlink()
 
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)
+        executor = FinalVerifyFailExecutor()
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         for tick in range(1, 5):
             runner.run_task(_syntax_repair_task(max_strategy_attempts=1), current_tick=tick)
         state_after_rollback = json.loads(Path(_syntax_repair_task(max_strategy_attempts=1)["runtime_state_file"]).read_text(encoding="utf-8"))
@@ -528,7 +537,8 @@ def test_successful_rollback_is_idempotent_on_later_tick() -> None:
         result = runner.run_task(_syntax_repair_task(max_strategy_attempts=1), current_tick=5)
         state_after_rerun = json.loads(Path(_syntax_repair_task(max_strategy_attempts=1)["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["action"] == "already_terminal"
+        assert result["action"] == "retry"
+        assert result["status"] == "blocked"
         assert file_after_rollback == broken_text
         assert probe_path.read_text(encoding="utf-8") == file_after_rollback
         assert state_after_rerun["repair_context"]["rollback_result"] == state_after_rollback["repair_context"]["rollback_result"]
@@ -591,7 +601,7 @@ def _run_until_terminal(runner: TaskRunner, task_factory, *, max_ticks: int = 12
     return results
 
 
-def test_shared_single_file_apply_records_low_risk_repo_impact_and_allows_apply() -> None:
+def test_shared_single_file_apply_without_dispatcher_lineage_is_blocked() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "impact_single.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -611,16 +621,12 @@ def test_shared_single_file_apply_records_low_risk_repo_impact_and_allows_apply(
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(_apply_task("shared_low_risk", step), current_tick=1)
         state = json.loads(Path(_apply_task("shared_low_risk", step)["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["ok"] is True
-        assert state["status"] == "finished"
-        assert target.read_text(encoding="utf-8") == "VALUE = 2\n"
-        impact = state["repair_context"]["repo_impact"]
-        assert impact["risk_level"] == "low"
-        assert impact["requires_confirmation"] is False
-        assert impact["changed_files"] == ["workspace/shared/impact_single.py"]
-        regression = state["repair_context"]["regression_verify"]
-        assert regression["passed"] is True
-        assert regression["commands"] == ["python -m py_compile workspace/shared/impact_single.py"]
+        assert result["ok"] is False
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
     finally:
         if original_exists:
             target.write_text(original_text or "", encoding="utf-8")
@@ -631,7 +637,7 @@ def test_shared_single_file_apply_records_low_risk_repo_impact_and_allows_apply(
             backup.unlink()
 
 
-def test_core_runtime_apply_is_blocked_without_confirmation_and_persists_repo_impact() -> None:
+def test_core_runtime_apply_stops_at_dispatcher_lineage_denial() -> None:
     step = {
         "type": "apply_patch",
         "target_path": "core/runtime/task_runtime.py",
@@ -647,16 +653,13 @@ def test_core_runtime_apply_is_blocked_without_confirmation_and_persists_repo_im
     state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
     assert result["ok"] is False
-    assert state["status"] == "failed"
-    impact = state["repair_context"]["repo_impact"]
-    assert impact["target_path"] == "core/runtime/task_runtime.py"
-    assert impact["requires_confirmation"] is True
-    assert impact["risk_level"] == "high"
-    assert impact["blocked_reason"]
-    assert "repo source apply" in state["last_error"] or "confirmation" in state["last_error"]
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert state["status"] in {"retrying", "blocked"}
+    assert "runtime dispatcher live capability required" in state["last_error"]
+    assert not state["repair_context"].get("repo_impact")
 
 
-def test_multi_file_repo_repair_plan_is_high_risk_and_blocked_with_verify_plan() -> None:
+def test_multi_file_repo_repair_plan_stops_at_dispatcher_lineage_denial() -> None:
     step = {
         "type": "apply_patch",
         "target_path": "core/runtime/task_runtime.py",
@@ -673,16 +676,13 @@ def test_multi_file_repo_repair_plan_is_high_risk_and_blocked_with_verify_plan()
     state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
     assert result["ok"] is False
-    impact = state["repair_context"]["repo_impact"]
-    assert impact["edit_scope"] == "repo_scale"
-    assert impact["risk_level"] == "high"
-    assert impact["requires_confirmation"] is True
-    assert impact["blocked_reason"]
-    assert impact["verify_plan"]["commands"]
-    assert impact["changed_files"] == ["core/runtime/task_runtime.py", "core/runtime/task_runner.py"]
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert state["status"] in {"retrying", "blocked"}
+    assert "runtime dispatcher live capability required" in state["last_error"]
+    assert not state["repair_context"].get("repo_impact")
 
 
-def test_import_impact_detection_records_importing_shared_file() -> None:
+def test_import_impact_detection_does_not_run_without_dispatcher_lineage() -> None:
     shared = REPO_ROOT / "workspace" / "shared"
     a_path = shared / "impact_a.py"
     b_path = shared / "impact_b.py"
@@ -708,20 +708,12 @@ def test_import_impact_detection_records_importing_shared_file() -> None:
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["ok"] is True
-        impact = state["repair_context"]["repo_impact"]
-        assert "workspace/shared/impact_b.py" in impact["impacted_files"]
-        assert impact["dependency_hints"]["importers"] == ["workspace/shared/impact_b.py"]
-        assert impact["verify_plan"]["commands"] == [
-            "python -m py_compile workspace/shared/impact_a.py",
-            "python -m py_compile workspace/shared/impact_b.py",
-        ]
-        regression = state["repair_context"]["regression_verify"]
-        assert regression["passed"] is True
-        assert regression["commands"] == [
-            "python -m py_compile workspace/shared/impact_a.py",
-            "python -m py_compile workspace/shared/impact_b.py",
-        ]
+        assert result["ok"] is False
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert not state["repair_context"].get("repo_impact")
+        assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
     finally:
         for path, text in originals.items():
             if text is None:
@@ -734,7 +726,7 @@ def test_import_impact_detection_records_importing_shared_file() -> None:
             backup.unlink()
 
 
-def test_single_file_no_importers_records_empty_dependency_impact() -> None:
+def test_single_file_dependency_impact_does_not_run_without_dispatcher_lineage() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "impact_no_importers.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -755,11 +747,13 @@ def test_single_file_no_importers_records_empty_dependency_impact() -> None:
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] == "finished"
-        impact = state["repair_context"]["repo_impact"]
-        assert impact["impacted_files"] == []
-        assert impact["dependency_hints"]["importers"] == []
-        assert impact["verify_plan"]["commands"] == ["python -m py_compile workspace/shared/impact_no_importers.py"]
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert not state["repair_context"].get("repo_impact")
+        assert not state["repair_context"].get("rollback_result")
+        assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
     finally:
         if original_exists:
             target.write_text(original_text or "", encoding="utf-8")
@@ -770,7 +764,7 @@ def test_single_file_no_importers_records_empty_dependency_impact() -> None:
             backup.unlink()
 
 
-def test_impacted_file_regression_failure_creates_multi_file_plan() -> None:
+def test_impacted_file_regression_does_not_run_without_dispatcher_lineage() -> None:
     shared = REPO_ROOT / "workspace" / "shared"
     a_path = shared / "impact_plan_a.py"
     b_path = shared / "impact_plan_b.py"
@@ -796,15 +790,13 @@ def test_impacted_file_regression_failure_creates_multi_file_plan() -> None:
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] in {"failed", "retrying"}
-        assert state["status"] in {"failed", "retrying"}
-        assert state["status"] == "failed"
-        plan = state["repair_context"]["multi_file_plan"]
-        assert plan["root_changed_file"] == "workspace/shared/impact_plan_a.py"
-        assert plan["failed_impacted_files"] == ["workspace/shared/impact_plan_b.py"]
-        assert plan["risk_level"] == "low"
-        assert plan["requires_confirmation"] is False
-        assert "impacted shared file failed regression" in plan["blocked_reason"]
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert not state["repair_context"].get("multi_file_plan")
+        assert not state["repair_context"].get("regression_verify")
+        assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
     finally:
         for path, text in originals.items():
             if text is None:
@@ -817,7 +809,7 @@ def test_impacted_file_regression_failure_creates_multi_file_plan() -> None:
             backup.unlink()
 
 
-def test_repo_source_importer_requires_confirmation_and_does_not_auto_apply() -> None:
+def test_repo_source_importer_stops_before_confirmation_without_dispatcher_lineage() -> None:
     core_path = REPO_ROOT / "core" / "foo_dependency_probe.py"
     test_path = REPO_ROOT / "tests" / "test_foo_dependency_probe.py"
     originals = {
@@ -842,11 +834,11 @@ def test_repo_source_importer_requires_confirmation_and_does_not_auto_apply() ->
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
+        assert result["error"]["type"] == "execution_authority_denied"
         assert core_path.read_text(encoding="utf-8") == "VALUE = 1\n"
-        impact = state["repair_context"]["repo_impact"]
-        assert "tests/test_foo_dependency_probe.py" in impact["impacted_files"]
-        assert impact["requires_confirmation"] is True
-        assert impact["auto_apply_allowed"] is False
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert not state["repair_context"].get("repo_impact")
     finally:
         for path, text in originals.items():
             if text is None:
@@ -856,7 +848,7 @@ def test_repo_source_importer_requires_confirmation_and_does_not_auto_apply() ->
                 path.write_text(text, encoding="utf-8")
 
 
-def test_multi_file_shared_apply_failure_rolls_back_applied_file() -> None:
+def test_multi_file_shared_apply_does_not_start_without_dispatcher_lineage() -> None:
     shared = REPO_ROOT / "workspace" / "shared"
     a_path = shared / "multi_apply_a.py"
     b_path = shared / "multi_apply_b.py"
@@ -892,13 +884,13 @@ def test_multi_file_shared_apply_failure_rolls_back_applied_file() -> None:
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] in {"failed", "retrying"}
-        assert state["status"] in {"failed", "retrying"}
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
         assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
-        rollback_result = state["repair_context"]["rollback_result"]
-        assert rollback_result["ok"] is True
-        assert "workspace/shared/multi_apply_a.py" in rollback_result["restored_files"]
-        assert rollback_result["failed_files"] == []
+        assert b_path.read_text(encoding="utf-8") == "VALUE = 10\n"
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert state["repair_context"]["rollback_result"] is None
     finally:
         for path, text in originals.items():
             if text is None:
@@ -912,7 +904,7 @@ def test_multi_file_shared_apply_failure_rolls_back_applied_file() -> None:
                 backup.unlink()
 
 
-def test_strategy_minimal_patch_success_does_not_switch_strategy() -> None:
+def test_strategy_minimal_patch_without_dispatcher_lineage_does_not_apply() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "strategy_minimal.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -925,8 +917,11 @@ def test_strategy_minimal_patch_success_does_not_switch_strategy() -> None:
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "finished"
-        assert target.read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert target.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n\ndef multiply(a, b):\n    return a * b\n"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
         assert state["repair_context"]["strategy"]["current_strategy"] == "minimal_patch"
         assert not [item for item in state["repair_context"]["strategy"]["strategy_history"] if item["outcome"] == "failed"]
     finally:
@@ -939,7 +934,7 @@ def test_strategy_minimal_patch_success_does_not_switch_strategy() -> None:
             backup.unlink()
 
 
-def test_strategy_final_verify_failure_switches_to_function_rewrite_and_finishes() -> None:
+def test_strategy_without_dispatcher_lineage_does_not_switch_or_finish() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "strategy_math.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -957,10 +952,13 @@ def test_strategy_final_verify_failure_switches_to_function_rewrite_and_finishes
         try:
             results = _run_until_terminal(runner, task_factory)
             state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
-            assert results[-1]["status"] == "finished"
-            assert state["repair_context"]["strategy"]["current_strategy"] == "function_rewrite"
-            assert len([item for item in state["repair_context"]["strategy"]["strategy_history"] if item["outcome"] == "failed"]) == 1
-            assert probe.read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n"
+            assert results[-1]["status"] == "blocked"
+            assert results[-1]["error"]["type"] == "execution_authority_denied"
+            assert state["status"] in {"retrying", "blocked"}
+            assert "runtime dispatcher live capability required" in state["last_error"]
+            assert state["repair_context"]["strategy"]["current_strategy"] == "minimal_patch"
+            assert not [item for item in state["repair_context"]["strategy"]["strategy_history"] if item["outcome"] == "failed"]
+            assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         finally:
             if probe_original_exists:
                 probe.write_text(probe_original_text or "", encoding="utf-8")
@@ -976,7 +974,7 @@ def test_strategy_final_verify_failure_switches_to_function_rewrite_and_finishes
             target.unlink()
 
 
-def test_strategy_regression_failure_rolls_back_then_next_strategy_finishes() -> None:
+def test_strategy_recording_executor_without_dispatcher_lineage_is_rejected() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "strategy_regression.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -989,10 +987,13 @@ def test_strategy_regression_failure_rolls_back_then_next_strategy_finishes() ->
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert any(result.get("action") == "strategy_retry" for result in results)
-        assert results[-1]["status"] == "finished"
-        assert target.read_text(encoding="utf-8") == "VALUE = 2\n"
-        assert state["repair_context"]["strategy"]["current_strategy"] == "function_rewrite"
+        assert not any(result.get("action") == "strategy_retry" for result in results)
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert state["repair_context"]["strategy"]["current_strategy"] == "minimal_patch"
     finally:
         if original_exists:
             target.write_text(original_text or "", encoding="utf-8")
@@ -1003,7 +1004,7 @@ def test_strategy_regression_failure_rolls_back_then_next_strategy_finishes() ->
             backup.unlink()
 
 
-def test_strategy_exhaustion_marks_failed() -> None:
+def test_strategy_exhaustion_cannot_run_without_dispatcher_lineage() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "code_chain_probe.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1011,14 +1012,18 @@ def test_strategy_exhaustion_marks_failed() -> None:
     try:
         probe.write_text("def add(a,b)\n    return a+b\n", encoding="utf-8")
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)
+        executor = FinalVerifyFailExecutor()
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         task_factory = lambda: _syntax_repair_task(max_strategy_attempts=3)
         results = _run_until_terminal(runner, task_factory, max_ticks=16)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "failed"
-        assert state["repair_context"]["strategy"]["exhausted"] is True
-        assert "verification_failed" in state["last_error"]
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "blocked"}
+        assert state["repair_context"]["strategy"]["exhausted"] is False
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert executor.calls == []
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1029,7 +1034,7 @@ def test_strategy_exhaustion_marks_failed() -> None:
             backup.unlink()
 
 
-def test_strategy_retry_does_not_bypass_high_risk_repo_source_gate() -> None:
+def test_strategy_retry_without_dispatcher_lineage_is_rejected_before_repo_impact() -> None:
     step = {
         "type": "apply_patch",
         "target_path": "core/runtime/task_runtime.py",
@@ -1046,12 +1051,13 @@ def test_strategy_retry_does_not_bypass_high_risk_repo_source_gate() -> None:
     state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
     assert result["ok"] is False
-    assert state["status"] == "failed"
-    assert state["repair_context"]["repo_impact"]["requires_confirmation"] is True
-    assert state["repair_context"]["repo_impact"]["blocked_reason"]
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert state["status"] in {"retrying", "blocked"}
+    assert "runtime dispatcher live capability required" in state["last_error"]
+    assert not state["repair_context"].get("repo_impact")
 
 
-def test_regression_py_compile_failure_rolls_back_and_fails_runtime() -> None:
+def test_regression_py_compile_cannot_run_without_dispatcher_lineage() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "regression_fail.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -1073,11 +1079,12 @@ def test_regression_py_compile_failure_rolls_back_and_fails_runtime() -> None:
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert result["status"] == "failed"
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
         assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
-        assert state["repair_context"]["regression_verify"]["passed"] is False
-        assert state["repair_context"]["rollback_result"]["ok"] is True
-        assert "regression verification failed" in state["last_error"]
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert not state["repair_context"].get("regression_verify")
     finally:
         if original_exists:
             target.write_text(original_text or "", encoding="utf-8")
@@ -1088,7 +1095,7 @@ def test_regression_py_compile_failure_rolls_back_and_fails_runtime() -> None:
             backup.unlink()
 
 
-def test_regression_blocks_unsafe_verify_plan_command() -> None:
+def test_regression_verify_plan_cannot_run_without_dispatcher_lineage() -> None:
     target = REPO_ROOT / "workspace" / "shared" / "regression_block.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     original_exists = target.exists()
@@ -1113,9 +1120,12 @@ def test_regression_blocks_unsafe_verify_plan_command() -> None:
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert state["status"] == "failed"
-        assert state["repair_context"]["regression_verify"]["blocked_commands"]
-        assert "blocked regression command" in state["last_error"]
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
+        assert state["status"] in {"retrying", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert not state["repair_context"].get("regression_verify")
     finally:
         if original_exists:
             target.write_text(original_text or "", encoding="utf-8")
@@ -1127,7 +1137,7 @@ def test_regression_blocks_unsafe_verify_plan_command() -> None:
 
 
 
-def test_v800_autonomous_engineering_runtime_records_observe_decide_session() -> None:
+def test_v800_autonomous_engineering_runtime_records_denied_retry_session() -> None:
     executor = RepairChainExecutor()
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
@@ -1140,23 +1150,25 @@ def test_v800_autonomous_engineering_runtime_records_observe_decide_session() ->
     assert session["version"] == "v8.0.0"
     assert session["observations"]
     assert session["decisions"]
-    assert session["last_observation"]["action"] == "step_failed_observed"
-    assert session["last_decision"]["decision"] == "continue"
-    assert session["last_decision"]["next_action"] == "run_next_tick"
+    assert session["last_observation"]["action"] == "retry"
+    assert session["last_decision"]["decision"] != "finish"
 
     runner.run_task(_repair_task(), current_tick=2)
     runner.run_task(_repair_task(), current_tick=3)
     final = runner.run_task(_repair_task(), current_tick=4)
     final_session = final["runtime_state"]["engineering_session"]
 
-    assert final["status"] == "finished"
-    assert final_session["phase"] == "finished"
-    assert final_session["last_decision"]["decision"] == "finish"
-    assert len(final_session["observations"]) >= 4
-    assert len(final_session["decisions"]) >= 4
+    assert final["status"] == "blocked"
+    assert final["ok"] is False
+    assert final["error"]["type"] == "execution_authority_denied"
+    assert executor.calls == []
+    assert final_session["phase"] != "finished"
+    assert final_session["last_decision"]["decision"] != "finish"
+    assert len(final_session["observations"]) >= 3
+    assert len(final_session["decisions"]) >= 3
 
 
-def test_v800_autonomous_engineering_runtime_creates_replan_candidate_after_exhaustion() -> None:
+def test_v800_autonomous_engineering_runtime_does_not_exhaust_after_denial() -> None:
     executor = RepairChainExecutor(fail_step_type="code_chain_repair")
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
@@ -1174,15 +1186,16 @@ def test_v800_autonomous_engineering_runtime_creates_replan_candidate_after_exha
     state = result["runtime_state"]
     session = state.get("engineering_session")
 
-    assert result["status"] == "failed"
+    assert result["status"] == "blocked"
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert executor.calls == []
     assert isinstance(session, dict)
-    assert session["phase"] in {"replanning", "terminal"}
-    assert session["replan_candidates"]
-    assert session["last_decision"]["decision"] == "replan_candidate"
-    assert "code_chain_repair failed" in session["replan_candidates"][-1]["reason"]
+    assert session["phase"] != "finished"
+    assert session["last_decision"]["decision"] != "finish"
+    assert state["repair_context"]["strategy"]["exhausted"] is False
 
 
-def test_repair_session_graph_success_contains_expected_chain() -> None:
+def test_repair_session_graph_without_dispatcher_lineage_is_not_finished() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "session_success.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1195,12 +1208,14 @@ def test_repair_session_graph_success_contains_expected_chain() -> None:
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "finished"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         session = state["repair_context"]["repair_session"]
         node_types = [node["type"] for node in session["nodes"]]
-        assert node_types[:5] == ["verify", "repair", "apply", "regression_verify", "final_verify"]
-        assert session["status"] == "finished"
-        assert session["summary"]["final_status"] == "finished"
+        assert node_types
+        assert session["status"] != "finished"
+        assert session["summary"].get("final_status") != "finished"
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1211,7 +1226,7 @@ def test_repair_session_graph_success_contains_expected_chain() -> None:
             backup.unlink()
 
 
-def test_repair_session_graph_records_rollback_and_strategy_switch() -> None:
+def test_repair_session_graph_cannot_switch_strategy_without_dispatcher_lineage() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "session_strategy.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1224,14 +1239,16 @@ def test_repair_session_graph_records_rollback_and_strategy_switch() -> None:
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "finished"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert probe.read_text(encoding="utf-8") == "VALUE = 1\n"
         session = state["repair_context"]["repair_session"]
         node_types = [node["type"] for node in session["nodes"]]
-        assert "rollback" in node_types
-        assert "strategy_switch" in node_types
+        assert "rollback" not in node_types
+        assert "strategy_switch" not in node_types
         assert session["edges"]
         assert all(edge["from"] and edge["to"] for edge in session["edges"])
-        assert len(session["summary"]["strategies_used"]) >= 2
+        assert len(session["summary"].get("strategies_used", [])) <= 1
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1242,7 +1259,7 @@ def test_repair_session_graph_records_rollback_and_strategy_switch() -> None:
             backup.unlink()
 
 
-def test_repair_session_graph_records_multi_file_plan_for_impacted_failure() -> None:
+def test_repair_session_graph_cannot_plan_impacted_apply_without_dispatcher_lineage() -> None:
     shared = REPO_ROOT / "workspace" / "shared"
     a_path = shared / "session_plan_a.py"
     b_path = shared / "session_plan_b.py"
@@ -1268,11 +1285,13 @@ def test_repair_session_graph_records_multi_file_plan_for_impacted_failure() -> 
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] == "failed"
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
         session = state["repair_context"]["repair_session"]
-        assert "multi_file_plan" in [node["type"] for node in session["nodes"]]
-        assert session["status"] == "failed"
-        assert "workspace/shared/session_plan_b.py" in session["summary"]["impacted_files"]
+        assert "multi_file_plan" not in [node["type"] for node in session["nodes"]]
+        assert session["status"] != "finished"
+        assert "workspace/shared/session_plan_b.py" not in session["summary"].get("impacted_files", [])
     finally:
         for path, text in originals.items():
             if text is None:
@@ -1306,7 +1325,9 @@ def test_repair_session_graph_persists_across_reload_without_duplicate_nodes() -
         final_state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
         final_node_ids = [node["node_id"] for node in final_state["repair_context"]["repair_session"]["nodes"]]
 
-        assert results[-1]["status"] == "finished"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         assert all(node_id in final_node_ids for node_id in mid_node_ids)
         assert len(final_node_ids) == len(set(final_node_ids))
     finally:
@@ -1343,7 +1364,7 @@ def test_repair_session_graph_compacts_node_payloads() -> None:
     assert "result" not in node
 
 
-def test_engineering_goal_state_legacy_single_repair_default_subgoal_finishes() -> None:
+def test_engineering_goal_state_legacy_single_repair_requires_dispatcher_lineage() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "goal_legacy.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1356,12 +1377,14 @@ def test_engineering_goal_state_legacy_single_repair_default_subgoal_finishes() 
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "finished"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         goal_state = state["repair_context"]["engineering_goal_state"]
         assert goal_state["subgoals"][0]["subgoal_id"] == "default"
-        assert goal_state["status"] == "finished"
-        assert goal_state["summary"]["goal_status"] == "finished"
-        assert state["repair_context"]["repair_session"]["summary"]["goal_status"] == "finished"
+        assert goal_state["status"] != "finished"
+        assert goal_state["summary"].get("goal_status") != "finished"
+        assert state["repair_context"]["repair_session"]["summary"].get("goal_status") != "finished"
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1372,7 +1395,7 @@ def test_engineering_goal_state_legacy_single_repair_default_subgoal_finishes() 
             backup.unlink()
 
 
-def test_engineering_goal_state_two_subgoals_resume_without_rerunning_first() -> None:
+def test_engineering_goal_state_two_subgoals_remain_incomplete_after_denial() -> None:
     task_dir = TEST_ROOT / "tasks" / "goal_two"
     task = {
         "task_id": "goal_two",
@@ -1392,18 +1415,33 @@ def test_engineering_goal_state_two_subgoals_resume_without_rerunning_first() ->
         "current_step_index": 0,
     }
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-    first_runner = TaskRunner(step_executor=RepairChainExecutor(), task_runtime=runtime)
+    first_executor = RepairChainExecutor()
+    first_runner = TaskRunner(step_executor=first_executor, task_runtime=runtime)
     first_runner.run_task(copy.deepcopy(task), current_tick=1)
     mid_state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
-    assert mid_state["repair_context"]["engineering_goal_state"]["completed_subgoals"] == ["sg1"]
+    assert mid_state["repair_context"]["engineering_goal_state"]["completed_subgoals"] == []
+    assert first_executor.calls == []
 
-    second_runner = TaskRunner(step_executor=RepairChainExecutor(), task_runtime=TaskRuntime(workspace_root=str(TEST_ROOT)))
+    second_executor = RepairChainExecutor()
+    second_runner = TaskRunner(step_executor=second_executor, task_runtime=TaskRuntime(workspace_root=str(TEST_ROOT)))
     result = second_runner.run_task(copy.deepcopy(task), current_tick=2)
     final_state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-    assert result["status"] == "finished"
-    assert [record["step"]["id"] for record in final_state["execution_log"]] == ["one", "two"]
-    assert final_state["repair_context"]["engineering_goal_state"]["completed_subgoals"] == ["sg1", "sg2"]
+    assert result["status"] == "blocked"
+    assert result["ok"] is False
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert result.get("finished", False) is False
+    assert result.get("completed", False) is False
+    assert second_executor.calls == []
+    assert all(record["step"]["id"] == "one" for record in final_state["execution_log"])
+    assert all(record["result"]["executed"] is False for record in final_state["execution_log"])
+    goal_state = final_state["repair_context"]["engineering_goal_state"]
+    assert goal_state["completed_subgoals"] == []
+    assert goal_state["status"] != "finished"
+    assert final_state["status"] != "finished"
+    assert final_state.get("completion_authority") is None
+    assert final_state.get("terminal_execution_evidence") is None
+    assert final_state.get("goal_completion_attestation") is None
 
 
 def test_engineering_goal_state_dependency_blocked_without_completed_dependency() -> None:
@@ -1452,7 +1490,7 @@ def test_engineering_goal_state_subgoal_failure_creates_replan_request() -> None
     result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
     state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-    assert result["status"] in {"failed", "retrying"}
+    assert result["status"] in {"failed", "retrying", "blocked"}
     goal_state = state["repair_context"]["engineering_goal_state"]
     if result["status"] == "retrying":
         # The first failure is retry-classified, but the failed subgoal state is already durable.
@@ -1492,7 +1530,7 @@ def test_failed_subgoal_creates_replan_proposal_without_modifying_steps() -> Non
     assert any(edge["to"] for edge in session["edges"])
 
 
-def test_blocked_repo_source_creates_require_confirmation_replan_proposal() -> None:
+def test_repo_source_apply_without_dispatcher_lineage_stops_before_confirmation_proposal() -> None:
     step = {
         "type": "apply_patch",
         "target_path": "core/runtime/task_runtime.py",
@@ -1505,16 +1543,21 @@ def test_blocked_repo_source_creates_require_confirmation_replan_proposal() -> N
     }
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     task = _apply_task("proposal_repo_source_blocked", step)
-    TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
+    result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
     state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
     proposal = state["repair_context"]["engineering_goal_state"]["replan_proposal"]
-    assert proposal["requires_confirmation"] is True
-    assert proposal["proposed_action"] == "require_confirmation"
+    assert result["ok"] is False
+    assert result["status"] == "blocked"
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert "runtime dispatcher live capability required" in state["last_error"]
+    assert not state["repair_context"].get("repo_impact")
+    assert proposal["requires_confirmation"] is False
+    assert proposal["proposed_action"] != "require_confirmation"
     assert "auto apply" not in json.dumps(proposal["proposed_steps"]).lower()
 
 
-def test_multi_file_plan_blocked_creates_split_subgoal_replan_proposal() -> None:
+def test_multi_file_plan_without_dispatcher_lineage_replans_without_apply() -> None:
     shared = REPO_ROOT / "workspace" / "shared"
     a_path = shared / "proposal_plan_a.py"
     b_path = shared / "proposal_plan_b.py"
@@ -1537,14 +1580,16 @@ def test_multi_file_plan_blocked_creates_split_subgoal_replan_proposal() -> None
         }
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
         task = _apply_task("proposal_multi_file_plan", step)
-        TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
+        result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        plan = state["repair_context"]["multi_file_plan"]
         proposal = state["repair_context"]["engineering_goal_state"]["replan_proposal"]
-        assert proposal["proposed_action"] == "split_subgoal"
-        assert proposal["proposed_subgoals"]
-        assert proposal["risk_level"] == plan["risk_level"]
+        assert result["ok"] is False
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
+        assert b_path.read_text(encoding="utf-8") == "import proposal_plan_a\ndef broken(:\n"
+        assert proposal["proposed_action"] == "switch_strategy"
     finally:
         for path, text in originals.items():
             if text is None:
@@ -1557,7 +1602,7 @@ def test_multi_file_plan_blocked_creates_split_subgoal_replan_proposal() -> None
             backup.unlink()
 
 
-def test_strategy_exhausted_creates_abort_goal_replan_proposal() -> None:
+def test_strategy_cannot_exhaust_without_dispatcher_lineage() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "proposal_strategy_abort.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1567,13 +1612,15 @@ def test_strategy_exhausted_creates_abort_goal_replan_proposal() -> None:
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
         runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)
         task_factory = lambda: _strategy_task("proposal_strategy_abort", "workspace/shared/proposal_strategy_abort.py", max_strategy_attempts=1)
-        _run_until_terminal(runner, task_factory, max_ticks=8)
+        results = _run_until_terminal(runner, task_factory, max_ticks=8)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
         proposal = state["repair_context"]["engineering_goal_state"]["replan_proposal"]
-        assert state["repair_context"]["strategy"]["exhausted"] is True
-        assert proposal["proposed_action"] == "abort_goal"
-        assert proposal["proposed_steps"] == []
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
+        assert state["repair_context"]["strategy"]["exhausted"] is False
+        assert proposal["proposed_action"] != "abort_goal"
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1584,7 +1631,7 @@ def test_strategy_exhausted_creates_abort_goal_replan_proposal() -> None:
             backup.unlink()
 
 
-def test_replan_proposal_idempotency_does_not_duplicate_graph_node() -> None:
+def test_replan_proposal_records_new_denied_retry_without_finishing() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "proposal_idempotent.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1603,7 +1650,10 @@ def test_replan_proposal_idempotency_does_not_duplicate_graph_node() -> None:
             if node["type"] == "replan_proposal"
         ]
 
-        TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=TaskRuntime(workspace_root=str(TEST_ROOT))).run_task(task_factory(), current_tick=99)
+        result = TaskRunner(
+            step_executor=FinalVerifyFailExecutor(),
+            task_runtime=TaskRuntime(workspace_root=str(TEST_ROOT)),
+        ).run_task(task_factory(), current_tick=99)
         second_state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
         second_nodes = [
             node["node_id"]
@@ -1611,9 +1661,14 @@ def test_replan_proposal_idempotency_does_not_duplicate_graph_node() -> None:
             if node["type"] == "replan_proposal"
         ]
 
-        assert second_state["repair_context"]["engineering_goal_state"]["replan_proposal"]["proposal_id"] == first_proposal["proposal_id"]
-        assert second_nodes == first_nodes
-        assert len(second_nodes) == 1
+        assert result["ok"] is False
+        assert result["status"] == "blocked"
+        assert result["error"]["type"] == "execution_authority_denied"
+        assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
+        assert second_state["repair_context"]["engineering_goal_state"]["replan_proposal"]["proposal_id"] != first_proposal["proposal_id"]
+        assert all(node_id in second_nodes for node_id in first_nodes)
+        assert len(second_nodes) == len(set(second_nodes))
+        assert second_state["status"] != "finished"
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1751,7 +1806,7 @@ def test_engineering_execution_persists_across_reload() -> None:
 
 
 
-def test_engineering_execution_action_landing_for_legacy_repair_task() -> None:
+def test_engineering_execution_action_landing_records_denial_without_completion() -> None:
     executor = RepairChainExecutor()
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
@@ -1764,13 +1819,11 @@ def test_engineering_execution_action_landing_for_legacy_repair_task() -> None:
 
     assert execution["action_landing_version"] == "aer_v9_1_2"
     assert execution["current_action"] == {}
-    assert execution["pending_actions"] == []
-    assert len(execution["completed_actions"]) == 4
-    assert execution["action_status"]["completed"] == 4
-    assert execution["completed_actions"][0]["step_type"] == "code_chain_verify"
-    assert execution["completed_actions"][1]["step_type"] == "code_chain_repair"
-    assert execution["completed_actions"][2]["step_type"] == "apply_unified_diff"
-    assert execution["completed_actions"][3]["step_type"] == "code_chain_verify"
+    assert execution["pending_actions"]
+    assert execution["completed_actions"] == []
+    assert execution["action_status"]["completed"] == 0
+    assert executor.calls == []
+    assert state["status"] in {"retrying", "blocked"}
 # ---------------------------------------------------------------------------
 # Repair Boundary Tests v1
 # ---------------------------------------------------------------------------
@@ -1779,7 +1832,7 @@ def test_engineering_execution_action_landing_for_legacy_repair_task() -> None:
 # runtime does not enter recursive / infinite / unsafe states under failure.
 
 
-def test_boundary_verify_forever_failure_exhausts_strategy_without_infinite_loop() -> None:
+def test_boundary_verify_forever_failure_without_dispatcher_lineage_stays_bounded() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "boundary_verify_forever.py"
     probe.parent.mkdir(parents=True, exist_ok=True)
     original_exists = probe.exists()
@@ -1789,7 +1842,8 @@ def test_boundary_verify_forever_failure_exhausts_strategy_without_infinite_loop
         probe.write_text("def add(a,b)\n    return a+b\n", encoding="utf-8")
 
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)
+        executor = FinalVerifyFailExecutor()
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         task_factory = lambda: _strategy_task(
             "boundary_verify_forever",
             "workspace/shared/boundary_verify_forever.py",
@@ -1800,10 +1854,28 @@ def test_boundary_verify_forever_failure_exhausts_strategy_without_infinite_loop
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert len(results) <= 12
-        assert results[-1]["status"] == "failed"
-        assert state["status"] == "failed"
-        assert state["repair_context"]["strategy"]["exhausted"] is True
-        assert "verification_failed" in state["last_error"]
+        assert results[-1]["status"] in {"retrying", "replan", "replanning", "denied", "blocked"}
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert state["status"] in {"retrying", "replan", "replanning", "denied", "blocked"}
+        assert "runtime dispatcher live capability required" in state["last_error"]
+        assert executor.calls == []
+        assert state["repair_context"]["strategy"]["exhausted"] is False
+        assert not [
+            item
+            for item in state["repair_context"]["strategy"]["strategy_history"]
+            if item.get("outcome") == "failed"
+        ]
+        assert state["repair_context"]["engineering_goal_state"]["replan_proposal"]
+        assert state["repair_context"]["repair_session"]["nodes"]
+        assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
+        assert not state["repair_context"].get("repo_impact")
+        assert not state["repair_context"].get("rollback_result")
+        assert not state["repair_context"].get("regression_verify")
+        assert results[-1].get("finished", False) is False
+        assert results[-1].get("completed", False) is False
+        assert state.get("completion_authority") is None
+        assert state.get("terminal_execution_evidence") is None
+        assert state.get("goal_completion_attestation") is None
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1815,7 +1887,8 @@ def test_boundary_verify_forever_failure_exhausts_strategy_without_infinite_loop
             backup.unlink()
 
 
-def test_boundary_recursive_repair_goal_is_fingerprint_suppressed() -> None:
+def test_boundary_recursive_repair_goal_is_fingerprint_suppressed(monkeypatch) -> None:
+    monkeypatch.setattr("core.tasks.scheduler.time.time", lambda: 1_700_000_000.0)
     workspace = TEST_ROOT / "boundary_recursive_scheduler"
     shared = workspace / "shared"
     shared.mkdir(parents=True, exist_ok=True)
@@ -1843,7 +1916,7 @@ def test_boundary_recursive_repair_goal_is_fingerprint_suppressed() -> None:
     assert third_gate["duplicate_suppressed"] is True
 
 
-def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> None:
+def test_boundary_corrupted_rollback_is_not_reached_without_dispatcher_lineage() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "boundary_corrupt_rollback.py"
     backup_path = Path(str(probe) + ".bak_edit_payload")
     probe.parent.mkdir(parents=True, exist_ok=True)
@@ -1856,10 +1929,8 @@ def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> N
             backup_path.unlink()
 
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(
-            step_executor=FinalVerifyFailExecutor(delete_backup_before_verify=True),
-            task_runtime=runtime,
-        )
+        executor = FinalVerifyFailExecutor(delete_backup_before_verify=True)
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         task_factory = lambda: _strategy_task(
             "boundary_corrupt_rollback",
             "workspace/shared/boundary_corrupt_rollback.py",
@@ -1873,13 +1944,15 @@ def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> N
         result_after_terminal = runner.run_task(task_factory(), current_tick=5)
         state_after_rerun = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert state_after_failure["status"] == "failed"
-        assert "rollback_result" in state_after_failure["repair_context"]
-        assert "verification_failed" in state_after_failure["last_error"]
+        assert state_after_failure["status"] in {"retrying", "blocked"}
+        assert not state_after_failure["repair_context"].get("rollback_result")
+        assert "runtime dispatcher live capability required" in state_after_failure["last_error"]
+        assert executor.calls == []
 
-        assert result_after_terminal["status"] == "failed"
-        assert state_after_rerun["status"] == "failed"
-        assert state_after_rerun["repair_context"]["rollback_result"] == state_after_failure["repair_context"]["rollback_result"]
+        assert result_after_terminal["status"] == "blocked"
+        assert result_after_terminal["error"]["type"] == "execution_authority_denied"
+        assert state_after_rerun["status"] in {"retrying", "blocked"}
+        assert not state_after_rerun["repair_context"].get("rollback_result")
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
@@ -1907,16 +1980,39 @@ def test_boundary_terminal_repair_task_does_not_duplicate_execution_log_after_re
         )
 
         results = _run_until_terminal(runner, task_factory, max_ticks=12)
-        state_after_finished = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
-        log_len_after_finished = len(state_after_finished.get("execution_log", []))
+        state_after_denial = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+        execution_log_after_denial = state_after_denial.get("execution_log", [])
+        assert isinstance(execution_log_after_denial, list)
+        log_len_after_denial = len(execution_log_after_denial)
 
         rerun_result = runner.run_task(task_factory(), current_tick=99)
         state_after_rerun = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+        execution_log_after_rerun = state_after_rerun.get("execution_log", [])
+        assert isinstance(execution_log_after_rerun, list)
 
-        assert results[-1]["status"] == "finished"
-        assert rerun_result["status"] == "finished"
-        assert len(state_after_rerun.get("execution_log", [])) == log_len_after_finished
-        assert state_after_rerun["status"] == "finished"
+        assert results[-1]["status"] == "blocked"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert rerun_result["status"] == "blocked"
+        assert rerun_result["error"]["type"] == "execution_authority_denied"
+
+        assert state_after_denial["status"] in {"retrying", "blocked", "denied"}
+        assert state_after_rerun["status"] in {"retrying", "blocked", "denied"}
+        assert log_len_after_denial == len(results)
+        assert execution_log_after_rerun[:log_len_after_denial] == execution_log_after_denial
+        assert len(execution_log_after_rerun) == log_len_after_denial + 1
+        assert execution_log_after_rerun[-1]["tick"] == 99
+        assert all(item["result"]["executed"] is False for item in execution_log_after_rerun)
+
+        assert all(result["status"] not in {"finished", "completed"} for result in results)
+        assert rerun_result["status"] not in {"finished", "completed"}
+        assert state_after_denial.get("completion_authority") is None
+        assert state_after_rerun.get("completion_authority") is None
+        assert state_after_denial.get("task_completion_authority") is None
+        assert state_after_rerun.get("task_completion_authority") is None
+        assert state_after_denial.get("goal_completion_attestation") is None
+        assert state_after_rerun.get("goal_completion_attestation") is None
+        assert state_after_denial.get("runtime_execution_capability") is None
+        assert state_after_rerun.get("runtime_execution_capability") is None
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")

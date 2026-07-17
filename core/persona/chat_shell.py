@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import io
 import re
 from contextlib import redirect_stdout
@@ -323,7 +324,7 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
         )
         display = bridge.submit_ui_task(text)
         response_text = bridge.format_display_text()
-        if display.get("runtime_status") == "done":
+        if canonical_runtime_status(display.get("runtime_status")) == "completed":
             state_manager.set_success(
                 reason="runtime_demo_completed",
                 source="persona_runtime_bridge",

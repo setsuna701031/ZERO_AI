@@ -1,0 +1,62 @@
+from core.tasks.engineering_lifecycle_state_machine import EngineeringLifecycleStateMachine
+from core.evidence import EvidenceRecord, EvidenceValidator
+from core.goals.goal_completion_authority import GoalCompletionAuthority
+
+
+def _loop(action, **extra):
+    replan = {"loop_action": action, **extra}
+    return {
+        "goal_id": "goal-1",
+        "loop_state": "terminal" if action in {"complete", "blocked", "refuse", "stop"} else "progressing",
+        "adaptive_replan_state": replan,
+        "terminal": action in {"complete", "blocked", "refuse", "stop"},
+        "next_cycle_allowed": action == "continue",
+        "reason": f"{action}_reason",
+    }
+
+
+def _attestation():
+    evidence = EvidenceValidator().validate(EvidenceRecord("e1", "goal-1", None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id="goal-1", evidence_refs=[evidence], all_subgoals_completed=True)
+
+
+def test_engineering_lifecycle_rejects_completion_without_attestation():
+    result = EngineeringLifecycleStateMachine().evaluate_adaptive_loop(_loop("complete"), from_state="running")
+    assert result.accepted is False
+    assert result.blocked_reason == "canonical_completion_attestation_required"
+
+
+def test_engineering_lifecycle_rejects_completed_transition_dictionary() -> None:
+    result = EngineeringLifecycleStateMachine().transition({"from_state": "running", "to_state": "completed"})
+    assert result.accepted is False
+    assert result.blocked_reason == "canonical_completion_attestation_required"
+
+
+def test_engineering_lifecycle_maps_attested_completion_to_completed():
+    result = EngineeringLifecycleStateMachine().evaluate_adaptive_loop(
+        _loop("complete"),
+        from_state="running",
+        completion_attestation=_attestation(),
+    )
+    assert result.accepted is True
+    assert result.lifecycle_state == "completed"
+    assert result.terminal is True
+
+
+def test_engineering_lifecycle_maps_replan_to_replanning():
+    result = EngineeringLifecycleStateMachine().evaluate_adaptive_loop(
+        _loop("replan", creates_replan_record=True),
+        from_state="running",
+    )
+    assert result.accepted is True
+    assert result.lifecycle_state == "replanning"
+    assert result.terminal is False
+
+
+def test_engineering_lifecycle_maps_continue_to_continuing():
+    result = EngineeringLifecycleStateMachine().evaluate_adaptive_loop(
+        _loop("continue", creates_continuation=True),
+        from_state="running",
+    )
+    assert result.accepted is True
+    assert result.lifecycle_state == "continuing"

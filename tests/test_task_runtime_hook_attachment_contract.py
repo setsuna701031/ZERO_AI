@@ -5,6 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -103,7 +108,16 @@ class TaskRuntimeHookAttachmentContractTest(unittest.TestCase):
         adapter = RecordingEvidenceAdapter()
         with tempfile.TemporaryDirectory() as tmp:
             runtime = TaskRuntime(workspace_root=str(Path(tmp) / "workspace"), evidence_adapter=adapter)
-            runtime.mark_finished(self._task(Path(tmp), "completed"), current_tick=2, final_answer="done")
+            from core.runtime.task_runner import TaskRunner
+            from tests.authority_test_support import live_terminal_evidence_for_test
+
+            task = self._task(Path(tmp), "completed")
+            TaskRunner(task_runtime=runtime).complete_task(
+                task,
+                current_tick=2,
+                final_answer="done",
+                terminal_evidence=live_terminal_evidence_for_test(task),
+            )
 
         self.assertEqual([call[0] for call in adapter.calls], ["created", "completed"])
         self.assertEqual(adapter.calls[-1][2], "finished")
@@ -171,7 +185,15 @@ class TaskRuntimeHookAttachmentContractTest(unittest.TestCase):
             runtime = TaskRuntime(workspace_root=str(Path(tmp) / "workspace"), evidence_adapter=adapter)
             task = self._task(Path(tmp), "ordered")
             runtime.mark_running(task, current_tick=1)
-            runtime.mark_finished(task, current_tick=2, final_answer="done")
+            from core.runtime.task_runner import TaskRunner
+            from tests.authority_test_support import live_terminal_evidence_for_test
+
+            TaskRunner(task_runtime=runtime).complete_task(
+                task,
+                current_tick=2,
+                final_answer="done",
+                terminal_evidence=live_terminal_evidence_for_test(task),
+            )
 
         self.assertEqual(
             [event.phase for event in boundary.list_events()],

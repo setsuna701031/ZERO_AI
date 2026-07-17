@@ -39,6 +39,12 @@ from core.runtime.runtime_state_snapshot import (
     hash_bytes,
     hash_text,
 )
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    RuntimeSystemCapabilityError,
+    validate_runtime_system_capability,
+)
+from core.runtime.runtime_execution_authority import propagate_runtime_capability
 
 
 APPROVED_MUTATION_OPERATIONS = {
@@ -76,7 +82,34 @@ class RuntimeMutationGateway:
         )
 
     def mutate(self, request: RuntimeMutationRequest) -> RuntimeMutationTransactionResult:
-        request_metadata = merge_current_transaction_metadata(request.metadata)
+        if request.identity is not None and str(request.identity.identity_type or "").upper() == "SYSTEM":
+            try:
+                system_capability = request.metadata.get("runtime_system_capability")
+                capability_issuer = getattr(system_capability, "issuer", "")
+                validate_runtime_system_capability(
+                    system_capability,
+                    issuer=str(capability_issuer),
+                    capability_class=RuntimeCapabilityClass.MUTATE,
+                    resource="workspace",
+                    action=request.operation_type,
+                    scope={"request_id": request.request_id, "target_path": request.target_path},
+                    lineage=request.lineage,
+                )
+            except RuntimeSystemCapabilityError as exc:
+                return self._blocked_without_execution(
+                    request=request,
+                    transaction_id=f"runtime_mutation:{request.request_id}",
+                    status_reason=str(exc),
+                    started_at=_utc_timestamp(),
+                )
+        request_metadata = merge_current_transaction_metadata(dict(request.metadata))
+        capability_provenance = request_metadata.get("runtime_capability_provenance")
+        if capability_provenance is not None:
+            request_metadata = propagate_runtime_capability(
+                request_metadata,
+                capability_provenance,
+                stage="mutation",
+            )
         request_lineage = merge_current_transaction_metadata({"lineage": dict(request.lineage)}).get("lineage", dict(request.lineage))
         request_provenance = merge_current_transaction_metadata({"provenance": dict(request.provenance)}).get("provenance", dict(request.provenance))
         try:

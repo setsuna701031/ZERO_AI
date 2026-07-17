@@ -26,6 +26,15 @@ class TaskStateMachine:
         "finished",
         "failed",
     }
+    ALLOWED_TRANSITIONS = {
+        "created": {"planning", "running", "failed"},
+        "planning": {"running", "failed"},
+        "running": {"reflecting", "finished", "failed"},
+        "reflecting": {"running", "finished", "failed"},
+        "finished": set(),
+        "failed": set(),
+    }
+    PROTECTED_STATE_KEYS = {"current_state", "status", "state", "history"}
 
     def __init__(self, task_dir: Path | str) -> None:
         self.task_dir = Path(task_dir)
@@ -79,7 +88,7 @@ class TaskStateMachine:
                 "updated_at": now,
             }
             if isinstance(extra_fields, dict):
-                state.update(extra_fields)
+                state.update(self._validated_patch(extra_fields))
 
             self._write_state(state)
             self.append_event(
@@ -101,7 +110,7 @@ class TaskStateMachine:
         existing["updated_at"] = now
 
         if isinstance(extra_fields, dict):
-            existing.update(extra_fields)
+            existing.update(self._validated_patch(extra_fields))
 
         self._write_state(existing)
         self.append_event(
@@ -127,6 +136,9 @@ class TaskStateMachine:
             raise ValueError(f"Invalid task state: {new_state}")
 
         state = self.read_state()
+        current_state = str(state.get("current_state") or "created").strip().lower()
+        if clean_state != current_state and clean_state not in self.ALLOWED_TRANSITIONS.get(current_state, set()):
+            raise ValueError(f"Invalid task state transition: {current_state} -> {clean_state}")
 
         now = self._now_iso()
         state["current_state"] = clean_state
@@ -165,10 +177,9 @@ class TaskStateMachine:
         if not isinstance(updates, dict):
             raise TypeError("updates must be a dict.")
 
+        safe_updates = self._validated_patch(updates)
         state = self.read_state()
-        for key, value in updates.items():
-            if key == "history":
-                continue
+        for key, value in safe_updates.items():
             state[key] = value
 
         state["updated_at"] = self._now_iso()
@@ -177,7 +188,7 @@ class TaskStateMachine:
         self.append_event(
             event_type="state_patched",
             message=message,
-            data=updates,
+            data=safe_updates,
         )
         return state
 
@@ -250,6 +261,12 @@ class TaskStateMachine:
     def _write_state(self, data: Dict[str, Any]) -> None:
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def _validated_patch(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        protected = sorted(self.PROTECTED_STATE_KEYS.intersection(updates))
+        if protected:
+            raise PermissionError("task_state_mutation_authority_required:" + ",".join(protected))
+        return {key: value for key, value in updates.items() if key not in self.PROTECTED_STATE_KEYS}
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()

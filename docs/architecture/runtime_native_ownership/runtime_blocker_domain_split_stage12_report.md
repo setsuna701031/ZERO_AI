@@ -1,0 +1,794 @@
+# Runtime Blocker Domain Split — Stage12
+
+Domain decomposition and ordering only. No blocker was repaired and no production runtime file was modified by this stage.
+
+## Summary
+
+- Total blockers processed: 142
+- Confirmed blockers: 113
+- Compatibility bridges: 15
+- False positives: 8
+- Non-mainline issues: 6
+- Production runtime touched: no
+
+## Critical-chain order
+
+1. `authority_contract` (`authority_chain`; 6 items; depends on: none)
+2. `runtime_gate_compatibility_bridge` (`runtime_gate_chain`; 15 items; depends on: `authority_contract`)
+3. `planner_contract` (`planner_chain`; 1 items; depends on: `authority_contract`, `runtime_gate_compatibility_bridge`)
+4. `scheduler_contract` (`scheduler_chain`; 52 items; depends on: `planner_contract`)
+5. `taskrunner_contract` (`task_runner_chain`; 19 items; depends on: `scheduler_contract`, `runtime_gate_compatibility_bridge`)
+6. `step_executor_contract` (`step_executor_chain`; 16 items; depends on: `taskrunner_contract`, `authority_contract`)
+7. `repair_chain` (`recovery_chain`; 33 items; depends on: `scheduler_contract`, `taskrunner_contract`, `step_executor_contract`)
+
+## Domain counts
+
+- `authority_contract`: 6 total; 6 confirmed blockers
+- `runtime_gate_compatibility_bridge`: 15 total; 0 confirmed blockers
+- `planner_contract`: 1 total; 1 confirmed blockers
+- `scheduler_contract`: 52 total; 45 confirmed blockers
+- `taskrunner_contract`: 19 total; 19 confirmed blockers
+- `step_executor_contract`: 16 total; 16 confirmed blockers
+- `repair_chain`: 33 total; 26 confirmed blockers
+
+## Confirmed Blockers by Domain
+
+### authority_contract (6)
+
+- `core/runtime/step_executor.py:7775` — `StepExecutor._classify_step_authority_requirement`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._classify_step_authority_requirement`
+  - Safe removal precondition: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.
+  - Critical chain order: 1. authority_contract
+- `core/runtime/step_executor.py:7776` — `StepExecutor._build_pre_execution_authority_decision`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision`
+  - Safe removal precondition: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.
+  - Critical chain order: 1. authority_contract
+- `core/runtime/step_executor.py:7777` — `StepExecutor._attach_pre_execution_authority`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._attach_pre_execution_authority`
+  - Safe removal precondition: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.
+  - Critical chain order: 1. authority_contract
+- `core/runtime/step_executor.py:7778` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.
+  - Critical chain order: 1. authority_contract
+- `core/runtime/step_executor.py:8464` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.
+  - Critical chain order: 1. authority_contract
+- `core/runtime/task_runner.py:5449` — `TaskRunner._build_taskrunner_authority_context`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._build_taskrunner_authority_context`
+  - Safe removal precondition: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.
+  - Critical chain order: 1. authority_contract
+
+### runtime_gate_compatibility_bridge (0)
+
+- None.
+
+### planner_contract (1)
+
+- `core/tasks/scheduler.py:7909` — `Scheduler._plan_goal`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._plan_goal`
+  - Safe removal precondition: Native planning owns goal-to-step creation and preserves planner/scheduler boundary contracts without replacement assignment.
+  - Critical chain order: 3. planner_contract
+
+### scheduler_contract (45)
+
+- `core/tasks/scheduler.py:7782` — `Scheduler._handle_dispatch_result`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler._handle_dispatch_result`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7783` — `Scheduler._handle_missing_repo_task`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._handle_missing_repo_task`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7784` — `Scheduler._handle_run_one_step_exception`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._handle_run_one_step_exception`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7785` — `Scheduler._finalize_dispatched_task`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler._finalize_dispatched_task`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7787` — `Scheduler._mark_repo_task_finished`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler._mark_repo_task_finished`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7788` — `Scheduler._mark_repo_task_failed`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler._mark_repo_task_failed`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7789` — `Scheduler._mark_repo_task_queued`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler._mark_repo_task_queued`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7910` — `Scheduler._execute_simple_step`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._execute_simple_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:7944` — `Scheduler._execute_simple_step`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._execute_simple_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8323` — `Scheduler.cleanup_task_queue_hygiene`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8324` — `Scheduler.tick`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.tick`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8515` — `Scheduler.cleanup_task_queue_hygiene`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8516` — `Scheduler.create_task`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.create_task`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8517` — `Scheduler.tick`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.tick`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8604` — `Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8639` — `Scheduler._run_simple_task_tick`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._run_simple_task_tick`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8640` — `Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9023` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9024` — `Scheduler._sync_runner_result_and_requeue_if_ready`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._sync_runner_result_and_requeue_if_ready`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9414` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9579` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9784` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9950` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10166` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10352` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10406` — `Scheduler._try_force_repo_edit_at_create_task`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._try_force_repo_edit_at_create_task`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10407` — `Scheduler._create_task_record`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._create_task_record`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10493` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10570` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10641` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10707` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10793` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10820` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10891` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:10978` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11049` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11155` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11244` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11308` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11332` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11364` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11398` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:11432` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler_core/runtime_overlay_helpers.py:226` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler_core/runtime_overlay_helpers.py:245` — `Scheduler.run_one_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+
+### taskrunner_contract (19)
+
+- `core/runtime/task_runner.py:4589` — `TaskRunner._run_one_step`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._run_one_step`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:4624` — `TaskRunner._determine_failure_type`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._determine_failure_type`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:4669` — `TaskRunner._determine_failure_type`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._determine_failure_type`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:4686` — `TaskRunner.READ_ONLY_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.READ_ONLY_STEP_TYPES`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:4696` — `TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:4722` — `TaskRunner._determine_failure_type`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._determine_failure_type`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5179` — `TaskRunner.__init__`
+  - Why blocker/disposition: class-level constructor replacement changes runtime dependency ownership
+  - Replacement target: `core.runtime.task_runner.TaskRunner.__init__`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5180` — `TaskRunner._persist_step_result_to_runtime_state`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._persist_step_result_to_runtime_state`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5476` — `TaskRunner.run_task_adaptive`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task_adaptive`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5630` — `TaskRunner.run_task_tick`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task_tick`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5643` — `TaskRunner.run_task`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5683` — `TaskRunner.run_task_tick`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task_tick`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5692` — `TaskRunner.run_task`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5875` — `TaskRunner.run_task_tick`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task_tick`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5889` — `TaskRunner.run_task`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5982` — `TaskRunner.run_task_tick`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task_tick`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:5991` — `TaskRunner.run_task`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:6036` — `TaskRunner.run_task_tick`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task_tick`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+- `core/runtime/task_runner.py:6045` — `TaskRunner.run_task`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.task_runner.TaskRunner.run_task`
+  - Safe removal precondition: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.
+  - Critical chain order: 5. taskrunner_contract
+
+### step_executor_contract (16)
+
+- `core/runtime/step_executor.py:4196` — `StepExecutor._register_builtin_handlers`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._register_builtin_handlers`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:4221` — `StepExecutor.__init__`
+  - Why blocker/disposition: class-level constructor replacement changes runtime dependency ownership
+  - Replacement target: `core.runtime.step_executor.StepExecutor.__init__`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:4366` — `StepExecutor._register_builtin_handlers`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._register_builtin_handlers`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:4576` — `StepExecutor._register_builtin_handlers`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._register_builtin_handlers`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:5840` — `StepExecutor.__init__`
+  - Why blocker/disposition: class-level constructor replacement changes runtime dependency ownership
+  - Replacement target: `core.runtime.step_executor.StepExecutor.__init__`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:6498` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:6867` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:7044` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:7300` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:7365` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:7403` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:8509` — `StepExecutor.__init__`
+  - Why blocker/disposition: class-level constructor replacement changes runtime dependency ownership
+  - Replacement target: `core.runtime.step_executor.StepExecutor.__init__`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:8731` — `StepExecutor.__init__`
+  - Why blocker/disposition: class-level constructor replacement changes runtime dependency ownership
+  - Replacement target: `core.runtime.step_executor.StepExecutor.__init__`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:8889` — `StepExecutor._register_builtin_handlers`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._register_builtin_handlers`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:9072` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+- `core/runtime/step_executor.py:9622` — `StepExecutor.execute_step`
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Replacement target: `core.runtime.step_executor.StepExecutor.execute_step`
+  - Safe removal precondition: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.
+  - Critical chain order: 6. step_executor_contract
+
+### repair_chain (26)
+
+- `core/runtime/step_executor.py:4222` — `StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/step_executor.py:4367` — `StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/step_executor.py:4577` — `StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/step_executor.py:4587` — `StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/step_executor.py:8890` — `StepExecutor._handle_autonomous_repair_chain_step`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4601` — `TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4605` — `TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4634` — `TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4639` — `TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4690` — `TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4695` — `TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4983` — `TaskRunner._zero_v800_build_observation`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._zero_v800_build_observation`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4984` — `TaskRunner._zero_v800_decide_from_observation`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4985` — `TaskRunner._zero_v800_last_step_type`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._zero_v800_last_step_type`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4986` — `TaskRunner._zero_v800_represents_failed_step_observation`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/runtime/task_runner.py:4987` — `TaskRunner._run_one_step`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.runtime.task_runner.TaskRunner._run_one_step`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8038` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8040` — `Scheduler.REPAIRABLE_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8514` — `Scheduler._find_active_duplicate_repair_task`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8601` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8603` — `Scheduler.REPAIRABLE_STEP_TYPES`
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Replacement target: `core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:9590` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:9798` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:9964` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:10180` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:10366` — `Scheduler._is_repairable_failure`
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler._is_repairable_failure`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+
+## Compatibility Bridge Report
+
+Count: 15
+
+- `core/runtime/step_executor.py:6037` — `StepExecutor._attach_adapter_payload`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.runtime.step_executor.StepExecutor._attach_adapter_payload`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/runtime/step_executor.py:6106` — `StepExecutor._attach_adapter_payload`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.runtime.step_executor.StepExecutor._attach_adapter_payload`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/runtime/step_executor.py:6166` — `StepExecutor._attach_adapter_payload`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.runtime.step_executor.StepExecutor._attach_adapter_payload`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/runtime/step_executor.py:6194` — `StepExecutor._attach_adapter_payload`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.runtime.step_executor.StepExecutor._attach_adapter_payload`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/runtime/task_runner.py:5082` — `TaskRunner._finalize_public_result`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.runtime.task_runner.TaskRunner._finalize_public_result`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/runtime/task_runner.py:5181` — `TaskRunner._finalize_public_result`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.runtime.task_runner.TaskRunner._finalize_public_result`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/runtime/task_runner.py:5645` — `TaskRunner._runtime_gate_consolidated`
+  - Why blocker/disposition: Bridge blocker: class state graft is compatibility debt but not a method replacement
+  - Replacement target: `core.runtime.task_runner.TaskRunner._runtime_gate_consolidated`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:7664` — `Scheduler._resolve_step_path`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._resolve_step_path`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:7665` — `Scheduler._resolve_read_path_with_fallback`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._resolve_read_path_with_fallback`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:7666` — `Scheduler._needs_scheduler_path_resolution`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._needs_scheduler_path_resolution`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:7667` — `Scheduler._normalize_step_scope`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._normalize_step_scope`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:7668` — `Scheduler._resolve_guard_target_path`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._resolve_guard_target_path`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:7786` — `Scheduler._extract_effective_status_and_answer`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._extract_effective_status_and_answer`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:8039` — `Scheduler._normalize_replan_metadata`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._normalize_replan_metadata`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+- `core/tasks/scheduler.py:8602` — `Scheduler._normalize_replan_metadata`
+  - Why blocker/disposition: Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision
+  - Replacement target: `core.tasks.scheduler.Scheduler._normalize_replan_metadata`
+  - Safe removal precondition: All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.
+  - Critical chain order: 2. runtime_gate_compatibility_bridge
+
+## False Positive Report
+
+Count: 8
+
+- `core/tasks/scheduler.py:7945` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8041` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8327` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8518` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8605` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:8641` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9025` — `Scheduler.RETRYING_REPAIR_BRIDGE_VERSION`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.RETRYING_REPAIR_BRIDGE_VERSION`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+- `core/tasks/scheduler.py:9026` — `Scheduler.SCHEDULER_BUILD`
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Replacement target: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+
+## Non-Mainline Issue Report
+
+Count: 6
+
+- `core/tasks/scheduler.py:8325` — `Scheduler.get_queue_snapshot`
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Replacement target: `core.tasks.scheduler.Scheduler.get_queue_snapshot`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:8326` — `Scheduler.get_queue_rows`
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Replacement target: `core.tasks.scheduler.Scheduler.get_queue_rows`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Replacement target: `core.tasks.scheduler.Scheduler.approve_review_item`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Replacement target: `core.tasks.scheduler.Scheduler.reject_review_item`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Replacement target: `core.tasks.scheduler.Scheduler.get_review_queue`
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.
+  - Critical chain order: 4. scheduler_contract
+- `core/tasks/scheduler_core/runtime_overlay_helpers.py:227` — `Scheduler._attach_autonomous_repair_chain_summary`
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Replacement target: `core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary`
+  - Safe removal precondition: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.
+  - Critical chain order: 7. repair_chain
+
+## Inputs
+
+- `tools/runtime_blocker_domain_split_stage12.py`
+- `docs/architecture/runtime_native_ownership/runtime_blocker_validation.json`
+- `docs/architecture/runtime_native_ownership/runtime_blocker_validation_summary.json`
+- `docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md`
+
+## Outputs
+
+- `docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json`
+- `docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json`
+- `docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md`

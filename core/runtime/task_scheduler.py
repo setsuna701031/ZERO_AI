@@ -550,6 +550,14 @@ class TaskScheduler:
             "current_step_index": current_step_index,
             "step_count": step_count,
             "raw_result": copy.deepcopy(runner_result),
+            "execution_path": {
+                "direct_execution": False,
+                "scheduler_owns_execution": False,
+                "runtime_dispatcher_required": True,
+                "taskrunner_required": True,
+                "step_executor_endpoint_only": True,
+                "authority_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
+            },
         }
 
     def _build_dependency_status_map(self, task: Dict[str, Any]) -> Dict[str, str]:

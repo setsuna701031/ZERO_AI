@@ -1,0 +1,106 @@
+Runtime Boundary Consistency Audit
+
+Scope
+-----
+Inventory/audit only. No production code modified.
+Input: runtime_boundary_matrix.txt
+
+Summary
+-------
+boundary_rows: 41
+manual_review_rows: 5
+authority_identity_recovery_review_rows: 0
+operator_boundary_review_rows: 0
+
+Verdict Counts
+--------------
+- allowed_bridge: 14
+- expected_bridge: 22
+- manual_review: 5
+
+Direction Counts
+----------------
+- dispatcher -> scheduler: 3
+- dispatcher -> task_runner: 4
+- operator -> dispatcher: 4
+- scheduler -> dispatcher: 5
+- scheduler -> operator: 6
+- scheduler -> task_runner: 5
+- task_runner -> dispatcher: 4
+- task_runner -> operator: 10
+
+Family Counts
+-------------
+- authority: 1
+- dispatch: 8
+- identity: 4
+- operator: 14
+- recovery: 3
+- step_execution: 4
+- uncategorized: 7
+
+Manual Review Rows
+------------------
+- dispatcher -> scheduler | core/runtime/runtime_dispatcher.py:116 | symbol=validate_runtime_transition | call=validate_scheduler_lifecycle_transition | family=uncategorized | status=boundary_adapter_or_reference | reason=critical cross-boundary direction without obvious bridge marker
+- dispatcher -> scheduler | core/runtime/runtime_dispatcher.py:404 | symbol=_execution_task | call=seal_scheduler_runtime_contract | family=uncategorized | status=boundary_adapter_or_reference | reason=critical cross-boundary direction without obvious bridge marker
+- dispatcher -> scheduler | core/runtime/runtime_dispatcher.py:535 | symbol=run_scheduler_boundary | call=scheduler_authority.get | family=authority | status=boundary_candidate | reason=critical cross-boundary direction without obvious bridge marker
+- task_runner -> operator | core/runtime/task_runner.py:1766 | symbol=_operator_session_id_from_payloads | call=operator_state.get | family=identity | status=boundary_candidate | reason=critical cross-boundary direction without obvious bridge marker
+- task_runner -> operator | core/runtime/task_runner.py:5334 | symbol=_zero_operator_registry_phase1c_run_task_tick | call=_zero_operator_registry_phase1c_session_id | family=identity | status=boundary_candidate | reason=critical cross-boundary direction without obvious bridge marker
+
+Authority / Identity / Recovery Review Rows
+-------------------------------------------
+- <none>
+
+Operator Boundary Review Rows
+-----------------------------
+- <none>
+
+All Audited Rows
+----------------
+- dispatcher -> scheduler | core/runtime/runtime_dispatcher.py:116 | symbol=validate_runtime_transition | call=validate_scheduler_lifecycle_transition | family=uncategorized | status=boundary_adapter_or_reference | verdict=manual_review | reason=critical cross-boundary direction without obvious bridge marker
+- dispatcher -> scheduler | core/runtime/runtime_dispatcher.py:404 | symbol=_execution_task | call=seal_scheduler_runtime_contract | family=uncategorized | status=boundary_adapter_or_reference | verdict=manual_review | reason=critical cross-boundary direction without obvious bridge marker
+- dispatcher -> scheduler | core/runtime/runtime_dispatcher.py:535 | symbol=run_scheduler_boundary | call=scheduler_authority.get | family=authority | status=boundary_candidate | verdict=manual_review | reason=critical cross-boundary direction without obvious bridge marker
+- dispatcher -> task_runner | core/runtime/runtime_dispatcher.py:150 | symbol=__init__ | call=TaskRunner | family=uncategorized | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- dispatcher -> task_runner | core/runtime/runtime_dispatcher.py:171 | symbol=configure_llm_client | call=configure_task_runner | family=uncategorized | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- dispatcher -> task_runner | core/runtime/runtime_dispatcher.py:284 | symbol=_continue_execution | call=self.task_runner.run_task | family=uncategorized | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- dispatcher -> task_runner | core/runtime/runtime_dispatcher.py:579 | symbol=run_scheduler_boundary | call=self.task_runner.run_task | family=uncategorized | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- operator -> dispatcher | core/runtime/work_package_operator.py:137 | symbol=__init__ | call=RuntimeDispatcher | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- operator -> dispatcher | core/runtime/work_package_operator.py:190 | symbol=run_package | call=self.dispatcher.dispatch | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- operator -> dispatcher | core/runtime/work_package_operator.py:196 | symbol=resume_session | call=self.dispatcher.resume | family=recovery | status=boundary_candidate | verdict=expected_bridge | reason=expected runtime boundary direction
+- operator -> dispatcher | core/runtime/work_package_operator.py:210 | symbol=package_progress | call=self.dispatcher.progress | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> dispatcher | core/tasks/scheduler.py:490 | symbol=__init__ | call=TaskDispatcher | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> dispatcher | core/tasks/scheduler.py:1240 | symbol=_run_step_via_task_runner | call=RuntimeDispatcher | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> dispatcher | core/tasks/scheduler.py:1246 | symbol=_run_step_via_task_runner | call=runtime_dispatcher.run_scheduler_boundary | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> dispatcher | core/tasks/scheduler.py:2742 | symbol=cleanup_task_queue_hygiene | call=self.dispatcher.list_queued | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> dispatcher | core/tasks/scheduler.py:7242 | symbol=_zero_v724_cleanup_task_queue_hygiene | call=self.dispatcher.list_queued | family=dispatch | status=boundary_bridge | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> operator | core/tasks/scheduler.py:5285 | symbol=_hydrate_task_from_workspace | call=merged_operator.update | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- scheduler -> operator | core/tasks/scheduler.py:8143 | symbol=_zero_scheduler_run_one_step_v8 | call=_zero_scheduler_complete_operator | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- scheduler -> operator | core/tasks/scheduler.py:8164 | symbol=_zero_scheduler_complete_operator | call=_completion_pipeline_complete_operator | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- scheduler -> operator | core/tasks/scheduler.py:8175 | symbol=_zero_scheduler_mark_operator_complete_if_ok | call=_completion_pipeline_mark_operator_complete_if_ok | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- scheduler -> operator | core/tasks/scheduler.py:8183 | symbol=_zero_scheduler_mark_operator_complete_or_failed | call=_completion_pipeline_mark_operator_complete_or_failed | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- scheduler -> operator | core/tasks/scheduler.py:8207 | symbol=_zero_scheduler_run_operator_completion_pipeline | call=_completion_pipeline_run_operator_completion_pipeline | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- scheduler -> task_runner | core/tasks/scheduler.py:512 | symbol=__init__ | call=TaskRunner | family=uncategorized | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> task_runner | core/tasks/scheduler.py:2293 | symbol=_execute_simple_step | call=self._run_step_via_task_runner | family=step_execution | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> task_runner | core/tasks/scheduler.py:6339 | symbol=_delegate_code_edit_patch_to_step_executor | call=self._run_step_via_task_runner | family=step_execution | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> task_runner | core/tasks/scheduler.py:6868 | symbol=_zero_v702_scheduler_execute_simple_step | call=self._run_step_via_task_runner | family=step_execution | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- scheduler -> task_runner | core/tasks/scheduler.py:6930 | symbol=_zero_v7335_scheduler_execute_simple_step_no_direct_mutation | call=self._run_step_via_task_runner | family=step_execution | status=boundary_adapter_or_reference | verdict=expected_bridge | reason=expected runtime boundary direction
+- task_runner -> dispatcher | core/runtime/task_runner.py:1099 | symbol=run_task_tick | call=_repair_chain_has_live_dispatcher_capability | family=recovery | status=boundary_candidate | verdict=expected_bridge | reason=expected runtime boundary direction
+- task_runner -> dispatcher | core/runtime/task_runner.py:5228 | symbol=_repair_chain_dispatcher_denial_shape | call=_repair_chain_has_live_dispatcher_capability | family=recovery | status=boundary_candidate | verdict=expected_bridge | reason=expected runtime boundary direction
+- task_runner -> dispatcher | core/runtime/task_runner.py:5280 | symbol=_repair_lineage_run_task_tick | call=_repair_chain_dispatcher_denial_shape | family=identity | status=boundary_candidate | verdict=expected_bridge | reason=expected runtime boundary direction
+- task_runner -> dispatcher | core/runtime/task_runner.py:5295 | symbol=_repair_lineage_run_task | call=_repair_chain_dispatcher_denial_shape | family=identity | status=boundary_candidate | verdict=expected_bridge | reason=expected runtime boundary direction
+- task_runner -> operator | core/runtime/task_runner.py:1766 | symbol=_operator_session_id_from_payloads | call=operator_state.get | family=identity | status=boundary_candidate | verdict=manual_review | reason=critical cross-boundary direction without obvious bridge marker
+- task_runner -> operator | core/runtime/task_runner.py:5153 | symbol=_zero_stage3b_taskrunner_record_operator_failure_v4 | call=get_operator_registry_service | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5153 | symbol=_zero_stage3b_taskrunner_record_operator_failure_v4 | call=get_operator_registry_service.mark_failed | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5163 | symbol=_zero_stage3b_run_task_tick_v4 | call=_zero_stage3b_taskrunner_record_operator_failure_v4 | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5172 | symbol=_zero_stage3b_run_task_v4 | call=_zero_stage3b_taskrunner_record_operator_failure_v4 | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5332 | symbol=_zero_operator_registry_phase1c_run_task_tick | call=_zero_operator_registry_phase1c_is_initial_tick | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5334 | symbol=_zero_operator_registry_phase1c_run_task_tick | call=_zero_operator_registry_phase1c_session_id | family=identity | status=boundary_candidate | verdict=manual_review | reason=critical cross-boundary direction without obvious bridge marker
+- task_runner -> operator | core/runtime/task_runner.py:5337 | symbol=_zero_operator_registry_phase1c_run_task_tick | call=get_operator_registry_service | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5337 | symbol=_zero_operator_registry_phase1c_run_task_tick | call=get_operator_registry_service.clear_failure | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+- task_runner -> operator | core/runtime/task_runner.py:5340 | symbol=_zero_operator_registry_phase1c_run_task_tick | call=_ZERO_OPERATOR_REGISTRY_PHASE1C_BASE_RUN_TASK_TICK | family=operator | status=boundary_bridge | verdict=allowed_bridge | reason=critical direction is mediated by bridge/bridge-status
+
+Non-Mainline Issues
+-------------------
+- Audit only. No production code was changed.
+- manual_review rows are not automatic defects; inspect before scheduling changes.
+- If a row is outside boundary scope but suspicious, report it explicitly in a follow-up package.

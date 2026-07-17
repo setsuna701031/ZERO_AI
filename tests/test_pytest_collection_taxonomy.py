@@ -12,7 +12,6 @@ IGNORED_TEST_TAXONOMY = {
     "tests/test_chat.py": "external",
     "tests/test_llm_tool_decision.py": "legacy",
     "tests/test_memory.py": "legacy",
-    "tests/test_memory_engine.py": "legacy",
     "tests/test_repo_edit_agent_bridge.py": "integration",
     "tests/test_repo_edit_agent_review_adapter.py": "integration",
     "tests/test_repo_edit_integration.py": "integration",

@@ -1,0 +1,241 @@
+﻿from __future__ import annotations
+
+from typing import Any
+
+
+def task_from_args(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    return kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+
+
+def task_id(task: dict[str, Any]) -> str:
+    return str(task.get("id") or task.get("task_id") or "task")
+
+def mark_completed_steps_fallback(owner: Any, task: dict[str, Any], step_id: str) -> bool:
+    if not isinstance(task, dict) or not step_id:
+        return False
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return False
+
+    def mark(session: Any) -> bool:
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if step_id not in completed:
+                completed.append(step_id)
+            return True
+
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and step_id not in completed:
+                completed.append(step_id)
+            return True
+
+        return False
+
+    seen: set[int] = set()
+
+    def scan(obj: Any, depth: int = 0) -> bool:
+        if obj is None or depth > 8:
+            return False
+
+        oid = id(obj)
+        if oid in seen:
+            return False
+        seen.add(oid)
+
+        get_session = getattr(obj, "get_session", None)
+        if callable(get_session):
+            try:
+                session = get_session(session_id)
+                if session is not None and mark(session):
+                    return True
+            except Exception:
+                pass
+
+        if isinstance(obj, dict):
+            if session_id in obj and mark(obj[session_id]):
+                return True
+            values = list(obj.values())
+        else:
+            values = []
+            d = getattr(obj, "__dict__", None)
+            if isinstance(d, dict):
+                values.extend(d.values())
+
+            for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
+                sessions = getattr(obj, attr, None)
+                if isinstance(sessions, dict):
+                    session = sessions.get(session_id)
+                    if session is not None and mark(session):
+                        return True
+                    values.extend(sessions.values())
+
+        for value in values:
+            if scan(value, depth + 1):
+                return True
+
+        return False
+
+    roots = [
+        task.get("_zero_operator_runtime_ref"),
+        getattr(task.get("_zero_operator_bootstrap_ref"), "operator_runtime", None),
+        getattr(task.get("_zero_operator_bootstrap_ref"), "runtime", None),
+        task.get("operator_bridge"),
+        owner,
+        getattr(owner, "step_executor", None),
+        getattr(owner, "operator_bridge", None),
+        getattr(getattr(owner, "step_executor", None), "operator_bridge", None),
+    ]
+
+    for root in roots:
+        if scan(root):
+            return True
+
+    return False
+
+def complete_operator(
+    owner: Any,
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    outcome: str = "complete",
+    registry_factory: Any,
+) -> bool:
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return False
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return False
+
+    computed_task_id = task_id(task)
+    suffix = "complete" if outcome == "complete" else "fail"
+    step_id = f"{computed_task_id}-{suffix}"
+
+    registry_applied = False
+    try:
+        operator_registry = registry_factory()
+        if outcome == "complete":
+            operator_registry.mark_complete(session_id, step_id)
+            registry_applied = True
+        elif outcome == "fail":
+            operator_registry.mark_failed(session_id, step_id)
+            registry_applied = True
+    except Exception:
+        registry_applied = False
+
+    fallback_applied = False
+    if outcome == "complete":
+        fallback_applied = mark_completed_steps_fallback(owner, task, step_id)
+
+    return registry_applied or fallback_applied
+
+def mark_operator_complete_if_ok(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    registry_factory().mark_complete(
+        session_id,
+        f"{task_id(task)}-complete",
+    )
+
+
+def mark_operator_complete_or_failed(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    computed_task_id = task_id(task)
+    operator_registry = registry_factory()
+
+    if result.get("ok") is True:
+        operator_registry.mark_complete(session_id, f"{computed_task_id}-complete")
+    elif result.get("ok") is False:
+        operator_registry.mark_failed(session_id, f"{computed_task_id}-fail")
+
+
+def mark_failed_step_if_needed(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+    try:
+        idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
+    except Exception:
+        idx = 0
+
+    step = steps[idx] if 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
+    step_type = str(step.get("type") or "").lower()
+
+    if "fail" in step_type or "failure" in step_type:
+        registry_factory().mark_failed(
+            session_id,
+            f"{task_id(task)}-fail",
+        )
+
+def mark_failed_if_ok_without_completion(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    operator_registry = registry_factory()
+    if not operator_registry.has_completion(session_id):
+        operator_registry.mark_failed(
+            session_id,
+            f"{task_id(task)}-fail",
+        )
+
+
+def run_operator_completion_pipeline(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    mode: str = "all",
+    registry_factory: Any,
+) -> None:
+    if mode in {"all", "complete_if_ok"}:
+        mark_operator_complete_if_ok(task, result, registry_factory=registry_factory)
+
+    if mode in {"all", "complete_or_failed"}:
+        mark_operator_complete_or_failed(task, result, registry_factory=registry_factory)
+
+    if mode in {"all", "failed_step"}:
+        mark_failed_step_if_needed(task, result, registry_factory=registry_factory)
+
+    if mode in {"all", "missing_completion"}:
+        mark_failed_if_ok_without_completion(task, result, registry_factory=registry_factory)
+

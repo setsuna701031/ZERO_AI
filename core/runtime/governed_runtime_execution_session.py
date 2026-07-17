@@ -5,6 +5,12 @@ import hashlib
 import json
 from typing import Any, Dict, Iterable, List, Mapping
 
+from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
+from core.runtime.runtime_authority import build_authority_metadata
+from core.runtime.runtime_consistency import build_runtime_state_consistency
+from core.runtime.runtime_closure import build_runtime_closure_fields
+from core.runtime.runtime_recovery_readiness import build_runtime_recovery_readiness_fields
+
 
 SCHEMA_VERSION = "governed_runtime_execution_session.v1"
 
@@ -240,6 +246,57 @@ def build_governed_runtime_execution_session_report(
         },
     }
     report["execution_session_id"] = _session_id(report)
+    report.update(
+        build_runtime_closure_fields(
+            {
+                **report,
+                "source": "governed_runtime_execution_session",
+                "lifecycle_status": report.get("session_state"),
+                "execution_status": report.get("session_state"),
+            },
+            artifact_type="governed_runtime_execution_session",
+            artifact_id=report["execution_session_id"],
+            finalized_by="governed_runtime_execution_session",
+        )
+    )
+    report["execution_evidence"] = _governed_execution_evidence(report, action_execution)
+    report["transaction_boundary"] = _governed_transaction_boundary(report, action_execution)
+    report["authority_seal"] = _governed_authority_metadata(report, action_execution)
+    report["consistency_seal"] = build_runtime_state_consistency(
+        {
+            **report,
+            "lifecycle_status": report.get("session_state"),
+            "execution_evidence": report.get("execution_evidence"),
+            "transaction_boundary": report.get("transaction_boundary"),
+            "authority_seal": report.get("authority_seal"),
+            "executed": report.get("session_state") == SESSION_SEALED,
+            "ok": report.get("session_state") == SESSION_SEALED,
+        }
+    )
+    report.update(
+        build_runtime_recovery_readiness_fields(
+            {
+                **report,
+                "execution_evidence": report.get("execution_evidence"),
+                "transaction_boundary": report.get("transaction_boundary"),
+                "authority_seal": report.get("authority_seal"),
+                "consistency_seal": report.get("consistency_seal"),
+                "runtime_closure": {
+                    key: report.get(key)
+                    for key in (
+                        "closure_status",
+                        "closure_reason",
+                        "finalized_timestamp",
+                        "finalized_by",
+                        "immutable_state",
+                        "closure_evidence",
+                    )
+                },
+            },
+            artifact_type="governed_runtime_execution_session",
+            artifact_id=report["execution_session_id"],
+        )
+    )
     return report
 
 
@@ -524,6 +581,87 @@ def _session_id(report: Mapping[str, Any]) -> str:
     return "governed-runtime-execution-session-" + _stable_hash(payload)[:16]
 
 
+def _governed_execution_evidence(
+    report: Mapping[str, Any],
+    action_execution: Mapping[str, Any],
+) -> Dict[str, Any]:
+    state = _text(action_execution.get("execution_state") or report.get("session_state"))
+    legality = "legal"
+    denial_reason = ""
+    if state in {"blocked", "review_required"}:
+        legality = "denied"
+        denial_reason = _text(action_execution.get("denial_reason")) or _text(action_execution.get("reason"))
+    elif state == "failed":
+        legality = "failed"
+        denial_reason = _text(action_execution.get("failure_reason")) or _text(action_execution.get("reason"))
+
+    evidence = {
+        "execution_id": _text(report.get("source_execution_id")),
+        "execution_source": "governed_runtime_execution_session",
+        "execution_status": state,
+        "execution_legality": legality,
+        "timestamp": _text(action_execution.get("timestamp")),
+        "runtime_session_id": _text(report.get("execution_session_id")),
+    }
+    if denial_reason:
+        evidence["denial_reason"] = denial_reason
+    if legality == "failed":
+        evidence["failure_evidence"] = {
+            "reason": denial_reason or "governed_execution_failed",
+            "execution_state": state,
+        }
+    return evidence
+
+
+def _governed_transaction_boundary(
+    report: Mapping[str, Any],
+    action_execution: Mapping[str, Any],
+) -> Dict[str, Any]:
+    state = _text(action_execution.get("transaction_status") or action_execution.get("execution_state") or report.get("session_state"))
+    if state in {"blocked", "review_required"}:
+        status = "denied"
+    elif state == "failed":
+        status = "failed"
+    elif state in {"sealed", "checkpointed"}:
+        status = "committed"
+    else:
+        status = "opened"
+    return build_transaction_boundary_metadata(
+        {
+            "transaction_id": _text(action_execution.get("transaction_id") or report.get("source_execution_id")),
+            "transaction_source": "governed_runtime_execution_session",
+            "transaction_status": status,
+            "transaction_scope": "governed_execution",
+            "transaction_timestamp": _text(action_execution.get("timestamp")),
+            "denial_reason": _text(action_execution.get("denial_reason") or action_execution.get("reason")),
+        }
+    )
+
+
+def _governed_authority_metadata(
+    report: Mapping[str, Any],
+    action_execution: Mapping[str, Any],
+) -> Dict[str, Any]:
+    state = _text(action_execution.get("authority_status") or action_execution.get("execution_state"))
+    if state in {"blocked", "review_required", "denied"}:
+        authority_status = "denied"
+    elif state == "failed":
+        authority_status = "denied"
+    else:
+        authority_status = "allowed"
+    return build_authority_metadata(
+        {
+            "authority_source": "governed_runtime_execution_session",
+            "authority_scope": "governed_execution",
+            "authority_status": authority_status,
+            "authority_reason": _text(action_execution.get("authority_reason") or action_execution.get("denial_reason") or "governed_execution_authority"),
+            "ownership_source": "core.runtime.governed_runtime_execution_session",
+            "ownership_scope": "governed_execution",
+            "transaction_boundary": report.get("transaction_boundary"),
+        }
+    )
+
+
 def _mapping(value: Any) -> Dict[str, Any]:
     return copy.deepcopy(value) if isinstance(value, dict) else {}
 
@@ -573,3 +711,165 @@ def _stable_hash(value: Any) -> str:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def build_governed_runtime_lockdown_session_report(
+    *,
+    freeze_decision: Any | None = None,
+    freeze_state: Any | None = None,
+    previous_session_state: str | None = None,
+    source_execution_id: str = "",
+    source_gateway_id: str = "",
+    source_boundary_id: str = "",
+    reason: str = "",
+    metadata: Any | None = None,
+) -> Dict[str, Any]:
+    """Escalate a runtime freeze into a terminal governed execution session.
+
+    This is the persistence bridge between execution-level freeze denial and
+    runtime-wide lockdown state.  A frozen runtime must become SESSION_BLOCKED
+    and its continuation contract must be closed.
+    """
+
+    freeze_payload = _mapping(freeze_decision) or _mapping(freeze_state)
+    frozen = bool(
+        freeze_payload.get("runtime_frozen")
+        or freeze_payload.get("denied")
+        or freeze_payload.get("frozen")
+        or freeze_payload.get("is_frozen")
+    )
+
+    resolved_reason = (
+        _text(reason)
+        or _text(freeze_payload.get("reason"))
+        or "runtime freeze escalated to governed session lockdown"
+    )
+
+    event = build_governed_runtime_execution_event(
+        event_type="runtime_freeze_escalated",
+        event_state=SESSION_BLOCKED if frozen else SESSION_RUNNING,
+        source_ref=_text(source_execution_id) or _text(freeze_payload.get("freeze_id")),
+        sequence=0,
+        payload={
+            "runtime_frozen": frozen,
+            "freeze_decision": copy.deepcopy(freeze_payload),
+            "reason": resolved_reason,
+            "metadata": copy.deepcopy(metadata) if metadata is not None else {},
+        },
+    )
+
+    checkpoint = build_governed_runtime_execution_checkpoint(
+        checkpoint_type="runtime_lockdown",
+        checkpoint_state="blocked" if frozen else "open",
+        source_event_id=event["event_id"],
+        runtime_state_ref=_text(freeze_payload.get("freeze_id")),
+        sequence=0,
+        payload={
+            "runtime_frozen": frozen,
+            "reason": resolved_reason,
+        },
+    )
+
+    blocking_issues: List[Dict[str, Any]] = []
+    if frozen:
+        blocking_issues.append(
+            {
+                "kind": "runtime_freeze_lockdown",
+                "reason": resolved_reason,
+                "freeze_id": _text(freeze_payload.get("freeze_id")),
+            }
+        )
+
+    session_state = SESSION_BLOCKED if frozen else SESSION_RUNNING
+    continuation_contract = {
+        "continuation_id": "runtime-execution-continuation-" + _stable_hash(
+            {
+                "session_state": session_state,
+                "runtime_frozen": frozen,
+                "freeze_payload": freeze_payload,
+                "reason": resolved_reason,
+            }
+        )[:16],
+        "can_continue": not frozen,
+        "continuation_state": "closed" if frozen else "available",
+        "next_event_sequence": 1,
+        "latest_checkpoint_id": checkpoint["checkpoint_id"],
+        "context": {
+            "runtime_frozen": frozen,
+            "freeze_id": _text(freeze_payload.get("freeze_id")),
+            "reason": resolved_reason,
+            "metadata": copy.deepcopy(metadata) if metadata is not None else {},
+        },
+    }
+
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "execution_session_id": "",
+        "session_state": session_state,
+        "previous_session_state": _text(previous_session_state),
+        "transition_valid": _session_transition_valid(_text(previous_session_state), session_state),
+        "source_execution_id": _text(source_execution_id),
+        "source_gateway_id": _text(source_gateway_id),
+        "source_boundary_id": _text(source_boundary_id),
+        "event_timeline": [event],
+        "checkpoint_snapshots": [checkpoint],
+        "replay_order_valid": True,
+        "rollback_eligible": False,
+        "seal_handoff_ready": False,
+        "continuation_contract": continuation_contract,
+        "blocking_issues": blocking_issues,
+        "reason_codes": _sorted_unique(
+            [
+                "runtime_freeze_lockdown" if frozen else "",
+                *_reason_codes_from_issues(blocking_issues),
+            ]
+        ),
+        "session_summary": {
+            "event_count": 1,
+            "checkpoint_count": 1,
+            "session_state": session_state,
+            "source_execution_state": "blocked" if frozen else "running",
+            "replay_order_valid": True,
+            "rollback_eligible": False,
+            "seal_handoff_ready": False,
+            "runtime_frozen": frozen,
+        },
+    }
+    report["execution_session_id"] = _session_id(report)
+    report.update(
+        build_runtime_closure_fields(
+            {
+                **report,
+                "source": "governed_runtime_execution_session",
+                "lifecycle_status": report.get("session_state"),
+                "execution_status": report.get("session_state"),
+            },
+            artifact_type="governed_runtime_execution_session",
+            artifact_id=report["execution_session_id"],
+            finalized_by="governed_runtime_execution_session",
+        )
+    )
+    return report
+
+
+def escalate_runtime_freeze_to_governed_session(
+    *,
+    freeze_decision: Any | None = None,
+    freeze_state: Any | None = None,
+    previous_session_state: str | None = None,
+    source_execution_id: str = "",
+    source_gateway_id: str = "",
+    source_boundary_id: str = "",
+    reason: str = "",
+    metadata: Any | None = None,
+) -> Dict[str, Any]:
+    return build_governed_runtime_lockdown_session_report(
+        freeze_decision=freeze_decision,
+        freeze_state=freeze_state,
+        previous_session_state=previous_session_state,
+        source_execution_id=source_execution_id,
+        source_gateway_id=source_gateway_id,
+        source_boundary_id=source_boundary_id,
+        reason=reason,
+        metadata=metadata,
+    )

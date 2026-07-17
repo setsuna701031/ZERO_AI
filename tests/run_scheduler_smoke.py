@@ -39,6 +39,43 @@ def build_scheduler() -> Scheduler:
     return scheduler
 
 
+def execution_authority() -> Dict[str, Any]:
+    return {
+        "authority_source": "human_review",
+        "authority_status": "allowed",
+        "execution_authority_endpoint": "step_executor",
+        "action_type": "mutation",
+        "ownership_source": "human_review",
+        "authority_scope": "workspace/shared/scheduler_smoke.txt",
+        "task_id": "scheduler_smoke",
+        "step_id": "scheduler_smoke_write",
+        "runtime_session": "scheduler_smoke_session",
+        "approval_state": "approved",
+        "policy_result": {"allowed": True, "decision": "allow"},
+        "trace_id": "scheduler_smoke_trace",
+    }
+
+
+def test_scheduler_smoke_pytest_wrapper(tmp_path: Path) -> None:
+    scheduler = Scheduler(workspace_dir=str(tmp_path / "workspace"), allow_commands=True)
+    scheduler.agent_loop = None
+    scheduler._agent_loop = None
+    scheduler.task_manager = None
+
+    create_result = scheduler._create_task_record(
+        goal="scheduler pytest wrapper :: step=write_file:shared/wrapper.txt|ok",
+        priority=0,
+        initial_status="queued",
+        execution_authority=execution_authority(),
+        authority_propagation_required=True,
+    )
+    task = scheduler._get_task_from_repo(extract_task_id(create_result))
+
+    assert create_result["ok"] is True
+    assert isinstance(task, dict)
+    assert task["execution_authority"]["authority_status"] == "allowed"
+
+
 def extract_task_id(create_result: Dict[str, Any]) -> str:
     for key in ("task_id", "id"):
         value = str(create_result.get(key) or "").strip()
@@ -73,6 +110,8 @@ def main() -> None:
         ),
         priority=0,
         initial_status="queued",
+        execution_authority=execution_authority(),
+        authority_propagation_required=True,
     )
     print_block("1. create task", create_result)
 

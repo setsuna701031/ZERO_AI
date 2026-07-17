@@ -11,7 +11,6 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Optional
 
 from core.runtime.execution_gateway import safe_subprocess_run
-from core.tools.tool_router import ToolRouter
 from core.runtime.governed_repair_api import execute_governed_repair_mutation
 from core.runtime.mutation_boundary import MutationBoundary
 from core.runtime.mutation_session import MutationApprovalMode, MutationRiskLevel, MutationVerificationRequirement
@@ -315,6 +314,55 @@ class BaseStepHandler:
             return int(text)
         except Exception:
             return None
+
+    def _repo_workspace_candidate(self, path: Any) -> str:
+        """Resolve explicit repo/workspace paths before task sandbox fallback.
+
+        Planner steps may produce paths such as ``workspace/input.txt`` or
+        ``workspace/shared/summary.txt``. Those are repo-root relative paths,
+        not task-sandbox relative paths. Returning this candidate first keeps
+        normal task sandbox behavior for plain relative paths while preventing
+        ``workspace/...`` from becoming ``task_x/sandbox/workspace/...``.
+        """
+        clean = str(path or "").strip().strip('"').strip("'").replace("\\", "/")
+        if not clean or os.path.isabs(clean):
+            return ""
+        lowered = clean.lower()
+
+        candidates = []
+
+        repo_relative_prefixes = (
+            "core/",
+            "tests/",
+            "services/",
+            "cli/",
+            "docs/",
+            "runtime/",
+        )
+
+        if any(lowered.startswith(prefix) for prefix in repo_relative_prefixes):
+            repo_root = os.path.abspath(os.path.join(os.getcwd()))
+            candidate = os.path.abspath(os.path.join(repo_root, clean))
+            return candidate
+
+        if not (lowered == "workspace" or lowered.startswith("workspace/")):
+            return ""
+
+        workspace_root = getattr(self.executor, "workspace_root", "")
+        if isinstance(workspace_root, str) and workspace_root.strip():
+            workspace_root_abs = os.path.abspath(workspace_root.strip())
+            if lowered.startswith("workspace/"):
+                candidates.append(os.path.abspath(os.path.join(workspace_root_abs, clean[len("workspace/"):])))
+            elif lowered == "workspace":
+                candidates.append(workspace_root_abs)
+            parent = os.path.dirname(workspace_root_abs)
+            if parent:
+                candidates.append(os.path.abspath(os.path.join(parent, clean)))
+
+        cwd_candidate = os.path.abspath(os.path.join(os.getcwd(), clean))
+        candidates.append(cwd_candidate)
+
+        return candidates[0] if candidates else ""
 
 
 class GovernedRepairMutationStepHandler(BaseStepHandler):
@@ -672,13 +720,11 @@ class ToolStepHandler(BaseStepHandler):
         attempt: int,
     ) -> Dict[str, Any]:
         try:
-            route_payload = copy.deepcopy(tool_input)
-            route_payload.setdefault("tool_name", tool_name)
-            result = ToolRouter(self.executor.tool_registry).dispatch(route_payload)
+            # A planner/StepExecutor tool step already names its tool. ToolRouter
+            # is heuristic intent inference and must not override that contract.
+            result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
             if is_dataclass(result):
                 result = asdict(result)
-            if result is None:
-                result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
         except Exception as e:
             return self._error(
                 error_type="tool_execute_exception",
@@ -1128,22 +1174,26 @@ class WriteFileStepHandler(BaseStepHandler):
         if content is None:
             content = ""
 
-        try:
-            full_path = self.executor.resolve_write_path(
-                relative_path=str(path),
-                task=task,
-                default_scope=scope,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="path_resolve_failed",
-                message=f"path resolve failed: {e}",
-                step=step,
-                result={
-                    "path": str(path),
-                    "scope": scope,
-                },
-            )
+        repo_workspace_path = self._repo_workspace_candidate(path)
+        if repo_workspace_path:
+            full_path = repo_workspace_path
+        else:
+            try:
+                full_path = self.executor.resolve_write_path(
+                    relative_path=str(path),
+                    task=task,
+                    default_scope=scope,
+                )
+            except Exception as e:
+                return self._error(
+                    error_type="path_resolve_failed",
+                    message=f"path resolve failed: {e}",
+                    step=step,
+                    result={
+                        "path": str(path),
+                        "scope": scope,
+                    },
+                )
 
         try:
             self._governed_write_text(
@@ -1245,22 +1295,26 @@ class AppendFileStepHandler(BaseStepHandler):
         if newline is True and append_text and not append_text.endswith("\n"):
             append_text += "\n"
 
-        try:
-            full_path = self.executor.resolve_write_path(
-                relative_path=str(path),
-                task=task,
-                default_scope=scope,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="path_resolve_failed",
-                message=f"path resolve failed: {e}",
-                step=step,
-                result={
-                    "path": str(path),
-                    "scope": scope,
-                },
-            )
+        repo_workspace_path = self._repo_workspace_candidate(path)
+        if repo_workspace_path:
+            full_path = repo_workspace_path
+        else:
+            try:
+                full_path = self.executor.resolve_write_path(
+                    relative_path=str(path),
+                    task=task,
+                    default_scope=scope,
+                )
+            except Exception as e:
+                return self._error(
+                    error_type="path_resolve_failed",
+                    message=f"path resolve failed: {e}",
+                    step=step,
+                    result={
+                        "path": str(path),
+                        "scope": scope,
+                    },
+                )
 
         try:
             parent = os.path.dirname(full_path)
@@ -1354,22 +1408,26 @@ class EnsureFileStepHandler(BaseStepHandler):
                 step=step,
             )
 
-        try:
-            full_path = self.executor.resolve_write_path(
-                relative_path=str(path),
-                task=task,
-                default_scope=scope,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="path_resolve_failed",
-                message=f"path resolve failed: {e}",
-                step=step,
-                result={
-                    "path": str(path),
-                    "scope": scope,
-                },
-            )
+        repo_workspace_path = self._repo_workspace_candidate(path)
+        if repo_workspace_path:
+            full_path = repo_workspace_path
+        else:
+            try:
+                full_path = self.executor.resolve_write_path(
+                    relative_path=str(path),
+                    task=task,
+                    default_scope=scope,
+                )
+            except Exception as e:
+                return self._error(
+                    error_type="path_resolve_failed",
+                    message=f"path resolve failed: {e}",
+                    step=step,
+                    result={
+                        "path": str(path),
+                        "scope": scope,
+                    },
+                )
 
         try:
             created = False
@@ -1427,24 +1485,29 @@ class ReadFileStepHandler(BaseStepHandler):
                 step=step,
             )
 
-        try:
-            candidates = self.executor.resolve_read_candidates(
-                relative_path=str(path),
-                task=task,
-                prefer_scopes=("sandbox", "shared"),
-            )
-            full_path = self.executor.resolve_read_path(
-                relative_path=str(path),
-                task=task,
-                prefer_scopes=("sandbox", "shared"),
-                return_fallback_candidate_if_missing=True,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="path_resolve_failed",
-                message=f"path resolve failed: {e}",
-                step=step,
-            )
+        repo_workspace_path = self._repo_workspace_candidate(path)
+        if repo_workspace_path:
+            full_path = repo_workspace_path
+            candidates = [repo_workspace_path]
+        else:
+            try:
+                candidates = self.executor.resolve_read_candidates(
+                    relative_path=str(path),
+                    task=task,
+                    prefer_scopes=("sandbox", "shared"),
+                )
+                full_path = self.executor.resolve_read_path(
+                    relative_path=str(path),
+                    task=task,
+                    prefer_scopes=("sandbox", "shared"),
+                    return_fallback_candidate_if_missing=True,
+                )
+            except Exception as e:
+                return self._error(
+                    error_type="path_resolve_failed",
+                    message=f"path resolve failed: {e}",
+                    step=step,
+                )
 
         if not os.path.exists(full_path):
             return self._error(
@@ -1566,25 +1629,30 @@ class VerifyStepHandler(BaseStepHandler):
                 step=step,
             )
 
-        try:
-            candidates = self.executor.resolve_read_candidates(
-                relative_path=path,
-                task=task,
-                prefer_scopes=("sandbox", "shared"),
-            )
-            full_path = self.executor.resolve_read_path(
-                relative_path=path,
-                task=task,
-                prefer_scopes=("sandbox", "shared"),
-                return_fallback_candidate_if_missing=True,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="verify_path_resolve_failed",
-                message=f"verify path resolve failed: {e}",
-                step=step,
-                result={"path": path},
-            )
+        repo_workspace_path = self._repo_workspace_candidate(path)
+        if repo_workspace_path:
+            full_path = repo_workspace_path
+            candidates = [repo_workspace_path]
+        else:
+            try:
+                candidates = self.executor.resolve_read_candidates(
+                    relative_path=path,
+                    task=task,
+                    prefer_scopes=("sandbox", "shared"),
+                )
+                full_path = self.executor.resolve_read_path(
+                    relative_path=path,
+                    task=task,
+                    prefer_scopes=("sandbox", "shared"),
+                    return_fallback_candidate_if_missing=True,
+                )
+            except Exception as e:
+                return self._error(
+                    error_type="verify_path_resolve_failed",
+                    message=f"verify path resolve failed: {e}",
+                    step=step,
+                    result={"path": path},
+                )
 
         if "exists" in step:
             expected_exists = bool(step.get("exists"))
@@ -2539,4 +2607,3 @@ class ApplyUnifiedDiffStepHandler(BaseStepHandler):
 
     def _normalize_for_compare(self, text: str) -> str:
         return str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
-

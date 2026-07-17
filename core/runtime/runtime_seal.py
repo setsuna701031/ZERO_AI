@@ -107,4 +107,75 @@ __all__ = [
     "attach_runtime_seal",
     "seal_runtime_artifact",
     "verify_runtime_seal",
+    "RuntimeSealAuthorityRejected",
+    "build_runtime_seal_authority_state",
+    "enforce_runtime_seal_authority",
 ]
+
+
+class RuntimeSealAuthorityRejected(RuntimeError):
+    pass
+
+
+def build_runtime_seal_authority_state(
+    *,
+    freeze_escalated: bool = False,
+    session_blocked: bool = False,
+    rollback_detected: bool = False,
+    seal_verified: bool = True,
+    reason: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    sovereign_locked = bool(
+        freeze_escalated
+        or session_blocked
+        or rollback_detected
+        or not seal_verified
+    )
+
+    denial_reasons: list[str] = []
+
+    if freeze_escalated:
+        denial_reasons.append("freeze_escalated")
+    if session_blocked:
+        denial_reasons.append("session_blocked")
+    if rollback_detected:
+        denial_reasons.append("rollback_detected")
+    if not seal_verified:
+        denial_reasons.append("runtime_seal_mismatch")
+
+    return {
+        "runtime_seal_authority": "runtime_sovereign_seal_authority",
+        "sovereign_locked": sovereign_locked,
+        "freeze_escalated": bool(freeze_escalated),
+        "session_blocked": bool(session_blocked),
+        "rollback_detected": bool(rollback_detected),
+        "seal_verified": bool(seal_verified),
+        "resume_allowed": not sovereign_locked,
+        "replay_allowed": not sovereign_locked,
+        "mutation_allowed": not sovereign_locked,
+        "continuation_allowed": not sovereign_locked,
+        "reason": str(reason or ""),
+        "denial_reasons": denial_reasons,
+        "metadata": dict(metadata or {}),
+    }
+
+
+def enforce_runtime_seal_authority(
+    authority_state: dict[str, Any],
+    *,
+    action: str = "runtime_resume",
+) -> dict[str, Any]:
+    sovereign_locked = bool(authority_state.get("sovereign_locked"))
+
+    if sovereign_locked:
+        raise RuntimeSealAuthorityRejected(
+            f"runtime seal authority denied action: {action}"
+        )
+
+    return {
+        "ok": True,
+        "action": action,
+        "authority_state": dict(authority_state),
+    }
+

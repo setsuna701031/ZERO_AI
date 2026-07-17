@@ -94,6 +94,8 @@ class TaskDispatcher:
         self,
         task_id: str,
         result: Any = None,
+        *,
+        completion_authority: Any = None,
     ) -> bool:
         running = self.worker_pool.get_running_task(task_id)
         if running is None:
@@ -103,7 +105,11 @@ class TaskDispatcher:
         if released is None:
             return False
 
-        return self.queue.mark_finished(task_id, result=result)
+        return self.queue.mark_finished(
+            task_id,
+            result=result,
+            completion_authority=completion_authority,
+        )
 
     def fail_task(
         self,

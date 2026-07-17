@@ -40,4 +40,7 @@ zero_ai_target/
 workspace/
 
 # Experimental/local-only tests
-tests/test_memory_engine.py
+tests/test_memory_engine.pyshared/
+workspace/mutation_transactions/
+workspace/mutation_snapshots/
+/shared/

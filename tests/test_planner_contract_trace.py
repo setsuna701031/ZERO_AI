@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 
 from core.planning.planner_contract_trace import (
+
     build_planner_contract_trace_event,
     load_planner_contract_trace,
     summarize_planner_contract_trace,
     trace_planner_contract_payload,
     write_planner_contract_trace_event,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_build_trace_event_from_valid_payload():

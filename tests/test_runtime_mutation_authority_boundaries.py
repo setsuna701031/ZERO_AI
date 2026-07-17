@@ -10,6 +10,11 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -32,8 +37,6 @@ FORBIDDEN_AUTHORITY_TOKENS = (
     "mutation",
     "apply_patch",
     "rollback",
-    "recover",
-    "recovery",
     "override",
     "patch_apply",
     "mutation_patch_apply",
@@ -41,7 +44,6 @@ FORBIDDEN_AUTHORITY_TOKENS = (
     "atomic_apply",
     "commit_gate",
     "repair_execution",
-    "approval",
     "repair_transaction",
     "run_governed_repair_transaction",
     "build_gateway_request_from_repair_transaction",

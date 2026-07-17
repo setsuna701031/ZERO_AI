@@ -1,0 +1,458 @@
+{
+  "stage": "Stage15A.1 — Wave 0 Gate Failure Decomposition",
+  "scope": "failure_analysis_only",
+  "production_runtime_modified": false,
+  "tests_modified": false,
+  "blockers_fixed": false,
+  "sources": [
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json",
+      "sha256": "60e99964d161db2dc165a7422c3b908d39642ab5e6615fb59b3a4f6f18a24853"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+      "sha256": "e98e2ce7d0d059f57ef9d5b67c5cb00384d02d421b8820c9407231b29596706e"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a_summary.json",
+      "sha256": "c0c296e9b7e83edc76a025747bbc1a15d0454110e647af0a6e51e30814886101"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json",
+      "sha256": "f4c70c4c2f307f2c50f09045383baabe0a13f69ab8ca03e056d70e93663498b4"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+      "sha256": "69378e32d420f751a43646fcff28ee294798a11f8f80670202e5ffe4bc780d42"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json",
+      "sha256": "c4598afd33755f612aa41d191488cd0bb570b727cf7c569130cef19e2dda4a91"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json",
+      "sha256": "cff6972e0c11fb60e0d89d06f886d6e83df6fd804494458df5b8b4b66867e0fd"
+    }
+  ],
+  "source_validation": {
+    "runtime_blocker_validation_loaded": true,
+    "ownership_validation_artifacts_loaded": [
+      "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+      "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json",
+      "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json"
+    ],
+    "stage15a_failure_set_matches": true
+  },
+  "gate_failure_inventory": [
+    {
+      "failure_id": "S15A1-GF-001",
+      "test_name": "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+      "assertion": "assert direct_calls == []",
+      "expected_result": [],
+      "observed_result": [
+        "execute_step:_zero_scheduler_run_one_step_v2:10551",
+        "execute_step:_zero_scheduler_run_one_step_v3:10620",
+        "execute_step:_zero_scheduler_run_one_step_v4:10686",
+        "execute_step:_zero_scheduler_run_one_step_v1:10478",
+        "execute_step:_zero_scheduler_run_one_step_v1:10481",
+        "execute_step:_zero_scheduler_run_one_step_v1:10483"
+      ],
+      "categories": [
+        "scheduler_direct_call_seal"
+      ],
+      "owner_domain": "scheduler",
+      "blocking_owner": "core.tasks.scheduler.Scheduler",
+      "native_owner": "core.tasks.scheduler.Scheduler.run_one_step (native definition)",
+      "blocker_ids": [
+        "S13A-SCHED-001",
+        "S13A-SCHED-002",
+        "S13A-SCHED-003",
+        "S13A-SCHED-004",
+        "S13A-SCHED-005",
+        "S13A-SCHED-006",
+        "S13A-SCHED-007",
+        "S13A-SCHED-008",
+        "S13A-SCHED-009",
+        "S13A-SCHED-011",
+        "S13A-SCHED-012",
+        "S13A-SCHED-015",
+        "S13A-SCHED-016",
+        "S13A-SCHED-017",
+        "S13A-SCHED-018",
+        "S13A-SCHED-019",
+        "S13A-SCHED-020",
+        "S13A-SCHED-022",
+        "S13A-SCHED-023",
+        "S13A-SCHED-027",
+        "S13A-SCHED-028",
+        "S13A-SCHED-029",
+        "S13A-SCHED-030",
+        "S13A-SCHED-031",
+        "S13A-SCHED-032",
+        "S13A-SCHED-033",
+        "S13A-SCHED-034",
+        "S13A-SCHED-035",
+        "S13A-SCHED-036",
+        "S13A-SCHED-037",
+        "S13A-SCHED-038",
+        "S13A-SCHED-039",
+        "S13A-SCHED-040",
+        "S13A-SCHED-041",
+        "S13A-SCHED-042",
+        "S13A-SCHED-043",
+        "S13A-SCHED-044",
+        "S13A-SCHED-045",
+        "S13A-SCHED-046",
+        "S13A-SCHED-047",
+        "S13A-SCHED-048",
+        "S13A-SCHED-049",
+        "S13A-SCHED-050",
+        "S13A-SCHED-051",
+        "S13A-SCHED-052"
+      ],
+      "blocker_mapping_scope": "Stage14 Wave 3 included blocker set; the six direct-call records have no independent blocker IDs.",
+      "migration_wave_blocked": "Wave 3: scheduler direct-call seal",
+      "wave1_authorization_blocked": true,
+      "freeze_gate": {
+        "required": true,
+        "condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "source": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "assigned_wave_condition": "Scheduler direct execute_step/execute_steps call inventory must be empty before Wave 3 completes.",
+        "evidence": "Scheduler still has six direct execute_step calls; the assigned Wave 3 direct-call seal remains blocked."
+      },
+      "seal_gate": {
+        "required": true,
+        "conditions": [
+          "Freeze evidence remains valid with no runtime ownership drift, evidence graph drift, compatibility residue, or non-mainline residue."
+        ]
+      },
+      "unlock_condition": "The named scheduler ownership test passes with direct_calls == []; all six Stage14 direct StepExecutor call seals are absent and Wave 3 validation passes.",
+      "criticality": "critical",
+      "criticality_basis": "Stage14 records this test as a critical-suite freeze blocker and assigns the direct-call seal to Wave 3."
+    },
+    {
+      "failure_id": "S15A1-GF-002",
+      "test_name": "tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler",
+      "assertion": "assert result[\"ok\"] is True",
+      "expected_result": true,
+      "observed_result": false,
+      "categories": [
+        "repair_chain_dependency",
+        "goal_lineage_integrity",
+        "runtime_session_boundary"
+      ],
+      "owner_domain": "repairchain / lineage / runtime_session",
+      "blocking_owner": "core.runtime.step_executor.StepExecutor",
+      "native_owner": "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "blocker_ids": [
+        "S13C-SE-028"
+      ],
+      "blocker_aliases": [
+        {
+          "stage": "stage13c",
+          "blocker_id": "S13C-SE-028"
+        },
+        {
+          "stage": "stage13d",
+          "blocker_id": "S13D-RC-005"
+        }
+      ],
+      "migration_wave_blocked": "Wave 7: repairchain recovery / retry / duplicate repair",
+      "wave1_authorization_blocked": true,
+      "freeze_gate": {
+        "required": true,
+        "condition": "Native owner is active, blocker assignment is retired, dependency graph is stable, and validation_gate passes before AER freeze.",
+        "wave0_condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "evidence": "The autonomous repair-chain handler returned ok=false; the assigned Wave 7 behavior gate remains blocked."
+      },
+      "seal_gate": {
+        "required": true,
+        "condition": "Freeze evidence remains valid with no runtime ownership drift, evidence graph drift, compatibility residue, or non-mainline residue."
+      },
+      "unlock_condition": "The named repair-chain integration test passes with result['ok'] is True and S13C-SE-028 validation_gate passes without repairchain, lineage, or runtime-session regression.",
+      "criticality": "high",
+      "criticality_basis": "Stage14 risk_level for S13C-SE-028."
+    },
+    {
+      "failure_id": "S15A1-GF-003",
+      "test_name": "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+      "assertion": "assert EXPECTED_HIGH_RISK_FILES <= high_risk",
+      "expected_result": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/task_runner.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ],
+      "observed_result": [
+        "core/runtime/task_runner.py"
+      ],
+      "missing_expected_high_risk_files": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ],
+      "categories": [
+        "runtime_status_ownership_drift"
+      ],
+      "owner_domain": "non_mainline_observability / runtime_status_ownership",
+      "blocking_owner": "runtime status ownership inventory",
+      "native_owner": [
+        "core.tasks.scheduler.Scheduler.get_queue_snapshot",
+        "core.tasks.scheduler.Scheduler.get_queue_rows",
+        "core.tasks.scheduler.Scheduler.approve_review_item",
+        "core.tasks.scheduler.Scheduler.reject_review_item",
+        "core.tasks.scheduler.Scheduler.get_review_queue",
+        "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary"
+      ],
+      "blocker_ids": [
+        "S14-NM-001",
+        "S14-NM-002",
+        "S14-NM-003",
+        "S14-NM-004",
+        "S14-NM-005",
+        "S14-NM-006"
+      ],
+      "blocker_mapping_scope": "Stage14 non-mainline observability residue set; every item names this status-inventory suite in its validation gate.",
+      "migration_wave_blocked": "Wave 10: seal validation",
+      "wave1_authorization_blocked": true,
+      "freeze_gate": {
+        "required": true,
+        "condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "source": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "assigned_failure_classification": "seal evidence in Stage14 and Stage15A",
+        "evidence": "The aggregate Wave 0 validation remains failed while this seal-evidence test fails."
+      },
+      "seal_gate": {
+        "required": true,
+        "condition": "No class-level replacement, direct execution ownership, or owner endpoint drift may reappear after freeze.",
+        "evidence_graph_condition": "Source symbols, native owners, dependency edges, and validation evidence hashes remain stable from freeze through seal.",
+        "evidence": "The expected high-risk status-writer inventory differs from the source scan; inventory drift remains seal evidence."
+      },
+      "unlock_condition": "The named inventory test passes: every EXPECTED_HIGH_RISK_FILES entry is present in the scan findings, with the Stage14 non-mainline observability report retained.",
+      "criticality": "critical",
+      "criticality_basis": "Stage14 records this named test as critical-suite seal evidence; Stage15A preserves it as seal evidence."
+    }
+  ],
+  "distinct_gate_failure_count": 3,
+  "category_inventory": {
+    "scheduler_direct_call_seal": [
+      "S15A1-GF-001"
+    ],
+    "authority_propagation": [],
+    "runtime_status_ownership_drift": [
+      "S15A1-GF-003"
+    ],
+    "goal_lineage_integrity": [
+      "S15A1-GF-002"
+    ],
+    "runtime_session_boundary": [
+      "S15A1-GF-002"
+    ],
+    "repair_chain_dependency": [
+      "S15A1-GF-002"
+    ],
+    "other": []
+  },
+  "non_mainline_issue_report": {
+    "mandatory": true,
+    "status": "preserved",
+    "tracking_ids": [
+      "S14-NM-001",
+      "S14-NM-002",
+      "S14-NM-003",
+      "S14-NM-004",
+      "S14-NM-005",
+      "S14-NM-006"
+    ],
+    "count": 6,
+    "failure_link": "S15A1-GF-003",
+    "classification": "observability-only; no reclassification or repair performed"
+  },
+  "wave_impact_graph": [
+    {
+      "failure_id": "S15A1-GF-001",
+      "failure": "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+      "blocked_wave": "Wave 3: scheduler direct-call seal",
+      "downstream_waves": [
+        "Wave 4: taskrunner execution ownership",
+        "Wave 5: stepexecutor fallback / execution ownership",
+        "Wave 6: lineage + runtime-session boundary",
+        "Wave 7: repairchain recovery / retry / duplicate repair",
+        "Wave 8: compatibility bridge retirement",
+        "Wave 9: freeze validation",
+        "Wave 10: seal validation"
+      ],
+      "wave0_authorization_path": [
+        "Wave 0: evidence and invariant lock",
+        "Wave 1: authority context migration"
+      ],
+      "freeze_impact": {
+        "required": true,
+        "condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "source": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "assigned_wave_condition": "Scheduler direct execute_step/execute_steps call inventory must be empty before Wave 3 completes.",
+        "evidence": "Scheduler still has six direct execute_step calls; the assigned Wave 3 direct-call seal remains blocked."
+      },
+      "seal_impact": {
+        "required": true,
+        "conditions": [
+          "Freeze evidence remains valid with no runtime ownership drift, evidence graph drift, compatibility residue, or non-mainline residue."
+        ]
+      }
+    },
+    {
+      "failure_id": "S15A1-GF-002",
+      "failure": "tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler",
+      "blocked_wave": "Wave 7: repairchain recovery / retry / duplicate repair",
+      "downstream_waves": [
+        "Wave 8: compatibility bridge retirement",
+        "Wave 9: freeze validation",
+        "Wave 10: seal validation"
+      ],
+      "wave0_authorization_path": [
+        "Wave 0: evidence and invariant lock",
+        "Wave 1: authority context migration"
+      ],
+      "freeze_impact": {
+        "required": true,
+        "condition": "Native owner is active, blocker assignment is retired, dependency graph is stable, and validation_gate passes before AER freeze.",
+        "wave0_condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "evidence": "The autonomous repair-chain handler returned ok=false; the assigned Wave 7 behavior gate remains blocked."
+      },
+      "seal_impact": {
+        "required": true,
+        "condition": "Freeze evidence remains valid with no runtime ownership drift, evidence graph drift, compatibility residue, or non-mainline residue."
+      }
+    },
+    {
+      "failure_id": "S15A1-GF-003",
+      "failure": "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+      "blocked_wave": "Wave 10: seal validation",
+      "downstream_waves": [],
+      "wave0_authorization_path": [
+        "Wave 0: evidence and invariant lock",
+        "Wave 1: authority context migration"
+      ],
+      "freeze_impact": {
+        "required": true,
+        "condition": "Stage15A aggregate validation must pass before Wave 0 completes and Wave 1 authorization can open.",
+        "source": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "assigned_failure_classification": "seal evidence in Stage14 and Stage15A",
+        "evidence": "The aggregate Wave 0 validation remains failed while this seal-evidence test fails."
+      },
+      "seal_impact": {
+        "required": true,
+        "condition": "No class-level replacement, direct execution ownership, or owner endpoint drift may reappear after freeze.",
+        "evidence_graph_condition": "Source symbols, native owners, dependency edges, and validation evidence hashes remain stable from freeze through seal.",
+        "evidence": "The expected high-risk status-writer inventory differs from the source scan; inventory drift remains seal evidence."
+      }
+    }
+  ],
+  "authorization_analysis": {
+    "can_wave1_be_authorized_if_each_failure_is_removed_individually": false,
+    "individual_removal_analysis": [
+      {
+        "failure_removed": "S15A1-GF-001",
+        "wave1_authorizable": false,
+        "remaining_gate_failures": [
+          "S15A1-GF-002",
+          "S15A1-GF-003"
+        ],
+        "reason": "Stage15A requires the complete validation gate to pass; two observed failures remain."
+      },
+      {
+        "failure_removed": "S15A1-GF-002",
+        "wave1_authorizable": false,
+        "remaining_gate_failures": [
+          "S15A1-GF-001",
+          "S15A1-GF-003"
+        ],
+        "reason": "Stage15A requires the complete validation gate to pass; two observed failures remain."
+      },
+      {
+        "failure_removed": "S15A1-GF-003",
+        "wave1_authorizable": false,
+        "remaining_gate_failures": [
+          "S15A1-GF-001",
+          "S15A1-GF-002"
+        ],
+        "reason": "Stage15A requires the complete validation gate to pass; two observed failures remain."
+      }
+    ],
+    "can_wave1_be_authorized_if_all_failures_are_removed": true,
+    "authorization_assumption": "All Stage15A invariant locks remain pass and the three named tests pass; no new validation failure appears.",
+    "minimum_gate_set": [
+      "S15A1-GF-001",
+      "S15A1-GF-002",
+      "S15A1-GF-003"
+    ],
+    "required_unblocks": [
+      {
+        "failure_id": "S15A1-GF-001",
+        "condition": "The named scheduler ownership test passes with direct_calls == []; all six Stage14 direct StepExecutor call seals are absent and Wave 3 validation passes."
+      },
+      {
+        "failure_id": "S15A1-GF-002",
+        "condition": "The named repair-chain integration test passes with result['ok'] is True and S13C-SE-028 validation_gate passes without repairchain, lineage, or runtime-session regression."
+      },
+      {
+        "failure_id": "S15A1-GF-003",
+        "condition": "The named inventory test passes: every EXPECTED_HIGH_RISK_FILES entry is present in the scan findings, with the Stage14 non-mainline observability report retained."
+      }
+    ],
+    "first_authorizable_wave": "Wave 1: authority context migration, after all minimum_gate_set conditions pass"
+  },
+  "highest_risk_failure": {
+    "failure_id": "S15A1-GF-001",
+    "test_name": "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+    "basis": "Critical freeze blocker with the earliest assigned blocked migration wave (Wave 3) among critical failures."
+  },
+  "blocked_waves": {
+    "direct": [
+      "Wave 3: scheduler direct-call seal",
+      "Wave 7: repairchain recovery / retry / duplicate repair",
+      "Wave 10: seal validation"
+    ],
+    "authorization": "Wave 1 is closed by the failed Wave 0 aggregate validation gate.",
+    "transitive": [
+      "Wave 1: authority context migration",
+      "Wave 2: planner goal overlay migration",
+      "Wave 3: scheduler direct-call seal",
+      "Wave 4: taskrunner execution ownership",
+      "Wave 5: stepexecutor fallback / execution ownership",
+      "Wave 6: lineage + runtime-session boundary",
+      "Wave 7: repairchain recovery / retry / duplicate repair",
+      "Wave 8: compatibility bridge retirement",
+      "Wave 9: freeze validation",
+      "Wave 10: seal validation"
+    ]
+  },
+  "validation_results": {
+    "generator": "pass",
+    "compileall": "pass",
+    "pytest": {
+      "status": "expected_failures_reproduced",
+      "collected": 3,
+      "passed": 0,
+      "failed": 3,
+      "duration_seconds": 2.24,
+      "failure_set_matches_stage15a": true,
+      "command": "python -m pytest -vv tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit"
+    },
+    "overall": "pass_with_expected_failures_preserved_as_evidence"
+  }
+}

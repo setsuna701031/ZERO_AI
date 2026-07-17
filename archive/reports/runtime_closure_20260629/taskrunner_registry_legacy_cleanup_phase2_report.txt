@@ -1,0 +1,43 @@
+TaskRunner Registry Legacy Cleanup Phase2 Report
+
+generated_at: 2026-06-29T14:33:31
+root: E:\zero_ai
+target: core/runtime/task_runner.py
+
+Removed standalone candidate calls
+- removed count: 0
+  - none
+
+Skipped non-standalone candidate calls
+- skipped count: 0
+  - none
+
+Remaining direct registry calls
+- before count: 1
+- after count: 1
+  - line 283 | function=_run_via_runtime_native_mainline | owner=registry | method=register | classification=review_before_migration | source=registry.register(             route_key,             lambda _request, _workspace_root, _goal: delegated_runner,             {"entrypoint": entrypoint, "component": "TaskRunner"},         )
+
+Preserved specialized paths
+- repair remains preserved
+- rollback remains preserved
+- evidence remains preserved
+- authority/checkpoint/recovery remain preserved
+
+No blind deletion
+- only standalone candidate expression calls were removed
+- assignment/return/conditional registry calls were not rewritten in this package
+- specialized repair/rollback/evidence paths were not modified
+
+Not touched
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_legacy_cleanup_phase2.py tests/test_taskrunner_registry_legacy_cleanup_phase1.py tests/test_taskrunner_registry_legacy_cleanup_inventory.py tests/test_taskrunner_registry_callsite_migration.py tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

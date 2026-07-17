@@ -4,6 +4,11 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any, Dict
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

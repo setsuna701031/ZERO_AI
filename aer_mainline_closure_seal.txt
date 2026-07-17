@@ -1,0 +1,18 @@
+AER Mainline Closure Seal
+
+Status: GENERATED
+
+Canonical mainline covered by this seal:
+- CLI work_package execution surface -> RuntimeRouteRegistry -> RuntimeNativeMainline compatibility runner.
+- Scheduler tick/run_one_step public execution surfaces -> RuntimeRouteRegistry.
+- TaskRunner execute_owned_step/run_task_tick public execution surfaces -> RuntimeRouteRegistry.
+- Read-only control inspect remains direct and must not trigger RuntimeRouteRegistry.
+
+Expected validation:
+python -m compileall core/runtime core/tasks core/agent cli tests
+python -m pytest tests/test_aer_mainline_closure_seal.py -q
+
+Notes:
+- This is a focused seal file only.
+- It does not modify runtime code.
+- It does not run full pytest.

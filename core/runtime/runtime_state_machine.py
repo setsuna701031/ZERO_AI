@@ -4,6 +4,11 @@ import copy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
+from core.runtime.contracts.runtime_session_contract import (
+    RUNTIME_SESSION_SCHEMA,
+    is_runtime_session_active_status,
+    is_runtime_session_terminal_status,
+)
 
 
 @dataclass(frozen=True)
@@ -63,13 +68,39 @@ class RuntimeStateMachine:
     }
 
     ALL_STATUSES: Set[str] = TERMINAL_STATUSES | ACTIVE_STATUSES
+    STATUS_ALIASES: Dict[str, str] = {
+        "aborted": STATUS_CANCELLED,
+        "abort": STATUS_CANCELLED,
+        "cancel": STATUS_CANCELLED,
+        "canceled": STATUS_CANCELLED,
+        "complete": STATUS_FINISHED,
+        "completed": STATUS_FINISHED,
+        "done": STATUS_FINISHED,
+        "ok": STATUS_FINISHED,
+        "success": STATUS_FINISHED,
+        "succeeded": STATUS_FINISHED,
+        "verified": STATUS_FINISHED,
+        "partial_failed": STATUS_FAILED,
+        "recoverable_failure": STATUS_FAILED,
+        "verification_failed": STATUS_FAILED,
+        "review_required": STATUS_BLOCKED,
+        "policy_blocked": STATUS_BLOCKED,
+        "rejected": STATUS_BLOCKED,
+        "forced_repair": STATUS_REPLANNING,
+        "fallback": STATUS_REPLANNING,
+        "recovering": STATUS_REPLANNING,
+        "timed_out": STATUS_TIMEOUT,
+        "timedout": STATUS_TIMEOUT,
+    }
 
     ALLOWED_TRANSITIONS: Dict[str, Set[str]] = {
         STATUS_QUEUED: {
             STATUS_PLANNING,
             STATUS_READY,
             STATUS_RUNNING,
+            STATUS_BLOCKED,
             STATUS_PAUSED,
+            STATUS_FINISHED,
             STATUS_CANCELLED,
             STATUS_FAILED,
         },
@@ -122,6 +153,7 @@ class RuntimeStateMachine:
         },
         STATUS_BLOCKED: {
             STATUS_READY,
+            STATUS_RUNNING,
             STATUS_WAITING,
             STATUS_REPLANNING,
             STATUS_FAILED,
@@ -157,13 +189,27 @@ class RuntimeStateMachine:
     # basic helpers
     # ============================================================
 
-    def normalize_status(self, status: Any) -> str:
-        text = str(status or "").strip().lower()
+    def _status_text(self, status: Any) -> str:
+        return str(status or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def canonicalize_status(self, status: Any) -> str:
+        text = self._status_text(status)
         if not text:
             return self.STATUS_QUEUED
-        if text not in self.ALL_STATUSES:
-            return self.STATUS_QUEUED
-        return text
+        if text in self.ALL_STATUSES:
+            return text
+        if text in self.STATUS_ALIASES:
+            return self.STATUS_ALIASES[text]
+        return self.STATUS_QUEUED
+
+    def is_known_status(self, status: Any) -> bool:
+        text = self._status_text(status)
+        if not text:
+            return True
+        return text in self.ALL_STATUSES or text in self.STATUS_ALIASES
+
+    def normalize_status(self, status: Any) -> str:
+        return self.canonicalize_status(status)
 
     def is_terminal(self, status: Any) -> bool:
         return self.normalize_status(status) in self.TERMINAL_STATUSES
@@ -219,6 +265,9 @@ class RuntimeStateMachine:
         state = copy.deepcopy(runtime_state or {})
 
         state["status"] = self.normalize_status(state.get("status"))
+        state["runtime_session_validation"] = self.runtime_session_validation_summary(
+            state["status"]
+        )
 
         history = state.get("runtime_status_history")
         if not isinstance(history, list):
@@ -321,39 +370,13 @@ class RuntimeStateMachine:
         message: str = "",
         extra_updates: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], TransitionResult]:
-        state = self.ensure_runtime_status_fields(runtime_state)
-
-        old_status = self.normalize_status(state.get("status"))
-        target_status = self.normalize_status(new_status)
-
-        updated = copy.deepcopy(state)
-        updated["status"] = target_status
-
-        if extra_updates:
-            updated.update(copy.deepcopy(extra_updates))
-
-        updated = self._apply_status_timestamps(
-            runtime_state=updated,
-            old_status=old_status,
-            new_status=target_status,
-        )
-
-        updated = self._append_history(
-            runtime_state=updated,
-            old_status=old_status,
-            new_status=target_status,
+        return self.transition(
+            runtime_state,
+            new_status,
             reason=reason,
-            message=message or f"force set: {old_status} -> {target_status}",
+            message=message or "force_set_routed_through_transition_validator",
+            extra_updates=extra_updates,
         )
-
-        result = TransitionResult(
-            ok=True,
-            old_status=old_status,
-            new_status=target_status,
-            reason=reason,
-            message=message or f"force set: {old_status} -> {target_status}",
-        )
-        return updated, result
 
     # ============================================================
     # convenience wrappers
@@ -570,6 +593,22 @@ class RuntimeStateMachine:
             message=f"unknown failure policy action: {clean_action}",
         )
 
+    def runtime_session_validation_summary(self, status: Any) -> Dict[str, Any]:
+        """Return a passive runtime-session contract summary.
+
+        This does not enforce transitions and does not change state-machine
+        behavior. It records how the current status projects into the runtime
+        session contract layer.
+        """
+
+        normalized_status = self.normalize_status(status)
+        return {
+            "schema": RUNTIME_SESSION_SCHEMA,
+            "normalized_status": normalized_status,
+            "terminal": is_runtime_session_terminal_status(normalized_status),
+            "active": is_runtime_session_active_status(normalized_status),
+        }
+
     # ============================================================
     # summary / graph helpers
     # ============================================================
@@ -586,6 +625,10 @@ class RuntimeStateMachine:
             "is_runnable": self.is_runnable(status),
             "is_blocked_like": self.is_blocked_like(status),
             "history_count": len(state.get("runtime_status_history", [])),
+            "runtime_session_validation": copy.deepcopy(
+                state.get("runtime_session_validation")
+                or self.runtime_session_validation_summary(status)
+            ),
         }
 
     def allowed_next_statuses(self, status: Any) -> List[str]:

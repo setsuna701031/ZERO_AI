@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
+import hashlib
 import json
 import os
-from datetime import datetime
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from core.runtime.runtime_state_machine import RuntimeStateMachine
@@ -12,6 +17,13 @@ from core.runtime.audit_log import AuditLogger
 from core.runtime.runtime_state_guard import RuntimeStateGuard, validate_runtime_state
 from core.runtime.runtime_transition_policy import RuntimeTransitionPolicy, RuntimeTransitionPolicyError
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_authority_seal import is_task_completion_authority
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    validate_runtime_system_capability,
+)
+from core.runtime.runtime_execution_authority import propagate_runtime_capability
+from core.goals.goal_lineage_contract import attach_runtime_identity_graph, canonical_runtime_identity_graph
 
 
 TERMINAL_STATUSES = {
@@ -32,6 +44,9 @@ NON_TERMINAL_STATUSES = {
     "waiting_blocker",
     "retrying",
     "replanning",
+    "needs_observation",
+    "needs_resume",
+    "recoverable",
     "paused",
 }
 
@@ -58,6 +73,26 @@ MAX_STORED_TRACE_ITEMS = 200
 DROP_RECURSIVE_KEYS = {"runtime_state", "task", "raw_task", "raw_result", "runner_result"}
 
 
+def project_runtime_status(
+    payload: Dict[str, Any],
+    status: Any,
+    *,
+    owner: str = "task_runtime",
+    reason: str = "runtime_status_projection",
+) -> Dict[str, Any]:
+    """Project a runtime status field through the canonical status write boundary.
+
+    Non-owner layers call this instead of assigning ``["status"]`` directly.
+    The ``owner`` and ``reason`` arguments are intentionally accepted for audit
+    readability at call sites without changing legacy payload shapes.
+    """
+    _ = (owner, reason)
+    if not isinstance(payload, dict):
+        raise TypeError("runtime status projection target must be a dict")
+    payload["status"] = status
+    return payload
+
+
 class TaskRuntime:
     def __init__(
         self,
@@ -65,11 +100,18 @@ class TaskRuntime:
         debug: bool = False,
         trace_log_filename: str = "task_runtime_trace.log",
         evidence_adapter: Any = None,
+        operator_runtime: Any = None,
+        operator_bridge: Any = None,
     ) -> None:
         self.workspace_root = workspace_root
         self.debug = debug
         self.trace_log_filename = trace_log_filename
         self.evidence_adapter = evidence_adapter
+        if operator_bridge is None and operator_runtime is not None:
+            from core.runtime.operator_integration_bridge import OperatorIntegrationBridge
+
+            operator_bridge = OperatorIntegrationBridge(operator_runtime)
+        self.operator_bridge = operator_bridge
         self.state_machine = RuntimeStateMachine(debug=debug)
         self.audit = AuditLogger(workspace_root=self.workspace_root)
         self.state_guard = RuntimeStateGuard()
@@ -78,6 +120,70 @@ class TaskRuntime:
             workspace_root=self.workspace_root,
             source="task_runtime",
         )
+
+    def _operator_bridge_session_id(
+        self,
+        *,
+        task: Optional[Dict[str, Any]] = None,
+        state: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        for source in (state or {}, task or {}):
+            if not isinstance(source, dict):
+                continue
+            for key in ("operator_session_id", "persistent_operator_session_id"):
+                value = str(source.get(key) or "").strip()
+                if value:
+                    return value
+            operator_state = source.get("operator")
+            if isinstance(operator_state, dict):
+                value = str(operator_state.get("session_id") or "").strip()
+                if value:
+                    return value
+            metadata = source.get("metadata")
+            if isinstance(metadata, dict):
+                for key in ("operator_session_id", "persistent_operator_session_id"):
+                    value = str(metadata.get(key) or "").strip()
+                    if value:
+                        return value
+        return ""
+
+    def _operator_bridge_record_step(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        result: Dict[str, Any],
+        failed: bool,
+    ) -> None:
+        bridge = getattr(self, "operator_bridge", None)
+        if bridge is None:
+            return
+        session_id = self._operator_bridge_session_id(task=task, state=state)
+        if not session_id:
+            return
+        try:
+            evidence_refs = result.get("evidence_refs") if isinstance(result, dict) else None
+            nested_result = result.get("result") if isinstance(result, dict) else None
+            if not evidence_refs and isinstance(nested_result, dict):
+                evidence_refs = nested_result.get("evidence_refs")
+            if failed:
+                bridge.on_step_failed(
+                    session_id,
+                    step,
+                    error=result.get("error") or result.get("message") or result,
+                    evidence_refs=evidence_refs,
+                )
+            else:
+                bridge.on_step_completed(
+                    session_id,
+                    step,
+                    result=result,
+                    evidence_refs=evidence_refs,
+                )
+        except Exception:
+            if self.debug:
+                print("[TaskRuntime] operator bridge step record ignored")
 
     # ============================================================
     # runtime state
@@ -114,6 +220,14 @@ class TaskRuntime:
 
     def save_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         normalized = self._normalize_runtime_state(task, state if isinstance(state, dict) else {})
+        identity_graph = task.get("runtime_identity_graph") if isinstance(task, dict) else None
+        if identity_graph is not None:
+            normalized = attach_runtime_identity_graph(normalized, canonical_runtime_identity_graph(identity_graph))
+        capability_provenance = task.get("runtime_capability_provenance") if isinstance(task, dict) else None
+        if capability_provenance is not None:
+            normalized.update(
+                propagate_runtime_capability(normalized, capability_provenance, stage="persistence")
+            )
         if not str(normalized.get("runtime_owner") or "").strip():
             normalized = self._stamp_runtime_ownership(
                 normalized,
@@ -293,15 +407,35 @@ class TaskRuntime:
                         state["last_output"] = value.strip()
                         break
 
+            self._operator_bridge_record_step(
+                task=task,
+                state=state,
+                step=current_step,
+                result=sanitized_step_result,
+                failed=False,
+            )
+
         next_index = idx + 1
         state["current_step_index"] = next_index
         state["updated_at"] = self._now()
 
         if next_index >= len(steps):
-            state["status"] = "finished"
-            state["finished_at_tick"] = current_tick
-            state["finished_tick"] = current_tick
-            state["finished_at"] = self._now()
+            if bool(state.get("terminal_validation_required")):
+                state["status"] = "needs_observation"
+                state["next_action"] = "observe_terminal_result"
+                state["terminal_validation"] = {
+                    "execution_succeeded": True,
+                    "observation_completed": False,
+                    "artifact_validation_passed": False,
+                    "evidence_persisted": False,
+                    "deviation_detected": False,
+                    "confirmed_finished": False,
+                }
+            else:
+                state["status"] = "finished"
+                state["finished_at_tick"] = current_tick
+                state["finished_tick"] = current_tick
+                state["finished_at"] = self._now()
 
             final_answer = self._extract_final_answer_from_step_result(step_result)
             if final_answer:
@@ -433,6 +567,14 @@ class TaskRuntime:
                     state["last_output"] = value.strip()
                     break
 
+        self._operator_bridge_record_step(
+            task=task,
+            state=state,
+            step=current_step,
+            result=sanitized_step_result,
+            failed=True,
+        )
+
         normalized_status = str(status or "").strip().lower()
         if normalized_status in TERMINAL_STATUSES or normalized_status in NON_TERMINAL_STATUSES:
             state["status"] = normalized_status
@@ -495,11 +637,34 @@ class TaskRuntime:
         current_tick: int = 0,
         final_answer: str = "",
         final_result: Optional[Dict[str, Any]] = None,
+        completion_authority: Any = None,
     ) -> Dict[str, Any]:
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
+        if not is_task_completion_authority(
+            completion_authority,
+            task_id=task_id,
+            package_id=str(task.get("package_id") or task.get("work_package_id") or ""),
+            session_id=str(task.get("session_id") or task.get("runtime_session") or ""),
+        ):
+            raise PermissionError("taskrunner_completion_authority_required")
         state = self.load_runtime_state(task)
         state = self._sync_steps_from_task(task, state)
         state = self._sync_loop_fields_from_task(task, state)
         state = self._stamp_runtime_ownership(state, owner="task_runtime", action="mark_finished")
+
+        validation = state.get("terminal_validation") if isinstance(state.get("terminal_validation"), dict) else {}
+        if bool(state.get("terminal_validation_required")) and not self._terminal_validation_ready(validation):
+            state["status"] = "needs_observation"
+            state["next_action"] = "observe_terminal_result"
+            state = self.save_runtime_state(task, state)
+            self._sync_task_from_runtime_state(task, state)
+            return {
+                "ok": True,
+                "status": "needs_observation",
+                "action": "terminal_validation_pending",
+                "task": copy.deepcopy(task),
+                "runtime_state": state,
+            }
 
         state["status"] = "finished"
         state["current_step_index"] = int(state.get("steps_total", 0) or 0)
@@ -568,10 +733,120 @@ class TaskRuntime:
             "task": copy.deepcopy(task),
             "runtime_state": state,
             "final_answer": state.get("final_answer", ""),
+            "task_completion_authority": completion_authority,
             **self._runtime_transition_metadata(state, "mark_finished"),
         }
         self._emit_task_runtime_evidence("completed", task=task, state=state)
         return result
+
+    def begin_terminal_validation(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        state = self.load_runtime_state(task)
+        state["terminal_validation_required"] = True
+        validation = state.get("terminal_validation") if isinstance(state.get("terminal_validation"), dict) else {}
+        validation.setdefault("execution_succeeded", False)
+        validation.setdefault("observation_completed", False)
+        validation.setdefault("artifact_validation_passed", False)
+        validation.setdefault("evidence_persisted", False)
+        validation.setdefault("deviation_detected", False)
+        validation.setdefault("confirmed_finished", False)
+        state["terminal_validation"] = validation
+        state = self.save_runtime_state(task, state)
+        self._sync_task_from_runtime_state(task, state)
+        return state
+
+    def record_terminal_observation(
+        self,
+        task: Dict[str, Any],
+        *,
+        deviation_report: Dict[str, Any],
+        evidence_persisted: bool,
+        current_tick: int = 0,
+        deviation_step_index: int = 0,
+        blocked: bool = False,
+        completion_authority: Any = None,
+    ) -> Dict[str, Any]:
+        state = self.load_runtime_state(task)
+        report = copy.deepcopy(deviation_report if isinstance(deviation_report, dict) else {})
+        deviation_detected = bool(report.get("deviation_detected"))
+        validation = state.get("terminal_validation") if isinstance(state.get("terminal_validation"), dict) else {}
+        validation.update({
+            "execution_succeeded": bool(validation.get("execution_succeeded", True)),
+            "observation_completed": True,
+            "artifact_validation_passed": not deviation_detected,
+            "evidence_persisted": bool(evidence_persisted),
+            "deviation_detected": deviation_detected,
+            "deviation_reason": str(report.get("reason") or ""),
+            "confirmed_finished": False,
+        })
+        state["terminal_validation_required"] = True
+        state["terminal_validation"] = validation
+
+        if deviation_detected:
+            status = "blocked" if blocked or not bool(report.get("recoverable", True)) else "needs_resume"
+            state["status"] = status
+            state["current_step_index"] = max(0, int(deviation_step_index))
+            state["next_action"] = "wait_for_external_event" if status == "blocked" else "run_next_tick"
+            state["last_error"] = str(report.get("reason") or "terminal_deviation")
+            for key in ("finished_at", "finished_tick", "finished_at_tick", "final_result", "terminal_reason"):
+                state.pop(key, None)
+            self._synchronize_terminal_subgoal_state(state, status=status, reason=state["last_error"])
+            state = self.save_runtime_state(task, state)
+            self._sync_task_from_runtime_state(task, state)
+            return {"ok": status != "blocked", "status": status, "task": copy.deepcopy(task), "runtime_state": state}
+
+        validation["confirmed_finished"] = self._terminal_validation_ready(validation)
+        state["terminal_validation"] = validation
+        state = self.save_runtime_state(task, state)
+        self._sync_task_from_runtime_state(task, state)
+        return self.mark_finished(
+            task=task,
+            current_tick=current_tick,
+            completion_authority=completion_authority,
+            final_result=state.get("last_step_result", {}).get("result")
+            if isinstance(state.get("last_step_result"), dict)
+            else None,
+        )
+
+    @staticmethod
+    def _terminal_validation_ready(validation: Dict[str, Any]) -> bool:
+        return all(
+            bool(validation.get(key))
+            for key in (
+                "execution_succeeded",
+                "observation_completed",
+                "artifact_validation_passed",
+                "evidence_persisted",
+            )
+        ) and not bool(validation.get("deviation_detected"))
+
+    def _synchronize_terminal_subgoal_state(self, state: Dict[str, Any], *, status: str, reason: str) -> None:
+        context = self._normalize_repair_context_for_task(state.get("repair_context"), task=state, state=state)
+        goal_state = context.get("engineering_goal_state") if isinstance(context.get("engineering_goal_state"), dict) else {}
+        current_subgoal_id = str(goal_state.get("current_subgoal_id") or "")
+        if not current_subgoal_id:
+            steps = state.get("steps") if isinstance(state.get("steps"), list) else []
+            subgoal = self._subgoal_for_step_index(
+                goal_state,
+                steps,
+                self._safe_int(state.get("current_step_index"), 0),
+            )
+            current_subgoal_id = str(subgoal.get("subgoal_id") or "") if isinstance(subgoal, dict) else ""
+            if current_subgoal_id:
+                goal_state["current_subgoal_id"] = current_subgoal_id
+        if current_subgoal_id:
+            self._set_subgoal_status(goal_state, current_subgoal_id, status, reason=reason)
+        goal_state["status"] = status
+        context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status=status)
+        session = context.get("repair_session") if isinstance(context.get("repair_session"), dict) else {}
+        if session:
+            session["status"] = status
+            session.pop("finished_at", None)
+            terminal = session.get("terminal_node_id")
+            if terminal:
+                session["previous_terminal_node_id"] = terminal
+                session["terminal_node_id"] = ""
+            context["repair_session"] = session
+        state["repair_context"] = context
 
 
     # ============================================================
@@ -948,6 +1223,25 @@ class TaskRuntime:
         if not policy_decision.ok:
             raise RuntimeTransitionPolicyError(policy_decision.reason)
 
+        if "status" in transition_updates:
+            raw_status = transition_updates.get("status")
+            requested_status_text = str(raw_status or "").strip().lower().replace("-", "_").replace(" ", "_")
+            if not self.state_machine.is_known_status(raw_status):
+                raise RuntimeTransitionPolicyError(
+                    f"runtime_state_machine_rejected_unknown_status:{requested_status_text}"
+                )
+            requested_status = self.state_machine.normalize_status(raw_status)
+            transition_updates["status"] = requested_status
+            machine_state, machine_result = self.state_machine.transition(
+                next_state,
+                requested_status,
+                reason=transition_action,
+                message=f"authorized runtime transition by {transition_owner}",
+            )
+            if not machine_result.ok:
+                raise RuntimeTransitionPolicyError(machine_result.message)
+            next_state = machine_state
+
         next_state.setdefault("runtime_transition_policy", {})
         if isinstance(next_state.get("runtime_transition_policy"), dict):
             next_state["runtime_transition_policy"]["last_decision"] = policy_decision.to_dict()
@@ -1065,6 +1359,13 @@ class TaskRuntime:
         task_steps = task.get("steps", [])
         if not isinstance(task_steps, list):
             task_steps = []
+        terminal_validation_required = bool(task.get("terminal_validation_required")) or any(
+            isinstance(step, dict) and (
+                bool(step.get("expected_artifacts"))
+                or isinstance(step.get("expected"), dict)
+            )
+            for step in task_steps
+        )
 
         state = {
             "task_name": self._task_name(task),
@@ -1104,7 +1405,45 @@ class TaskRuntime:
             "blockers": self._normalize_blockers(task.get("blockers", [])),
             "active_blocker_count": 0,
             "waiting_reason": str(task.get("waiting_reason") or ""),
+            "terminal_validation_required": terminal_validation_required,
+            "terminal_validation": copy.deepcopy(task.get("terminal_validation", {}))
+            if isinstance(task.get("terminal_validation"), dict)
+            else {},
         }
+        for key in (
+            "lifecycle",
+            "lifecycle_state",
+            "engineering_session_state",
+            "transition_history",
+            "last_transition",
+            "session_id",
+            "runtime_session_id",
+            "goal_id",
+            "root_goal_id",
+            "source_goal_id",
+            "goal_lineage_id",
+            "branch_id",
+            "branch_type",
+            "execution_id",
+            "capability_id",
+            "evidence_id",
+            "runtime_identity_graph",
+            "operator_runtime_id",
+            "evidence",
+            "reason",
+            "trigger",
+            "source",
+            "schema",
+            "timestamp",
+        ):
+            if key in task:
+                state[key] = copy.deepcopy(task.get(key))
+        operator_session_id = self._operator_bridge_session_id(task=task, state=state)
+        if operator_session_id:
+            state["operator_session_id"] = operator_session_id
+            state.setdefault("metadata", {})
+            if isinstance(state["metadata"], dict):
+                state["metadata"]["operator_session_id"] = operator_session_id
         active = self._active_blockers(state.get("blockers", []))
         state["active_blocker_count"] = len(active)
         review_blocker = next((item for item in active if item.get("type") == "review"), None)
@@ -1120,10 +1459,49 @@ class TaskRuntime:
     def _normalize_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         normalized = copy.deepcopy(state if isinstance(state, dict) else {})
 
+        # Lifecycle/session payload is durable resume evidence. Runtime state is
+        # authoritative once present; otherwise preserve the inbound task value.
+        for key in (
+            "lifecycle",
+            "lifecycle_state",
+            "engineering_session_state",
+            "transition_history",
+            "last_transition",
+            "session_id",
+            "runtime_session_id",
+            "goal_id",
+            "root_goal_id",
+            "source_goal_id",
+            "goal_lineage_id",
+            "branch_id",
+            "branch_type",
+            "execution_id",
+            "capability_id",
+            "evidence_id",
+            "runtime_identity_graph",
+            "operator_runtime_id",
+            "evidence",
+            "reason",
+            "trigger",
+            "source",
+            "schema",
+            "timestamp",
+        ):
+            if key not in normalized and key in task:
+                normalized[key] = copy.deepcopy(task.get(key))
+
         normalized["task_name"] = normalized.get("task_name") or self._task_name(task)
         normalized["task_id"] = normalized.get("task_id") or self._task_id(task)
         normalized["goal"] = normalized.get("goal") or self._task_goal(task)
         normalized["task_dir"] = normalized.get("task_dir") or self._task_dir(task)
+        operator_session_id = self._operator_bridge_session_id(task=task, state=normalized)
+        if operator_session_id:
+            normalized["operator_session_id"] = operator_session_id
+            metadata = normalized.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata["operator_session_id"] = operator_session_id
+            normalized["metadata"] = metadata
 
         status = str(normalized.get("status") or task.get("status") or "queued").strip().lower()
         if status not in TERMINAL_STATUSES and status not in NON_TERMINAL_STATUSES:
@@ -1427,6 +1805,43 @@ class TaskRuntime:
         task["failure_type"] = safe_state.get("failure_type")
         task["failure_message"] = safe_state.get("failure_message")
         task["failure_decision"] = copy.deepcopy(safe_state.get("failure_decision"))
+        for key in (
+            "lifecycle",
+            "lifecycle_state",
+            "engineering_session_state",
+            "transition_history",
+            "last_transition",
+            "session_id",
+            "runtime_session_id",
+            "goal_id",
+            "root_goal_id",
+            "source_goal_id",
+            "goal_lineage_id",
+            "branch_id",
+            "branch_type",
+            "execution_id",
+            "capability_id",
+            "evidence_id",
+            "runtime_identity_graph",
+            "operator_runtime_id",
+            "evidence",
+            "reason",
+            "trigger",
+            "source",
+            "schema",
+            "timestamp",
+        ):
+            if key in safe_state:
+                task[key] = copy.deepcopy(safe_state.get(key))
+        operator_session_id = self._operator_bridge_session_id(task=task, state=safe_state)
+        if operator_session_id:
+            task["operator_session_id"] = operator_session_id
+            metadata = task.setdefault("metadata", {})
+            if isinstance(metadata, dict):
+                metadata["operator_session_id"] = operator_session_id
+            operator_state = task.setdefault("operator", {})
+            if isinstance(operator_state, dict):
+                operator_state["session_id"] = operator_session_id
 
         # Do not embed the whole runtime_state back into task.
         # That creates recursive task -> runtime_state -> task-like payload growth.
@@ -1853,7 +2268,7 @@ class TaskRuntime:
                     if text:
                         normalized_steps.append(text)
             status = str(item.get("status") or "pending").strip().lower()
-            if status not in {"pending", "running", "finished", "failed", "blocked", "skipped"}:
+            if status not in {"pending", "running", "needs_observation", "needs_resume", "recoverable", "finished", "failed", "blocked", "skipped"}:
                 status = "pending"
             normalized_subgoals.append(
                 {
@@ -1885,7 +2300,7 @@ class TaskRuntime:
                 current_subgoal_id = pending["subgoal_id"] if pending else (normalized_subgoals[-1]["subgoal_id"] if normalized_subgoals else "")
 
         status = str(source.get("status") or "").strip().lower()
-        if status not in {"running", "finished", "failed", "blocked"}:
+        if status not in {"running", "needs_observation", "needs_resume", "recoverable", "finished", "failed", "blocked"}:
             if failed:
                 status = "failed"
             elif blocked:
@@ -1978,7 +2393,8 @@ class TaskRuntime:
             break
 
         if idx >= len(steps):
-            context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status="finished")
+            pending_status = "needs_observation" if bool(state.get("terminal_validation_required")) else "finished"
+            context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status=pending_status)
             state["repair_context"] = context
             state = self.apply_runtime_transition(
                 task,
@@ -1987,11 +2403,11 @@ class TaskRuntime:
                 action="subgoal_flow_finished",
                 updates={
                     "current_step_index": len(steps),
-                    "status": "finished",
+                    "status": pending_status,
                 },
                 save=True,
             )
-            return {"ok": True, "status": "finished", "runtime_state": state, "task": copy.deepcopy(task)}
+            return {"ok": True, "status": pending_status, "runtime_state": state, "task": copy.deepcopy(task)}
 
         subgoal = self._subgoal_for_step_index(goal_state, steps, idx)
         subgoal_id = str(subgoal.get("subgoal_id") or "") if isinstance(subgoal, dict) else ""
@@ -2365,7 +2781,10 @@ class TaskRuntime:
         indices = self._subgoal_step_indices(subgoal, steps)
         next_index = self._safe_int(state.get("current_step_index"), step_index + 1)
         if indices and all(index < next_index for index in indices):
-            self._set_subgoal_status(goal_state, subgoal_id, "finished", result_summary="subgoal steps completed")
+            if bool(state.get("terminal_validation_required")) and next_index >= len(steps):
+                self._set_subgoal_status(goal_state, subgoal_id, "needs_observation", result_summary="subgoal execution completed; terminal validation pending")
+            else:
+                self._set_subgoal_status(goal_state, subgoal_id, "finished", result_summary="subgoal steps completed")
         else:
             self._set_subgoal_status(goal_state, subgoal_id, "running")
         goal_state["current_subgoal_id"] = subgoal_id
@@ -2547,7 +2966,7 @@ class TaskRuntime:
         if not isinstance(context, dict):
             return
         session = self._normalize_repair_session(context.get("repair_session"))
-        final_status = "finished" if str(status or "").strip().lower() == "finished" else "failed"
+        final_status = "completed" if canonical_runtime_status(status) == "completed" else "failed"
         session["status"] = final_status
         session["finished_at"] = self._now()
         session["terminal_node_id"] = str(session.get("current_node_id") or session.get("terminal_node_id") or "")
@@ -3175,6 +3594,18 @@ class TaskRuntime:
         current_tick: int = 0,
         verify_error: Any = None,
     ) -> Dict[str, Any]:
+        runtime_identity = task.get("runtime_identity") if isinstance(task, dict) else None
+        if isinstance(runtime_identity, dict) and str(runtime_identity.get("identity_type") or "").upper() == "SYSTEM":
+            task_id = str(task.get("task_id") or task.get("id") or "")
+            validate_runtime_system_capability(
+                task.get("runtime_rollback_capability"),
+                issuer="TaskRunner",
+                capability_class=RuntimeCapabilityClass.ROLLBACK,
+                resource="workspace",
+                action="rollback",
+                scope={"task_id": task_id},
+                lineage={"task_id": task_id},
+            )
         state = self.load_runtime_state(task)
         context = self._normalize_repair_context(state.get("repair_context"))
         existing_result = context.get("rollback_result")
@@ -6671,6 +7102,18 @@ class TaskRuntime:
                 metadata={
                     "task_runtime": True,
                     "runtime_state_persistence": True,
+                    **(
+                        propagate_runtime_capability(
+                            {}, data.get("runtime_capability_provenance"), stage="mutation"
+                        )
+                        if isinstance(data, dict) and data.get("runtime_capability_provenance") is not None
+                        else {}
+                    ),
+                    **(
+                        {"runtime_identity_graph": data.get("runtime_identity_graph")}
+                        if isinstance(data, dict) and data.get("runtime_identity_graph") is not None
+                        else {}
+                    ),
                 },
             )
             return
@@ -7280,8 +7723,8 @@ def _zero_v910_mark_failed(self: TaskRuntime, task: Dict[str, Any], current_tick
     return result
 
 
-def _zero_v910_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    result = _ZERO_V910_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result)
+def _zero_v910_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None, completion_authority: Any = None) -> Dict[str, Any]:
+    result = _ZERO_V910_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result, completion_authority=completion_authority)
     state = result.get('runtime_state') if isinstance(result, dict) and isinstance(result.get('runtime_state'), dict) else self.load_runtime_state(task)
     context = state.get('repair_context') if isinstance(state.get('repair_context'), dict) else {}
     context = self._zero_v910_refresh_engineering_execution(context, selection_reason='task finished')
@@ -7575,8 +8018,8 @@ def _zero_v912_mark_failed(self: TaskRuntime, task: Dict[str, Any], current_tick
     return self._zero_v912_resave_with_actions(task, result)
 
 
-def _zero_v912_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    result = _ZERO_V912_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result)
+def _zero_v912_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None, completion_authority: Any = None) -> Dict[str, Any]:
+    result = _ZERO_V912_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result, completion_authority=completion_authority)
     return self._zero_v912_resave_with_actions(task, result)
 
 
@@ -8705,3 +9148,1916 @@ def _zero_v917_build_governed_replay_aer_governance_core_seal(
 
 
 TaskRuntime.build_governed_replay_aer_governance_core_seal = _zero_v917_build_governed_replay_aer_governance_core_seal
+
+
+# ============================================================
+# Sandboxed Execution Ticket Preview v1
+# ============================================================
+
+def _zero_v918_build_governed_sandboxed_execution_ticket_preview(
+    self: TaskRuntime,
+    aer_governance_core_seal: Dict[str, Any],
+    *,
+    policy_resolution: Optional[Dict[str, Any]] = None,
+    diff_verification: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    aer_governance_core_seal = copy.deepcopy(
+        aer_governance_core_seal if isinstance(aer_governance_core_seal, dict) else {}
+    )
+    policy_resolution = copy.deepcopy(policy_resolution if isinstance(policy_resolution, dict) else {})
+    diff_verification = copy.deepcopy(diff_verification if isinstance(diff_verification, dict) else {})
+
+    replay_id = str(
+        aer_governance_core_seal.get("replay_id")
+        or policy_resolution.get("replay_id")
+        or diff_verification.get("replay_id")
+        or ""
+    )
+    transaction_id = str(
+        aer_governance_core_seal.get("transaction_id")
+        or policy_resolution.get("transaction_id")
+        or diff_verification.get("transaction_id")
+        or ""
+    )
+    action = str(
+        aer_governance_core_seal.get("action")
+        or policy_resolution.get("action")
+        or diff_verification.get("action")
+        or ""
+    )
+    blocked_reason = str(
+        aer_governance_core_seal.get("blocked_reason")
+        or policy_resolution.get("blocked_reason")
+        or diff_verification.get("blocked_reason")
+        or "sandboxed execution ticket is preview-only"
+    )
+    risk_level = str(
+        aer_governance_core_seal.get("risk_level")
+        or policy_resolution.get("risk_level")
+        or diff_verification.get("risk_level")
+        or "high"
+    )
+    execution_ticket_status = "preview_only"
+
+    execution_ticket = {
+        "ticket_type": "sandboxed_execution_ticket_preview",
+        "preview_only": True,
+        "immutable": True,
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "governance_sealed": True,
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "dispatch_allowed": False,
+        "shell_execution_allowed": False,
+    }
+
+    capability_envelope = {
+        "envelope_type": "sandboxed_capability_envelope_preview",
+        "preview_only": True,
+        "readonly_execution_only": True,
+        "mutation_execution_allowed": False,
+        "shell_execution_allowed": False,
+        "filesystem_write_allowed": False,
+        "network_access_allowed": False,
+        "subprocess_allowed": False,
+        "repo_mutation_allowed": False,
+    }
+
+    allowed_readonly_commands = [
+        "pwd",
+        "dir",
+        "ls",
+        "git status",
+        "python -m compileall",
+        "pytest --collect-only",
+    ]
+    blocked_commands = [
+        "rm",
+        "del",
+        "move",
+        "rename",
+        "git commit",
+        "git push",
+        "git reset",
+        "pip install",
+        "powershell",
+        "bash",
+        "cmd /c",
+        "python script_that_writes.py",
+    ]
+
+    sandbox_dispatch_preview = {
+        "dispatch_type": "sandboxed_dispatch_preview",
+        "preview_only": True,
+        "readonly_dispatch_only": True,
+        "dispatch_allowed": False,
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "shell_execution_allowed": False,
+        "blocked_reason": blocked_reason,
+        "risk_level": risk_level,
+    }
+
+    execution_verification_contract = {
+        "verification_type": "sandbox_execution_verification_preview",
+        "preview_only": True,
+        "deterministic_verification_required": True,
+        "evidence_capture_required": True,
+        "rollback_required_before_mutation": True,
+        "governance_seal_required": True,
+    }
+
+    evidence_capture_contract = {
+        "evidence_type": "sandbox_execution_evidence_preview",
+        "preview_only": True,
+        "capture_stdout": True,
+        "capture_stderr": True,
+        "capture_exit_code": True,
+        "capture_command": True,
+        "capture_runtime_metadata": True,
+        "persist_execution_logs": False,
+    }
+
+    debug_context = {
+        "source": "governed_sandboxed_execution_ticket_preview_v1",
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "execution_ticket_status": execution_ticket_status,
+        "readonly_execution_only": True,
+        "shell_execution_allowed": False,
+        "filesystem_write_allowed": False,
+        "network_access_allowed": False,
+        "subprocess_allowed": False,
+        "repo_mutation_allowed": False,
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "authorization_granted": False,
+        "blocked_reason": blocked_reason,
+        "risk_level": risk_level,
+    }
+
+    return {
+        "source": "governed_sandboxed_execution_ticket_preview_v1",
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "execution_ticket_status": execution_ticket_status,
+        "execution_ticket": execution_ticket,
+        "capability_envelope": capability_envelope,
+        "allowed_readonly_commands": allowed_readonly_commands,
+        "blocked_commands": blocked_commands,
+        "sandbox_dispatch_preview": sandbox_dispatch_preview,
+        "execution_verification_contract": execution_verification_contract,
+        "evidence_capture_contract": evidence_capture_contract,
+        "aer_governance_core_seal": aer_governance_core_seal,
+        "policy_resolution": policy_resolution,
+        "diff_verification": diff_verification,
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "executor_dispatch_allowed": False,
+        "scheduler_dispatch_allowed": False,
+        "command_execution_allowed": False,
+        "authorization_granted": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+        "shell_execution_allowed": False,
+        "filesystem_write_allowed": False,
+        "network_access_allowed": False,
+        "subprocess_allowed": False,
+        "repo_mutation_allowed": False,
+        "blocked_reason": blocked_reason,
+        "risk_level": risk_level,
+        "debug_context": debug_context,
+    }
+
+
+TaskRuntime.build_governed_sandboxed_execution_ticket_preview = _zero_v918_build_governed_sandboxed_execution_ticket_preview
+
+
+# ============================================================
+# Read-only Command Execution Gate v1
+# ============================================================
+
+def _zero_v919_normalize_command(command: Any) -> str:
+    return " ".join(str(command or "").strip().lower().split())
+
+
+def _zero_v919_command_matches_pattern(command: str, pattern: str) -> bool:
+    pattern = _zero_v919_normalize_command(pattern)
+    return command == pattern or command.startswith(f"{pattern} ")
+
+
+def _zero_v919_command_matches_readonly(command: str, pattern: str) -> bool:
+    pattern = _zero_v919_normalize_command(pattern)
+    if command == pattern:
+        return True
+    return pattern in {"python -m compileall", "pytest --collect-only"} and command.startswith(f"{pattern} ")
+
+
+def _zero_v919_classify_command(
+    normalized_command: str,
+    *,
+    allowed_readonly_commands: List[str],
+    blocked_commands: List[str],
+) -> Dict[str, Any]:
+    readonly_patterns = [_zero_v919_normalize_command(command) for command in allowed_readonly_commands]
+    blocked_patterns = [_zero_v919_normalize_command(command) for command in blocked_commands]
+
+    readonly_match = any(
+        _zero_v919_command_matches_readonly(normalized_command, pattern)
+        for pattern in readonly_patterns
+    )
+    matched_blocked = ""
+    blocked_operator = ""
+    for operator in (">>", ">", "|", "&&", ";"):
+        if operator in normalized_command:
+            blocked_operator = operator
+            break
+
+    for pattern in blocked_patterns:
+        if _zero_v919_command_matches_pattern(normalized_command, pattern):
+            matched_blocked = pattern
+            break
+
+    blocked_match = bool(matched_blocked or blocked_operator)
+    blocked_pattern_classification = "none"
+    if blocked_operator:
+        command_category = "blocked_shell"
+        blocked_pattern_classification = "shell_operator"
+    elif blocked_match and matched_blocked in {"powershell", "bash", "cmd /c", "sh"}:
+        command_category = "blocked_shell"
+        blocked_pattern_classification = "shell"
+    elif blocked_match and matched_blocked in {"pip install", "npm install", "curl", "wget"}:
+        command_category = "blocked_network_or_install"
+        blocked_pattern_classification = "network_or_install"
+    elif blocked_match:
+        command_category = "blocked_mutation"
+        blocked_pattern_classification = "mutation"
+    elif readonly_match:
+        command_category = "readonly_allowed"
+        blocked_pattern_classification = "none"
+    else:
+        command_category = "unknown"
+        blocked_pattern_classification = "none"
+
+    return {
+        "readonly_match": readonly_match,
+        "blocked_match": blocked_match,
+        "matched_blocked_pattern": matched_blocked or blocked_operator,
+        "blocked_pattern_classification": blocked_pattern_classification,
+        "command_category": command_category,
+    }
+
+
+def _zero_v919_build_readonly_command_execution_gate(
+    self: TaskRuntime,
+    sandboxed_execution_ticket_preview: Dict[str, Any],
+    command: str,
+    *,
+    enable_readonly_execution: bool = False,
+    readonly_execution_mode: str = "preview",
+) -> Dict[str, Any]:
+    sandboxed_execution_ticket_preview = copy.deepcopy(
+        sandboxed_execution_ticket_preview if isinstance(sandboxed_execution_ticket_preview, dict) else {}
+    )
+    normalized_command = _zero_v919_normalize_command(command)
+
+    allowed_readonly_commands = sandboxed_execution_ticket_preview.get("allowed_readonly_commands")
+    if not isinstance(allowed_readonly_commands, list):
+        allowed_readonly_commands = []
+    allowed_readonly_commands = [str(item) for item in allowed_readonly_commands]
+    if not allowed_readonly_commands:
+        allowed_readonly_commands = [
+            "pwd",
+            "dir",
+            "ls",
+            "git status",
+            "python -m compileall",
+            "pytest --collect-only",
+        ]
+
+    blocked_commands = sandboxed_execution_ticket_preview.get("blocked_commands")
+    if not isinstance(blocked_commands, list):
+        blocked_commands = []
+    blocked_commands = [str(item) for item in blocked_commands]
+    for command_pattern in (
+        "rm",
+        "del",
+        "copy",
+        "move",
+        "mv",
+        "rename",
+        "git commit",
+        "git push",
+        "git reset",
+        "git clean",
+        "git checkout",
+        "pip install",
+        "npm install",
+        "curl",
+        "wget",
+        "powershell",
+        "bash",
+        "sh",
+        "cmd /c",
+        "python -c",
+        "python script_that_writes.py",
+        "subprocess",
+    ):
+        if command_pattern not in blocked_commands:
+            blocked_commands.append(command_pattern)
+
+    classification = _zero_v919_classify_command(
+        normalized_command,
+        allowed_readonly_commands=allowed_readonly_commands,
+        blocked_commands=blocked_commands,
+    )
+    readonly_match = bool(classification["readonly_match"])
+    blocked_match = bool(classification["blocked_match"])
+    command_category = str(classification["command_category"])
+    command_allowed = readonly_match and not blocked_match
+    normalized_mode = str(readonly_execution_mode or "preview").strip().lower()
+    explicit_readonly_execution = bool(enable_readonly_execution) and normalized_mode == "execute_readonly"
+    execution_allowed = command_allowed and explicit_readonly_execution
+    command_execution_allowed = command_allowed and execution_allowed
+    blocked_pattern_classification = str(classification["blocked_pattern_classification"])
+
+    if blocked_match:
+        deny_reason = "blocked command pattern"
+    elif not command_allowed:
+        deny_reason = "command not in readonly whitelist"
+    else:
+        deny_reason = ""
+
+    expected_evidence = ["stdout", "stderr", "exit_code", "command", "runtime_metadata"]
+    execution_plan_preview = {
+        "preview_only": True,
+        "command": command,
+        "normalized_command": normalized_command,
+        "command_allowed": command_allowed,
+        "command_category": command_category,
+        "dispatch_allowed": False,
+        "execution_allowed": execution_allowed,
+        "readonly_execution_only": True,
+        "mutation_allowed": False,
+        "expected_evidence": expected_evidence,
+        "enable_readonly_execution": bool(enable_readonly_execution),
+        "readonly_execution_mode": normalized_mode,
+        "command_execution_allowed": command_execution_allowed,
+    }
+
+    evidence_capture_plan = {
+        "preview_only": True,
+        "capture_stdout": True,
+        "capture_stderr": True,
+        "capture_exit_code": True,
+        "capture_command": True,
+        "capture_runtime_metadata": True,
+        "persist_logs": False,
+        "write_allowed": False,
+    }
+
+    verification_plan = {
+        "preview_only": True,
+        "verify_exit_code": True,
+        "verify_no_mutation": True,
+        "verify_command_in_whitelist": True,
+        "verify_blacklist_not_matched": True,
+        "deterministic_verification_required": True,
+    }
+
+    debug_context = {
+        "source": "readonly_command_execution_gate_v1",
+        "command": command,
+        "normalized_command": normalized_command,
+        "command_category": command_category,
+        "command_allowed": command_allowed,
+        "deny_reason": deny_reason,
+        "readonly_match": readonly_match,
+        "blocked_match": blocked_match,
+        "blocked_pattern_classification": blocked_pattern_classification,
+        "enable_readonly_execution": bool(enable_readonly_execution),
+        "readonly_execution_mode": normalized_mode,
+        "execution_allowed": execution_allowed,
+        "command_execution_allowed": command_execution_allowed,
+        "mutation_allowed": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+    }
+
+    return {
+        "source": "readonly_command_execution_gate_v1",
+        "command": command,
+        "normalized_command": normalized_command,
+        "command_category": command_category,
+        "command_allowed": command_allowed,
+        "deny_reason": deny_reason,
+        "readonly_match": readonly_match,
+        "blocked_match": blocked_match,
+        "blocked_pattern_classification": blocked_pattern_classification,
+        "enable_readonly_execution": bool(enable_readonly_execution),
+        "readonly_execution_mode": normalized_mode,
+        "execution_plan_preview": execution_plan_preview,
+        "evidence_capture_plan": evidence_capture_plan,
+        "verification_plan": verification_plan,
+        "sandboxed_execution_ticket_preview": sandboxed_execution_ticket_preview,
+        "execution_allowed": execution_allowed,
+        "mutation_allowed": False,
+        "executor_dispatch_allowed": False,
+        "scheduler_dispatch_allowed": False,
+        "command_execution_allowed": command_execution_allowed,
+        "authorization_granted": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+        "debug_context": debug_context,
+    }
+
+
+TaskRuntime.build_readonly_command_execution_gate = _zero_v919_build_readonly_command_execution_gate
+
+
+# ============================================================
+# Controlled Read-only Execution Bridge v1
+# ============================================================
+
+def _zero_readonly_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _zero_readonly_sha256_preview(value: Any, *, preview_limit: int = 2000) -> Dict[str, Any]:
+    text = value if isinstance(value, str) else str(value or "")
+    return {
+        "digest": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "preview": text[:preview_limit],
+    }
+
+
+def _zero_build_execution_record(
+    result: Dict[str, Any],
+    *,
+    argv: List[str],
+    cwd: str,
+    started_at: str,
+    finished_at: str,
+) -> Dict[str, Any]:
+    stdout = str(result.get("stdout") or "")
+    stderr = str(result.get("stderr") or "")
+    stdout_record = _zero_readonly_sha256_preview(stdout)
+    stderr_record = _zero_readonly_sha256_preview(stderr)
+    return {
+        "record_type": "readonly_command_execution",
+        "command": result.get("command", ""),
+        "normalized_command": result.get("normalized_command", ""),
+        "argv": list(argv),
+        "cwd": cwd,
+        "status": result.get("status", ""),
+        "executed": bool(result.get("executed", False)),
+        "returncode": result.get("returncode"),
+        "duration_seconds": result.get("duration_seconds", 0.0),
+        "timeout_seconds": result.get("timeout_seconds", 10),
+        "stdout_digest": stdout_record["digest"],
+        "stderr_digest": stderr_record["digest"],
+        "stdout_preview": stdout_record["preview"],
+        "stderr_preview": stderr_record["preview"],
+        "started_at": started_at,
+        "finished_at": finished_at,
+    }
+
+
+def _zero_build_replay_record(
+    result: Dict[str, Any],
+    *,
+    argv: List[str],
+    cwd: str,
+) -> Dict[str, Any]:
+    replayable = bool(result.get("executed", False)) and bool(result.get("command_execution_allowed", False))
+    return {
+        "replay_type": "readonly_command_replay",
+        "replayable": replayable,
+        "replay_command": result.get("command", ""),
+        "replay_normalized_command": result.get("normalized_command", ""),
+        "replay_argv": list(argv) if replayable else [],
+        "replay_cwd": cwd if replayable else "",
+        "expected_returncode": result.get("returncode") if replayable else None,
+        "expected_stdout_digest": result.get("execution_record", {}).get("stdout_digest", ""),
+        "expected_stderr_digest": result.get("execution_record", {}).get("stderr_digest", ""),
+        "replay_safety": "readonly_only",
+        "replay_requires_confirmation": False,
+    }
+
+
+def _zero_build_evidence_record(result: Dict[str, Any]) -> Dict[str, Any]:
+    execution_record = result.get("execution_record") if isinstance(result.get("execution_record"), dict) else {}
+    evidence_seed = "|".join(
+        [
+            str(result.get("normalized_command") or ""),
+            str(result.get("status") or ""),
+            str(execution_record.get("stdout_digest") or ""),
+            str(execution_record.get("stderr_digest") or ""),
+            str(result.get("returncode")),
+        ]
+    )
+    return {
+        "evidence_type": "command_execution_evidence",
+        "evidence_id": hashlib.sha256(evidence_seed.encode("utf-8")).hexdigest(),
+        "source": "readonly_execution_gate",
+        "command": result.get("command", ""),
+        "normalized_command": result.get("normalized_command", ""),
+        "status": result.get("status", ""),
+        "executed": bool(result.get("executed", False)),
+        "stdout_digest": execution_record.get("stdout_digest", ""),
+        "stderr_digest": execution_record.get("stderr_digest", ""),
+        "returncode": result.get("returncode"),
+        "duration_seconds": result.get("duration_seconds", 0.0),
+        "captured_fields": ["stdout", "stderr", "returncode", "duration_seconds", "status"],
+    }
+
+
+def _zero_build_verification_record(result: Dict[str, Any]) -> Dict[str, Any]:
+    status = str(result.get("status") or "")
+    returncode = result.get("returncode")
+    if status == "preview":
+        verification_status = "preview"
+    elif status == "blocked":
+        verification_status = "blocked"
+    elif status == "timeout":
+        verification_status = "timeout"
+    elif bool(result.get("executed", False)) and returncode == 0:
+        verification_status = "passed"
+    elif bool(result.get("executed", False)):
+        verification_status = "failed"
+    else:
+        verification_status = "blocked"
+
+    checks = {
+        "gate_allowed": bool(result.get("command_allowed", False)),
+        "command_execution_allowed": bool(result.get("command_execution_allowed", False)),
+        "no_shell_true": True,
+        "argv_generated_from_whitelist": bool(result.get("execution_record", {}).get("argv")),
+        "blocked_commands_not_executed": (
+            str(result.get("blocked_pattern_classification") or "none") == "none"
+            or not bool(result.get("executed", False))
+        ),
+        "unsafe_paths_not_executed": (
+            str(result.get("deny_reason") or "") != "unsafe readonly command path"
+            or not bool(result.get("executed", False))
+        ),
+    }
+    return {
+        "verification_type": "readonly_execution_verification",
+        "verification_status": verification_status,
+        "checks": checks,
+    }
+
+
+def _zero_v920_readonly_result_from_gate(
+    gate: Dict[str, Any],
+    *,
+    status: str,
+    stdout: str = "",
+    stderr: str = "",
+    returncode: Optional[int] = None,
+    duration_seconds: float = 0.0,
+    timeout_seconds: int = 10,
+    executed: bool = False,
+    deny_reason: Optional[str] = None,
+    argv: Optional[List[str]] = None,
+    cwd: str = "",
+    started_at: Optional[str] = None,
+    finished_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    started_at = started_at or _zero_readonly_now()
+    finished_at = finished_at or _zero_readonly_now()
+    argv = list(argv or [])
+    result = {
+        "status": status,
+        "command": gate.get("command", ""),
+        "normalized_command": gate.get("normalized_command", ""),
+        "command_allowed": bool(gate.get("command_allowed", False)),
+        "execution_allowed": bool(gate.get("execution_allowed", False)),
+        "command_execution_allowed": bool(gate.get("command_execution_allowed", False)),
+        "deny_reason": str(deny_reason if deny_reason is not None else gate.get("deny_reason", "")),
+        "blocked_pattern_classification": str(gate.get("blocked_pattern_classification", "none")),
+        "execution_plan_preview": copy.deepcopy(gate.get("execution_plan_preview", {})),
+        "evidence_capture_plan": copy.deepcopy(gate.get("evidence_capture_plan", {})),
+        "verification_plan": copy.deepcopy(gate.get("verification_plan", {})),
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": returncode,
+        "duration_seconds": duration_seconds,
+        "timeout_seconds": timeout_seconds,
+        "executed": executed,
+    }
+    result["execution_record"] = _zero_build_execution_record(
+        result,
+        argv=argv,
+        cwd=cwd,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    result["replay_record"] = _zero_build_replay_record(result, argv=argv, cwd=cwd)
+    result["evidence_record"] = _zero_build_evidence_record(result)
+    result["verification_record"] = _zero_build_verification_record(result)
+    return result
+
+
+def _zero_v920_path_has_unsafe_tokens(path_value: str) -> bool:
+    if not str(path_value or "").strip():
+        return True
+    lowered = str(path_value).lower()
+    if any(token in lowered for token in (">>", ">", "|", "&&", ";")):
+        return True
+    parts = lowered.replace("\\", "/").split("/")
+    return ".." in parts
+
+
+def _zero_v920_resolve_safe_readonly_path(path_value: str, cwd: str) -> Optional[str]:
+    if _zero_v920_path_has_unsafe_tokens(path_value):
+        return None
+    if str(path_value).startswith("-"):
+        return None
+
+    root = os.path.abspath(cwd)
+    candidate = path_value if os.path.isabs(path_value) else os.path.join(root, path_value)
+    candidate = os.path.abspath(candidate)
+    try:
+        if os.path.commonpath([root, candidate]) != root:
+            return None
+    except ValueError:
+        return None
+    return candidate
+
+
+def _zero_v920_parse_readonly_argv(
+    command: str,
+    normalized_command: str,
+    cwd: str,
+) -> Dict[str, Any]:
+    if normalized_command == "git status":
+        return {"ok": True, "argv": ["git", "status", "--short"], "internal": ""}
+
+    tokens = str(command or "").strip().split()
+    lowered_tokens = [token.lower() for token in tokens]
+
+    if normalized_command.startswith("python -m compileall "):
+        if len(tokens) != 4 or lowered_tokens[:3] != ["python", "-m", "compileall"]:
+            return {"ok": False, "deny_reason": "unsafe readonly command path"}
+        safe_path = _zero_v920_resolve_safe_readonly_path(tokens[3], cwd)
+        if not safe_path:
+            return {"ok": False, "deny_reason": "unsafe readonly command path"}
+        return {"ok": True, "argv": [sys.executable, "-m", "compileall", safe_path], "internal": ""}
+
+    if normalized_command.startswith("pytest --collect-only "):
+        if len(tokens) != 3 or lowered_tokens[:2] != ["pytest", "--collect-only"]:
+            return {"ok": False, "deny_reason": "unsafe readonly command path"}
+        safe_path = _zero_v920_resolve_safe_readonly_path(tokens[2], cwd)
+        if not safe_path:
+            return {"ok": False, "deny_reason": "unsafe readonly command path"}
+        return {"ok": True, "argv": [sys.executable, "-m", "pytest", "--collect-only", safe_path], "internal": ""}
+
+    return {"ok": False, "deny_reason": "command not in readonly whitelist"}
+
+
+def _zero_v920_execute_internal_readonly_command(normalized_command: str, cwd: str) -> Dict[str, Any]:
+    if normalized_command == "pwd":
+        return {"stdout": f"{os.path.abspath(cwd)}\n", "stderr": "", "returncode": 0}
+    if normalized_command in {"dir", "ls"}:
+        try:
+            names = sorted(os.listdir(cwd))
+        except OSError as exc:
+            return {"stdout": "", "stderr": str(exc), "returncode": 1}
+        return {"stdout": "\n".join(names) + ("\n" if names else ""), "stderr": "", "returncode": 0}
+    return {"stdout": "", "stderr": "unsupported internal readonly command", "returncode": 1}
+
+
+def _zero_v920_run_readonly_command_execution_gate(
+    self: TaskRuntime,
+    sandboxed_execution_ticket_preview: Dict[str, Any],
+    command: str,
+    *,
+    cwd: Optional[str] = None,
+    timeout_seconds: int = 10,
+    enable_readonly_execution: bool = False,
+    readonly_execution_mode: str = "preview",
+) -> Dict[str, Any]:
+    start = time.monotonic()
+    started_at = _zero_readonly_now()
+    gate = self.build_readonly_command_execution_gate(
+        sandboxed_execution_ticket_preview,
+        command=command,
+        enable_readonly_execution=enable_readonly_execution,
+        readonly_execution_mode=readonly_execution_mode,
+    )
+    timeout_seconds = int(timeout_seconds or 10)
+    run_cwd = os.path.abspath(cwd or os.getcwd())
+
+    if not bool(gate.get("command_execution_allowed", False)):
+        status = "preview" if bool(gate.get("command_allowed", False)) and not bool(gate.get("execution_allowed", False)) else "blocked"
+        return _zero_v920_readonly_result_from_gate(
+            gate,
+            status=status,
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+            executed=False,
+            argv=[],
+            cwd=run_cwd,
+            started_at=started_at,
+            finished_at=_zero_readonly_now(),
+        )
+
+    normalized_command = str(gate.get("normalized_command") or "")
+
+    if normalized_command in {"pwd", "dir", "ls"}:
+        internal = _zero_v920_execute_internal_readonly_command(normalized_command, run_cwd)
+        returncode = internal["returncode"]
+        internal_argv = ["__internal_readonly__", normalized_command]
+        return _zero_v920_readonly_result_from_gate(
+            gate,
+            status="executed" if returncode == 0 else "failed",
+            stdout=internal["stdout"],
+            stderr=internal["stderr"],
+            returncode=returncode,
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+            executed=True,
+            argv=internal_argv,
+            cwd=run_cwd,
+            started_at=started_at,
+            finished_at=_zero_readonly_now(),
+        )
+
+    argv_plan = _zero_v920_parse_readonly_argv(command, normalized_command, run_cwd)
+    if not bool(argv_plan.get("ok", False)):
+        return _zero_v920_readonly_result_from_gate(
+            gate,
+            status="blocked",
+            stderr=str(argv_plan.get("deny_reason") or ""),
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+            executed=False,
+            deny_reason=str(argv_plan.get("deny_reason") or "unsafe readonly command path"),
+            argv=[],
+            cwd=run_cwd,
+            started_at=started_at,
+            finished_at=_zero_readonly_now(),
+        )
+
+    try:
+        argv = list(argv_plan["argv"])
+        from core.runtime.runtime_execution_authority_gate import enforce_execution_authority
+        enforce_execution_authority(
+            source="core.runtime.execution_gateway",
+            action_type="command",
+            metadata={"side_effect": True, "delegated_from": "TaskRuntime.readonly_command_gate"},
+        )
+        from core.runtime.execution_gateway import safe_subprocess_run
+
+        completed = safe_subprocess_run(
+            argv,
+            timeout=timeout_seconds,
+            cwd=run_cwd,
+        )
+        stdout = str(completed.get("stdout") or "")
+        stderr = str(completed.get("stderr") or "")
+        returncode = completed.get("returncode")
+        if returncode is None and completed.get("error"):
+            if not stderr:
+                stderr = str(completed.get("error") or f"readonly command timeout after {timeout_seconds} seconds")
+            return _zero_v920_readonly_result_from_gate(
+                gate,
+                status="timeout",
+                stdout=stdout,
+                stderr=stderr,
+                returncode=None,
+                duration_seconds=time.monotonic() - start,
+                timeout_seconds=timeout_seconds,
+                executed=True,
+                deny_reason="readonly command timeout",
+                argv=list(argv_plan.get("argv") or []),
+                cwd=run_cwd,
+                started_at=started_at,
+                finished_at=_zero_readonly_now(),
+            )
+    except Exception as exc:
+        return _zero_v920_readonly_result_from_gate(
+            gate,
+            status="failed",
+            stderr=f"{type(exc).__name__}: {exc}",
+            returncode=None,
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+            executed=False,
+            deny_reason="readonly command execution failed",
+            argv=list(argv_plan.get("argv") or []),
+            cwd=run_cwd,
+            started_at=started_at,
+            finished_at=_zero_readonly_now(),
+        )
+    return _zero_v920_readonly_result_from_gate(
+        gate,
+        status="executed" if returncode == 0 else "failed",
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
+        duration_seconds=time.monotonic() - start,
+        timeout_seconds=timeout_seconds,
+        executed=True,
+        argv=list(argv_plan.get("argv") or []),
+        cwd=run_cwd,
+        started_at=started_at,
+        finished_at=_zero_readonly_now(),
+    )
+
+
+TaskRuntime.run_readonly_command_execution_gate = _zero_v920_run_readonly_command_execution_gate
+TaskRuntime.execute_readonly_command_from_gate = _zero_v920_run_readonly_command_execution_gate
+
+
+# ============================================================
+# Runtime Evidence Registry v1
+# ============================================================
+
+def _zero_v921_stable_evidence_id(result: Dict[str, Any]) -> str:
+    evidence_record = result.get("evidence_record") if isinstance(result.get("evidence_record"), dict) else {}
+    evidence_id = str(evidence_record.get("evidence_id") or "").strip()
+    if evidence_id:
+        return evidence_id
+
+    execution_record = result.get("execution_record") if isinstance(result.get("execution_record"), dict) else {}
+    seed = "|".join(
+        [
+            str(result.get("command") or ""),
+            str(result.get("normalized_command") or ""),
+            str(result.get("status") or ""),
+            str(result.get("returncode")),
+            str(execution_record.get("stdout_digest") or ""),
+            str(execution_record.get("stderr_digest") or ""),
+        ]
+    )
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+
+def _zero_v921_registry_record_id(evidence_id: str) -> str:
+    return hashlib.sha256(f"runtime_evidence_registry_record|{evidence_id}".encode("utf-8")).hexdigest()
+
+
+class RuntimeEvidenceRegistry:
+    def __init__(self) -> None:
+        self._records: List[Dict[str, Any]] = []
+        self._by_record_id: Dict[str, Dict[str, Any]] = {}
+        self._by_evidence_id: Dict[str, Dict[str, Any]] = {}
+        self._replay_reports: List[Dict[str, Any]] = []
+        self.execution_chain_nodes: List[Dict[str, Any]] = []
+        self.execution_chain_edges: List[Dict[str, Any]] = []
+        self._chain_nodes_by_id: Dict[str, Dict[str, Any]] = {}
+        self._execution_node_by_evidence_id: Dict[str, Dict[str, Any]] = {}
+
+    def register_execution_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        result = copy.deepcopy(result if isinstance(result, dict) else {})
+        evidence_id = _zero_v921_stable_evidence_id(result)
+        registry_record_id = _zero_v921_registry_record_id(evidence_id)
+
+        record = {
+            "registry_record_id": registry_record_id,
+            "evidence_id": evidence_id,
+            "record_type": "runtime_evidence_registry_record",
+            "source": "readonly_execution_gate",
+            "command": str(result.get("command") or ""),
+            "normalized_command": str(result.get("normalized_command") or ""),
+            "status": str(result.get("status") or ""),
+            "executed": bool(result.get("executed", False)),
+            "returncode": result.get("returncode"),
+            "created_at": _zero_readonly_now(),
+            "execution_record": copy.deepcopy(result.get("execution_record") if isinstance(result.get("execution_record"), dict) else {}),
+            "replay_record": copy.deepcopy(result.get("replay_record") if isinstance(result.get("replay_record"), dict) else {}),
+            "evidence_record": copy.deepcopy(result.get("evidence_record") if isinstance(result.get("evidence_record"), dict) else {}),
+            "verification_record": copy.deepcopy(result.get("verification_record") if isinstance(result.get("verification_record"), dict) else {}),
+        }
+
+        self._by_record_id[registry_record_id] = record
+        self._by_evidence_id[evidence_id] = record
+        existing_index = next(
+            (idx for idx, item in enumerate(self._records) if item.get("registry_record_id") == registry_record_id),
+            None,
+        )
+        if existing_index is None:
+            self._records.append(record)
+        else:
+            self._records[existing_index] = record
+        self._register_execution_chain_node(record)
+        return copy.deepcopy(record)
+
+    def _register_execution_chain_node(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        evidence_id = str(record.get("evidence_id") or "")
+        verification_record = record.get("verification_record") if isinstance(record.get("verification_record"), dict) else {}
+        replay_record = record.get("replay_record") if isinstance(record.get("replay_record"), dict) else {}
+        node_id = hashlib.sha256(f"readonly_execution|{evidence_id}".encode("utf-8")).hexdigest()
+        node = {
+            "node_id": node_id,
+            "node_type": "readonly_execution",
+            "evidence_id": evidence_id,
+            "command": record.get("command", ""),
+            "normalized_command": record.get("normalized_command", ""),
+            "status": record.get("status", ""),
+            "executed": bool(record.get("executed", False)),
+            "returncode": record.get("returncode"),
+            "verification_status": verification_record.get("verification_status", ""),
+            "replayable": bool(replay_record.get("replayable", False)),
+            "created_at": _zero_readonly_now(),
+        }
+        self._chain_nodes_by_id[node_id] = node
+        self._execution_node_by_evidence_id[evidence_id] = node
+        existing_index = next(
+            (idx for idx, item in enumerate(self.execution_chain_nodes) if item.get("node_id") == node_id),
+            None,
+        )
+        if existing_index is None:
+            self.execution_chain_nodes.append(node)
+        else:
+            self.execution_chain_nodes[existing_index] = node
+        return node
+
+    def _register_replay_chain_node(self, report: Dict[str, Any]) -> Dict[str, Any]:
+        evidence_id = str(report.get("evidence_id") or "")
+        replay_report_id = str(report.get("replay_report_id") or "")
+        node_id = hashlib.sha256(f"readonly_replay_validation|{replay_report_id}".encode("utf-8")).hexdigest()
+        node = {
+            "node_id": node_id,
+            "node_type": "readonly_replay_validation",
+            "evidence_id": evidence_id,
+            "replay_report_id": replay_report_id,
+            "replay_validation_status": report.get("replay_validation_status", ""),
+            "replay_executed": bool(report.get("replay_executed", False)),
+            "returncode_match": bool(report.get("returncode_match", False)),
+            "stdout_digest_match": bool(report.get("stdout_digest_match", False)),
+            "stderr_digest_match": bool(report.get("stderr_digest_match", False)),
+            "created_at": _zero_readonly_now(),
+        }
+        self._chain_nodes_by_id[node_id] = node
+        self.execution_chain_nodes.append(node)
+
+        execution_node = self._execution_node_by_evidence_id.get(evidence_id)
+        if isinstance(execution_node, dict):
+            edge_id = hashlib.sha256(
+                f"replay_validation_of|{node_id}|{execution_node.get('node_id')}|{evidence_id}".encode("utf-8")
+            ).hexdigest()
+            edge = {
+                "edge_id": edge_id,
+                "edge_type": "replay_validation_of",
+                "from_node_id": node_id,
+                "to_node_id": execution_node.get("node_id", ""),
+                "evidence_id": evidence_id,
+                "created_at": _zero_readonly_now(),
+            }
+            self.execution_chain_edges.append(edge)
+        return node
+
+    def list_records(self) -> List[Dict[str, Any]]:
+        return copy.deepcopy(self._records)
+
+    def get_record(self, record_id: str) -> Optional[Dict[str, Any]]:
+        record = self._by_record_id.get(str(record_id or ""))
+        return copy.deepcopy(record) if isinstance(record, dict) else None
+
+    def get_by_evidence_id(self, evidence_id: str) -> Optional[Dict[str, Any]]:
+        record = self._by_evidence_id.get(str(evidence_id or ""))
+        return copy.deepcopy(record) if isinstance(record, dict) else None
+
+    def query(
+        self,
+        *,
+        status: Optional[str] = None,
+        executed: Optional[bool] = None,
+        command_contains: Optional[str] = None,
+        replayable: Optional[bool] = None,
+        verification_status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        needle = str(command_contains or "").lower()
+        for record in self._records:
+            try:
+                if status is not None and str(record.get("status") or "") != str(status):
+                    continue
+                if executed is not None and bool(record.get("executed", False)) is not bool(executed):
+                    continue
+                if needle and needle not in str(record.get("command") or "").lower():
+                    continue
+                replay_record = record.get("replay_record") if isinstance(record.get("replay_record"), dict) else {}
+                if replayable is not None and bool(replay_record.get("replayable", False)) is not bool(replayable):
+                    continue
+                verification_record = (
+                    record.get("verification_record") if isinstance(record.get("verification_record"), dict) else {}
+                )
+                if verification_status is not None and str(verification_record.get("verification_status") or "") != str(verification_status):
+                    continue
+                results.append(copy.deepcopy(record))
+            except Exception:
+                continue
+        return results
+
+    def build_replay_request(self, evidence_id: str) -> Dict[str, Any]:
+        record = self.get_by_evidence_id(evidence_id)
+        if not isinstance(record, dict):
+            return {
+                "replay_request_type": "readonly_command_replay_request",
+                "evidence_id": str(evidence_id or ""),
+                "replayable": False,
+                "deny_reason": "evidence record not found",
+            }
+
+        replay_record = record.get("replay_record") if isinstance(record.get("replay_record"), dict) else {}
+        replayable = bool(replay_record.get("replayable", False))
+        request = {
+            "replay_request_type": "readonly_command_replay_request",
+            "evidence_id": record.get("evidence_id", ""),
+            "replayable": replayable,
+            "replay_command": replay_record.get("replay_command", record.get("command", "")),
+            "replay_normalized_command": replay_record.get("replay_normalized_command", record.get("normalized_command", "")),
+            "replay_argv": list(replay_record.get("replay_argv") if isinstance(replay_record.get("replay_argv"), list) else []),
+            "replay_cwd": replay_record.get("replay_cwd", ""),
+            "expected_returncode": replay_record.get("expected_returncode"),
+            "expected_stdout_digest": replay_record.get("expected_stdout_digest", ""),
+            "expected_stderr_digest": replay_record.get("expected_stderr_digest", ""),
+            "replay_safety": replay_record.get("replay_safety", "readonly_only"),
+        }
+        if not replayable:
+            request["deny_reason"] = "evidence record is not replayable"
+        return request
+
+    def build_verification_lineage(self, evidence_id: str) -> Dict[str, Any]:
+        record = self.get_by_evidence_id(evidence_id)
+        if not isinstance(record, dict):
+            return {
+                "lineage_type": "readonly_execution_verification_lineage",
+                "evidence_id": str(evidence_id or ""),
+                "command": "",
+                "normalized_command": "",
+                "status": "missing",
+                "executed": False,
+                "verification_status": "missing",
+                "checks": {},
+                "stdout_digest": "",
+                "stderr_digest": "",
+                "returncode": None,
+            }
+
+        execution_record = record.get("execution_record") if isinstance(record.get("execution_record"), dict) else {}
+        verification_record = record.get("verification_record") if isinstance(record.get("verification_record"), dict) else {}
+        return {
+            "lineage_type": "readonly_execution_verification_lineage",
+            "evidence_id": record.get("evidence_id", ""),
+            "command": record.get("command", ""),
+            "normalized_command": record.get("normalized_command", ""),
+            "status": record.get("status", ""),
+            "executed": bool(record.get("executed", False)),
+            "verification_status": verification_record.get("verification_status", ""),
+            "checks": copy.deepcopy(verification_record.get("checks") if isinstance(verification_record.get("checks"), dict) else {}),
+            "stdout_digest": execution_record.get("stdout_digest", ""),
+            "stderr_digest": execution_record.get("stderr_digest", ""),
+            "returncode": record.get("returncode"),
+        }
+
+    def replay(self, evidence_id: str, timeout_seconds: Optional[int] = None) -> Dict[str, Any]:
+        report = replay_readonly_execution_from_registry(
+            self,
+            evidence_id,
+            timeout_seconds=timeout_seconds,
+        )
+        self._replay_reports.append(copy.deepcopy(report))
+        self._register_replay_chain_node(report)
+        return report
+
+    def validate_replay(self, evidence_id: str, timeout_seconds: Optional[int] = None) -> Dict[str, Any]:
+        return self.replay(evidence_id, timeout_seconds=timeout_seconds)
+
+    def list_replay_reports(self) -> List[Dict[str, Any]]:
+        return copy.deepcopy(self._replay_reports)
+
+    def get_replay_reports(self, evidence_id: str) -> List[Dict[str, Any]]:
+        return [
+            copy.deepcopy(report)
+            for report in self._replay_reports
+            if str(report.get("evidence_id") or "") == str(evidence_id or "")
+        ]
+
+    def list_execution_chain_nodes(self) -> List[Dict[str, Any]]:
+        return copy.deepcopy(self.execution_chain_nodes)
+
+    def list_execution_chain_edges(self) -> List[Dict[str, Any]]:
+        return copy.deepcopy(self.execution_chain_edges)
+
+    def get_execution_chain_node(self, node_id: str) -> Optional[Dict[str, Any]]:
+        node = self._chain_nodes_by_id.get(str(node_id or ""))
+        return copy.deepcopy(node) if isinstance(node, dict) else None
+
+    def get_execution_chain_for_evidence(self, evidence_id: str) -> Dict[str, Any]:
+        evidence_id = str(evidence_id or "")
+        execution_node = self._execution_node_by_evidence_id.get(evidence_id)
+        if not isinstance(execution_node, dict):
+            return {
+                "chain_type": "readonly_execution_chain",
+                "evidence_id": evidence_id,
+                "found": False,
+                "reason": "evidence id not found",
+                "execution_node": {},
+                "replay_nodes": [],
+                "edges": [],
+                "replay_report_count": 0,
+                "latest_replay_validation_status": "",
+            }
+        replay_nodes = [
+            copy.deepcopy(node)
+            for node in self.execution_chain_nodes
+            if node.get("node_type") == "readonly_replay_validation" and node.get("evidence_id") == evidence_id
+        ]
+        edges = [
+            copy.deepcopy(edge)
+            for edge in self.execution_chain_edges
+            if edge.get("evidence_id") == evidence_id
+        ]
+        latest_status = str(replay_nodes[-1].get("replay_validation_status") or "") if replay_nodes else ""
+        return {
+            "chain_type": "readonly_execution_chain",
+            "evidence_id": evidence_id,
+            "found": True,
+            "execution_node": copy.deepcopy(execution_node),
+            "replay_nodes": replay_nodes,
+            "edges": edges,
+            "replay_report_count": len(replay_nodes),
+            "latest_replay_validation_status": latest_status,
+        }
+
+    def build_execution_ancestry(self, evidence_id: str) -> Dict[str, Any]:
+        chain = self.get_execution_chain_for_evidence(evidence_id)
+        if not bool(chain.get("found", False)):
+            return {
+                "ancestry_type": "readonly_execution_ancestry",
+                "evidence_id": str(evidence_id or ""),
+                "found": False,
+                "reason": "evidence id not found",
+                "root_execution_node": {},
+                "validation_nodes": [],
+                "edge_count": 0,
+                "validation_count": 0,
+                "latest_validation_status": "",
+                "has_mismatch": False,
+                "has_timeout": False,
+                "has_blocked_replay": False,
+            }
+        validation_nodes = list(chain.get("replay_nodes") or [])
+        statuses = [str(node.get("replay_validation_status") or "") for node in validation_nodes]
+        return {
+            "ancestry_type": "readonly_execution_ancestry",
+            "evidence_id": chain.get("evidence_id", ""),
+            "found": True,
+            "root_execution_node": copy.deepcopy(chain.get("execution_node", {})),
+            "validation_nodes": validation_nodes,
+            "edge_count": len(chain.get("edges") or []),
+            "validation_count": len(validation_nodes),
+            "latest_validation_status": statuses[-1] if statuses else "",
+            "has_mismatch": "mismatch" in statuses,
+            "has_timeout": "timeout" in statuses,
+            "has_blocked_replay": "blocked" in statuses,
+        }
+
+    def build_replay_lineage(self, evidence_id: str) -> Dict[str, Any]:
+        evidence_id = str(evidence_id or "")
+        if evidence_id not in self._by_evidence_id:
+            return {
+                "lineage_type": "readonly_replay_lineage",
+                "evidence_id": evidence_id,
+                "found": False,
+                "reason": "evidence id not found",
+                "replay_reports": [],
+                "validation_statuses": [],
+                "latest_report": {},
+                "latest_validation_status": "",
+                "mismatch_count": 0,
+                "timeout_count": 0,
+                "blocked_count": 0,
+                "passed_count": 0,
+            }
+        reports = self.get_replay_reports(evidence_id)
+        statuses = [str(report.get("replay_validation_status") or "") for report in reports]
+        return {
+            "lineage_type": "readonly_replay_lineage",
+            "evidence_id": evidence_id,
+            "found": True,
+            "replay_reports": reports,
+            "validation_statuses": statuses,
+            "latest_report": copy.deepcopy(reports[-1]) if reports else {},
+            "latest_validation_status": statuses[-1] if statuses else "",
+            "mismatch_count": statuses.count("mismatch"),
+            "timeout_count": statuses.count("timeout"),
+            "blocked_count": statuses.count("blocked"),
+            "passed_count": statuses.count("passed"),
+        }
+
+    def evaluate_execution_health(self, evidence_id: str) -> Dict[str, Any]:
+        evidence_id = str(evidence_id or "")
+        record = self.get_by_evidence_id(evidence_id)
+        if not isinstance(record, dict):
+            return {
+                "evaluation_type": "runtime_execution_health",
+                "evidence_id": evidence_id,
+                "found": False,
+                "reason": "evidence id not found",
+                "command": "",
+                "normalized_command": "",
+                "executed": False,
+                "verification_status": "unknown",
+                "replay_validation_count": 0,
+                "passed_replay_count": 0,
+                "mismatch_count": 0,
+                "timeout_count": 0,
+                "blocked_count": 0,
+                "replay_success_rate": 0.0,
+                "health_status": "unknown",
+                "health_score": 0.0,
+                "reasons": ["evidence id not found"],
+                "warnings": [],
+            }
+        lineage = self.build_replay_lineage(evidence_id)
+        verification_record = record.get("verification_record") if isinstance(record.get("verification_record"), dict) else {}
+        passed = int(lineage.get("passed_count", 0) or 0)
+        mismatch = int(lineage.get("mismatch_count", 0) or 0)
+        timeout = int(lineage.get("timeout_count", 0) or 0)
+        blocked = int(lineage.get("blocked_count", 0) or 0)
+        replay_count = len(lineage.get("replay_reports") or [])
+        success_rate = passed / replay_count if replay_count else 0.0
+        reasons: List[str] = []
+        warnings: List[str] = []
+
+        if replay_count == 0:
+            health_status = "unknown"
+            health_score = 0.25
+            reasons.append("no replay validation available")
+        elif blocked:
+            health_status = "blocked"
+            health_score = 0.2
+            reasons.append("blocked replay detected")
+        elif mismatch:
+            health_status = "unstable" if mismatch >= passed else "degraded"
+            health_score = min(0.5, max(0.2, success_rate * 0.5))
+            reasons.append("replay digest mismatch detected")
+        elif timeout:
+            health_status = "degraded"
+            health_score = min(0.4, max(0.2, success_rate * 0.4))
+            reasons.append("replay timeout detected")
+            warnings.append("runtime replay timed out")
+        elif success_rate >= 0.9:
+            health_status = "healthy"
+            health_score = 0.95
+            reasons.append("replay validations passed")
+        else:
+            health_status = "degraded"
+            health_score = max(0.3, success_rate * 0.7)
+            reasons.append("insufficient replay success rate")
+
+        return {
+            "evaluation_type": "runtime_execution_health",
+            "evidence_id": evidence_id,
+            "found": True,
+            "command": record.get("command", ""),
+            "normalized_command": record.get("normalized_command", ""),
+            "executed": bool(record.get("executed", False)),
+            "verification_status": verification_record.get("verification_status", "unknown"),
+            "replay_validation_count": replay_count,
+            "passed_replay_count": passed,
+            "mismatch_count": mismatch,
+            "timeout_count": timeout,
+            "blocked_count": blocked,
+            "replay_success_rate": success_rate,
+            "health_status": health_status,
+            "health_score": float(max(0.0, min(1.0, health_score))),
+            "reasons": reasons,
+            "warnings": warnings,
+        }
+
+    def evaluate_replay_stability(self, evidence_id: str) -> Dict[str, Any]:
+        evidence_id = str(evidence_id or "")
+        if evidence_id not in self._by_evidence_id:
+            return {
+                "evaluation_type": "runtime_replay_stability",
+                "evidence_id": evidence_id,
+                "found": False,
+                "reason": "evidence id not found",
+                "replay_count": 0,
+                "deterministic_replay_count": 0,
+                "mismatch_count": 0,
+                "timeout_count": 0,
+                "blocked_count": 0,
+                "replay_stability_score": 0.0,
+                "replay_stability_status": "unknown",
+                "replay_deterministic": False,
+                "reasons": ["evidence id not found"],
+            }
+        lineage = self.build_replay_lineage(evidence_id)
+        replay_count = len(lineage.get("replay_reports") or [])
+        passed = int(lineage.get("passed_count", 0) or 0)
+        mismatch = int(lineage.get("mismatch_count", 0) or 0)
+        timeout = int(lineage.get("timeout_count", 0) or 0)
+        blocked = int(lineage.get("blocked_count", 0) or 0)
+        reasons: List[str] = []
+        if replay_count == 0:
+            status = "unknown"
+            score = 0.25
+            reasons.append("no replay validation available")
+        elif blocked:
+            status = "blocked"
+            score = 0.1
+            reasons.append("blocked replay detected")
+        elif mismatch:
+            status = "unstable"
+            score = 0.25
+            reasons.append("digest mismatch detected")
+        elif timeout:
+            status = "partially_stable"
+            score = 0.4
+            reasons.append("timeout replay detected")
+        elif passed == replay_count:
+            status = "stable"
+            score = 1.0
+            reasons.append("all replay validations passed")
+        else:
+            status = "partially_stable"
+            score = passed / replay_count if replay_count else 0.0
+            reasons.append("partial replay validation success")
+        return {
+            "evaluation_type": "runtime_replay_stability",
+            "evidence_id": evidence_id,
+            "found": True,
+            "replay_count": replay_count,
+            "deterministic_replay_count": passed,
+            "mismatch_count": mismatch,
+            "timeout_count": timeout,
+            "blocked_count": blocked,
+            "replay_stability_score": float(max(0.0, min(1.0, score))),
+            "replay_stability_status": status,
+            "replay_deterministic": mismatch == 0,
+            "reasons": reasons,
+        }
+
+    def evaluate_verification_confidence(self, evidence_id: str) -> Dict[str, Any]:
+        evidence_id = str(evidence_id or "")
+        record = self.get_by_evidence_id(evidence_id)
+        if not isinstance(record, dict):
+            return {
+                "evaluation_type": "runtime_verification_confidence",
+                "evidence_id": evidence_id,
+                "found": False,
+                "reason": "evidence id not found",
+                "verification_status": "unknown",
+                "verification_confidence": 0.0,
+                "confidence_level": "untrusted",
+                "evidence_integrity": False,
+                "replay_integrity": False,
+                "verification_integrity": False,
+                "reasons": ["evidence id not found"],
+            }
+        health = self.evaluate_execution_health(evidence_id)
+        stability = self.evaluate_replay_stability(evidence_id)
+        verification_record = record.get("verification_record") if isinstance(record.get("verification_record"), dict) else {}
+        evidence_record = record.get("evidence_record") if isinstance(record.get("evidence_record"), dict) else {}
+        replay_record = record.get("replay_record") if isinstance(record.get("replay_record"), dict) else {}
+        reasons: List[str] = []
+        evidence_integrity = bool(evidence_record.get("evidence_id"))
+        replay_integrity = bool(replay_record) and bool(stability.get("replay_deterministic", False))
+        verification_integrity = bool(verification_record.get("checks") or verification_record.get("verification_status"))
+        if stability.get("blocked_count", 0):
+            confidence = 0.0
+            level = "untrusted"
+            reasons.append("blocked replay detected")
+        elif stability.get("mismatch_count", 0):
+            confidence = 0.25
+            level = "low"
+            reasons.append("replay mismatch detected")
+        elif stability.get("timeout_count", 0):
+            confidence = 0.35
+            level = "low"
+            reasons.append("replay timeout detected")
+        elif stability.get("replay_count", 0) == 0:
+            confidence = 0.55
+            level = "medium"
+            reasons.append("no replay validation available")
+        elif health.get("health_status") == "healthy" and verification_record.get("verification_status") in {"passed", "failed"}:
+            confidence = 0.95
+            level = "high"
+            reasons.append("deterministic replay validations passed")
+        else:
+            confidence = 0.65
+            level = "medium"
+            reasons.append("partial verification confidence")
+        return {
+            "evaluation_type": "runtime_verification_confidence",
+            "evidence_id": evidence_id,
+            "found": True,
+            "verification_status": verification_record.get("verification_status", "unknown"),
+            "verification_confidence": float(max(0.0, min(1.0, confidence))),
+            "confidence_level": level,
+            "evidence_integrity": evidence_integrity,
+            "replay_integrity": replay_integrity,
+            "verification_integrity": verification_integrity,
+            "reasons": reasons,
+        }
+
+    def evaluate_mutation_readiness(self, evidence_id: str) -> Dict[str, Any]:
+        evidence_id = str(evidence_id or "")
+        if evidence_id not in self._by_evidence_id:
+            return {
+                "evaluation_type": "runtime_mutation_readiness",
+                "evidence_id": evidence_id,
+                "found": False,
+                "reason": "evidence id not found",
+                "mutation_ready": False,
+                "mutation_readiness_score": 0.0,
+                "mutation_readiness_level": "unsafe",
+                "governance_decision": "unsafe_runtime_state",
+                "governance_reasons": ["evidence id not found"],
+                "blockers": ["missing evidence"],
+                "warnings": [],
+            }
+        health = self.evaluate_execution_health(evidence_id)
+        stability = self.evaluate_replay_stability(evidence_id)
+        confidence = self.evaluate_verification_confidence(evidence_id)
+        replay_count = int(stability.get("replay_count", 0) or 0)
+        blockers: List[str] = []
+        warnings: List[str] = []
+        reasons: List[str] = []
+        if confidence.get("confidence_level") == "untrusted" or health.get("health_status") == "blocked":
+            decision = "unsafe_runtime_state"
+            level = "unsafe"
+            ready = False
+            score = 0.0
+            blockers.append("untrusted or blocked runtime state")
+        elif stability.get("mismatch_count", 0) or stability.get("timeout_count", 0) or stability.get("blocked_count", 0):
+            decision = "deny_mutation"
+            level = "blocked"
+            ready = False
+            score = 0.2
+            blockers.append("replay instability detected")
+        elif replay_count < 2:
+            decision = "require_more_replay_validation"
+            level = "guarded"
+            ready = False
+            score = 0.55
+            warnings.append("at least two replay validations required")
+        elif stability.get("replay_stability_status") == "stable" and confidence.get("confidence_level") == "high":
+            decision = "allow_future_governed_mutation"
+            level = "ready"
+            ready = True
+            score = 0.95
+            reasons.append("stable replay and high verification confidence")
+        else:
+            decision = "require_more_replay_validation"
+            level = "guarded"
+            ready = False
+            score = 0.5
+            warnings.append("runtime requires additional validation")
+        reasons.extend(health.get("reasons", []))
+        reasons.extend(stability.get("reasons", []))
+        reasons.extend(confidence.get("reasons", []))
+        return {
+            "evaluation_type": "runtime_mutation_readiness",
+            "evidence_id": evidence_id,
+            "found": True,
+            "mutation_ready": ready,
+            "mutation_readiness_score": float(max(0.0, min(1.0, score))),
+            "mutation_readiness_level": level,
+            "governance_decision": decision,
+            "governance_reasons": reasons,
+            "blockers": blockers,
+            "warnings": warnings,
+        }
+
+    def evaluate_registry_health(self) -> Dict[str, Any]:
+        records = self.list_records()
+        if not records:
+            return {
+                "total_execution_records": 0,
+                "total_replay_reports": len(self._replay_reports),
+                "healthy_execution_count": 0,
+                "degraded_execution_count": 0,
+                "unstable_execution_count": 0,
+                "blocked_execution_count": 0,
+                "mutation_ready_count": 0,
+                "mutation_blocked_count": 0,
+                "registry_health_score": 0.0,
+                "registry_governance_status": "guarded",
+                "warnings": ["no execution records registered"],
+            }
+        health_items = [self.evaluate_execution_health(str(record.get("evidence_id") or "")) for record in records]
+        readiness_items = [self.evaluate_mutation_readiness(str(record.get("evidence_id") or "")) for record in records]
+        healthy = sum(1 for item in health_items if item.get("health_status") == "healthy")
+        degraded = sum(1 for item in health_items if item.get("health_status") == "degraded")
+        unstable = sum(1 for item in health_items if item.get("health_status") == "unstable")
+        blocked = sum(1 for item in health_items if item.get("health_status") == "blocked")
+        ready = sum(1 for item in readiness_items if item.get("mutation_ready") is True)
+        mutation_blocked = sum(1 for item in readiness_items if item.get("governance_decision") in {"deny_mutation", "unsafe_runtime_state"})
+        score = sum(float(item.get("health_score", 0.0) or 0.0) for item in health_items) / len(health_items)
+        if mutation_blocked:
+            status = "unsafe" if blocked or unstable else "degraded"
+        elif ready == len(records):
+            status = "healthy"
+        elif degraded or unstable:
+            status = "degraded"
+        else:
+            status = "guarded"
+        return {
+            "total_execution_records": len(records),
+            "total_replay_reports": len(self._replay_reports),
+            "healthy_execution_count": healthy,
+            "degraded_execution_count": degraded,
+            "unstable_execution_count": unstable,
+            "blocked_execution_count": blocked,
+            "mutation_ready_count": ready,
+            "mutation_blocked_count": mutation_blocked,
+            "registry_health_score": float(max(0.0, min(1.0, score))),
+            "registry_governance_status": status,
+            "warnings": [],
+        }
+
+    def evaluate_registry_governance_summary(self) -> Dict[str, Any]:
+        return self.evaluate_registry_health()
+
+
+def _zero_v922_replay_report(
+    *,
+    evidence_id: str,
+    replayable: bool,
+    replay_executed: bool,
+    replay_command: str = "",
+    replay_normalized_command: str = "",
+    replay_argv: Optional[List[str]] = None,
+    replay_cwd: str = "",
+    status: str = "blocked",
+    returncode: Optional[int] = None,
+    stdout: str = "",
+    stderr: str = "",
+    expected_returncode: Any = None,
+    expected_stdout_digest: str = "",
+    expected_stderr_digest: str = "",
+    deny_reason: str = "",
+    duration_seconds: float = 0.0,
+    timeout_seconds: int = 10,
+) -> Dict[str, Any]:
+    stdout_record = _zero_readonly_sha256_preview(stdout)
+    stderr_record = _zero_readonly_sha256_preview(stderr)
+    replay_report_id = hashlib.sha256(
+        "|".join(
+            [
+                str(evidence_id or ""),
+                _zero_readonly_now(),
+                str(status or ""),
+                str(returncode),
+                stdout_record["digest"],
+                stderr_record["digest"],
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
+    returncode_match = replay_executed and returncode == expected_returncode
+    stdout_digest_match = replay_executed and stdout_record["digest"] == str(expected_stdout_digest or "")
+    stderr_digest_match = replay_executed and stderr_record["digest"] == str(expected_stderr_digest or "")
+
+    if status == "timeout":
+        replay_validation_status = "timeout"
+    elif status == "failed" and not replay_executed:
+        replay_validation_status = "failed"
+    elif not replayable or not replay_executed:
+        replay_validation_status = "blocked"
+    elif status == "failed" and returncode is None:
+        replay_validation_status = "failed"
+    elif returncode_match and stdout_digest_match and stderr_digest_match:
+        replay_validation_status = "passed"
+    else:
+        replay_validation_status = "mismatch"
+
+    return {
+        "replay_report_type": "readonly_command_replay_validation",
+        "replay_report_id": replay_report_id,
+        "evidence_id": evidence_id,
+        "replayable": replayable,
+        "replay_executed": replay_executed,
+        "replay_command": replay_command,
+        "replay_normalized_command": replay_normalized_command,
+        "replay_argv": list(replay_argv or []),
+        "replay_cwd": replay_cwd,
+        "status": status,
+        "returncode": returncode,
+        "stdout_digest": stdout_record["digest"],
+        "stderr_digest": stderr_record["digest"],
+        "stdout_preview": stdout_record["preview"],
+        "stderr_preview": stderr_record["preview"],
+        "expected_returncode": expected_returncode,
+        "expected_stdout_digest": expected_stdout_digest,
+        "expected_stderr_digest": expected_stderr_digest,
+        "returncode_match": returncode_match,
+        "stdout_digest_match": stdout_digest_match,
+        "stderr_digest_match": stderr_digest_match,
+        "replay_validation_status": replay_validation_status,
+        "deny_reason": deny_reason,
+        "duration_seconds": duration_seconds,
+        "timeout_seconds": timeout_seconds,
+    }
+
+
+def _zero_v922_replay_argv_is_safe(argv: Any) -> bool:
+    if not isinstance(argv, list) or not argv:
+        return False
+    if not all(isinstance(item, str) and item for item in argv):
+        return False
+    joined = " ".join(argv).lower()
+    if any(token in joined for token in (">", ">>", "|", "&&", ";")):
+        return False
+    blocked_prefixes = (
+        ["git", "commit"],
+        ["git", "push"],
+        ["git", "reset"],
+        ["git", "checkout"],
+        ["pip", "install"],
+        ["npm", "install"],
+        ["curl"],
+        ["wget"],
+        ["powershell"],
+        ["cmd"],
+        ["bash"],
+        ["sh"],
+    )
+    lowered = [item.lower() for item in argv]
+    for prefix in blocked_prefixes:
+        if lowered[: len(prefix)] == prefix:
+            return False
+    return (
+        lowered == ["git", "status", "--short"]
+        or lowered[:3] == [sys.executable.lower(), "-m", "compileall"]
+        or lowered[:3] == [sys.executable.lower(), "-m", "pytest"] and "--collect-only" in lowered
+        or lowered[:1] == ["__internal_readonly__"] and len(lowered) == 2 and lowered[1] in {"pwd", "dir", "ls"}
+    )
+
+
+def replay_readonly_execution_from_registry(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+    *,
+    timeout_seconds: Optional[int] = None,
+) -> Dict[str, Any]:
+    timeout_seconds = int(timeout_seconds or 10)
+    start = time.monotonic()
+    request = registry.build_replay_request(evidence_id) if isinstance(registry, RuntimeEvidenceRegistry) else {
+        "replayable": False,
+        "deny_reason": "invalid registry",
+    }
+
+    replayable = bool(request.get("replayable", False))
+    replay_argv = request.get("replay_argv")
+    replay_command = str(request.get("replay_command") or "")
+    replay_normalized_command = str(request.get("replay_normalized_command") or "")
+    replay_cwd = str(request.get("replay_cwd") or "")
+    expected_returncode = request.get("expected_returncode")
+    expected_stdout_digest = str(request.get("expected_stdout_digest") or "")
+    expected_stderr_digest = str(request.get("expected_stderr_digest") or "")
+
+    if not replayable:
+        return _zero_v922_replay_report(
+            evidence_id=str(evidence_id or ""),
+            replayable=False,
+            replay_executed=False,
+            replay_command=replay_command,
+            replay_normalized_command=replay_normalized_command,
+            replay_argv=replay_argv if isinstance(replay_argv, list) else [],
+            replay_cwd=replay_cwd,
+            expected_returncode=expected_returncode,
+            expected_stdout_digest=expected_stdout_digest,
+            expected_stderr_digest=expected_stderr_digest,
+            deny_reason=str(request.get("deny_reason") or "evidence record is not replayable"),
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+        )
+
+    if not _zero_v922_replay_argv_is_safe(replay_argv):
+        return _zero_v922_replay_report(
+            evidence_id=str(evidence_id or ""),
+            replayable=True,
+            replay_executed=False,
+            replay_command=replay_command,
+            replay_normalized_command=replay_normalized_command,
+            replay_argv=[],
+            replay_cwd=replay_cwd,
+            expected_returncode=expected_returncode,
+            expected_stdout_digest=expected_stdout_digest,
+            expected_stderr_digest=expected_stderr_digest,
+            deny_reason="invalid replay argv",
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+        )
+
+    argv = list(replay_argv)
+    if argv[:1] == ["__internal_readonly__"]:
+        internal = _zero_v920_execute_internal_readonly_command(argv[1], replay_cwd or os.getcwd())
+        return _zero_v922_replay_report(
+            evidence_id=str(evidence_id or ""),
+            replayable=True,
+            replay_executed=True,
+            replay_command=replay_command,
+            replay_normalized_command=replay_normalized_command,
+            replay_argv=argv,
+            replay_cwd=replay_cwd,
+            status="executed" if internal["returncode"] == 0 else "failed",
+            returncode=internal["returncode"],
+            stdout=internal["stdout"],
+            stderr=internal["stderr"],
+            expected_returncode=expected_returncode,
+            expected_stdout_digest=expected_stdout_digest,
+            expected_stderr_digest=expected_stderr_digest,
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+        )
+
+    try:
+        from core.runtime.runtime_execution_authority_gate import enforce_execution_authority
+        enforce_execution_authority(
+            source="core.runtime.execution_gateway",
+            action_type="command",
+            metadata={"side_effect": True, "delegated_from": "TaskRuntime.readonly_replay_gate"},
+        )
+        from core.runtime.execution_gateway import safe_subprocess_run
+
+        completed = safe_subprocess_run(
+            argv,
+            timeout=timeout_seconds,
+            cwd=replay_cwd or None,
+        )
+        stdout = str(completed.get("stdout") or "")
+        stderr = str(completed.get("stderr") or "")
+        returncode = completed.get("returncode")
+        if returncode is None and completed.get("error"):
+            if not stderr:
+                stderr = str(completed.get("error") or f"readonly replay timeout after {timeout_seconds} seconds")
+            return _zero_v922_replay_report(
+                evidence_id=str(evidence_id or ""),
+                replayable=True,
+                replay_executed=True,
+                replay_command=replay_command,
+                replay_normalized_command=replay_normalized_command,
+                replay_argv=argv,
+                replay_cwd=replay_cwd,
+                status="timeout",
+                returncode=None,
+                stdout=stdout,
+                stderr=stderr,
+                expected_returncode=expected_returncode,
+                expected_stdout_digest=expected_stdout_digest,
+                expected_stderr_digest=expected_stderr_digest,
+                deny_reason="readonly replay timeout",
+                duration_seconds=time.monotonic() - start,
+                timeout_seconds=timeout_seconds,
+            )
+    except Exception as exc:
+        return _zero_v922_replay_report(
+            evidence_id=str(evidence_id or ""),
+            replayable=True,
+            replay_executed=False,
+            replay_command=replay_command,
+            replay_normalized_command=replay_normalized_command,
+            replay_argv=argv,
+            replay_cwd=replay_cwd,
+            status="failed",
+            returncode=None,
+            stdout="",
+            stderr=f"{type(exc).__name__}: {exc}",
+            expected_returncode=expected_returncode,
+            expected_stdout_digest=expected_stdout_digest,
+            expected_stderr_digest=expected_stderr_digest,
+            deny_reason="readonly replay execution failed",
+            duration_seconds=time.monotonic() - start,
+            timeout_seconds=timeout_seconds,
+        )
+    return _zero_v922_replay_report(
+        evidence_id=str(evidence_id or ""),
+        replayable=True,
+        replay_executed=True,
+        replay_command=replay_command,
+        replay_normalized_command=replay_normalized_command,
+        replay_argv=argv,
+        replay_cwd=replay_cwd,
+        status="executed" if returncode == 0 else "failed",
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+        expected_returncode=expected_returncode,
+        expected_stdout_digest=expected_stdout_digest,
+        expected_stderr_digest=expected_stderr_digest,
+        duration_seconds=time.monotonic() - start,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def build_runtime_evidence_registry() -> RuntimeEvidenceRegistry:
+    return RuntimeEvidenceRegistry()
+
+
+def register_runtime_execution_result(
+    registry: RuntimeEvidenceRegistry,
+    result: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.register_execution_result(result)
+
+
+def query_runtime_evidence_records(
+    registry: RuntimeEvidenceRegistry,
+    **kwargs: Any,
+) -> List[Dict[str, Any]]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        return []
+    return registry.query(**kwargs)
+
+
+def reconstruct_replay_from_evidence_record(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.build_replay_request(evidence_id)
+
+
+def build_verification_lineage(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.build_verification_lineage(evidence_id)
+
+
+def build_execution_ancestry(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.build_execution_ancestry(evidence_id)
+
+
+def build_replay_lineage(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.build_replay_lineage(evidence_id)
+
+
+def evaluate_runtime_execution_health(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.evaluate_execution_health(evidence_id)
+
+
+def evaluate_runtime_replay_stability(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.evaluate_replay_stability(evidence_id)
+
+
+def evaluate_runtime_verification_confidence(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.evaluate_verification_confidence(evidence_id)
+
+
+def evaluate_runtime_mutation_readiness(
+    registry: RuntimeEvidenceRegistry,
+    evidence_id: str,
+) -> Dict[str, Any]:
+    if not isinstance(registry, RuntimeEvidenceRegistry):
+        registry = RuntimeEvidenceRegistry()
+    return registry.evaluate_mutation_readiness(evidence_id)
+
+
+TaskRuntime.build_runtime_evidence_registry = staticmethod(build_runtime_evidence_registry)
+TaskRuntime.register_runtime_execution_result = staticmethod(register_runtime_execution_result)
+TaskRuntime.query_runtime_evidence_records = staticmethod(query_runtime_evidence_records)
+TaskRuntime.reconstruct_replay_from_evidence_record = staticmethod(reconstruct_replay_from_evidence_record)
+TaskRuntime.build_verification_lineage = staticmethod(build_verification_lineage)
+TaskRuntime.replay_readonly_execution_from_registry = staticmethod(replay_readonly_execution_from_registry)
+TaskRuntime.build_execution_ancestry = staticmethod(build_execution_ancestry)
+TaskRuntime.build_replay_lineage = staticmethod(build_replay_lineage)
+TaskRuntime.evaluate_runtime_execution_health = staticmethod(evaluate_runtime_execution_health)
+TaskRuntime.evaluate_runtime_replay_stability = staticmethod(evaluate_runtime_replay_stability)
+TaskRuntime.evaluate_runtime_verification_confidence = staticmethod(evaluate_runtime_verification_confidence)
+TaskRuntime.evaluate_runtime_mutation_readiness = staticmethod(evaluate_runtime_mutation_readiness)

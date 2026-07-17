@@ -1,0 +1,103 @@
+{
+  "source_contract_items": 330,
+  "promotion_counts": {
+    "temporary_bridge_contract": 264,
+    "native_runtime_contract": 66
+  },
+  "domain_counts": {
+    "planner_contract": 43,
+    "scheduler_contract": 221,
+    "authority_contract": 16,
+    "step_executor_contract": 38,
+    "taskrunner_contract": 12
+  },
+  "next_action_counts": {
+    "keep_bridge_until_native_owner_exists": 264,
+    "extract_native_contract_tests": 66
+  },
+  "top_promotion_files": [
+    [
+      "core\\tasks\\scheduler.py",
+      208
+    ],
+    [
+      "core\\runtime\\step_executor.py",
+      41
+    ],
+    [
+      "core\\runtime\\executor.py",
+      16
+    ],
+    [
+      "core\\runtime\\task_runner.py",
+      14
+    ],
+    [
+      "core\\runtime\\execution_authority.py",
+      12
+    ],
+    [
+      "core\\agent\\code_chain_controlled_self_edit_bridge.py",
+      8
+    ],
+    [
+      "core\\planning\\task_replanner.py",
+      8
+    ],
+    [
+      "core\\tasks\\planner_gateway_runtime.py",
+      8
+    ],
+    [
+      "core\\planning\\planner_contract_trace.py",
+      3
+    ],
+    [
+      "core\\planning\\planner.py",
+      2
+    ],
+    [
+      "core\\runtime\\runtime_recovery_execution_contract.py",
+      2
+    ],
+    [
+      "core\\planning\\replanner.py",
+      1
+    ],
+    [
+      "core\\runtime\\planner_runtime_dispatch.py",
+      1
+    ],
+    [
+      "core\\runtime\\recovery_replay_closure.py",
+      1
+    ],
+    [
+      "core\\runtime\\runtime_native_scheduler.py",
+      1
+    ],
+    [
+      "core\\runtime\\runtime_recovery_integration.py",
+      1
+    ],
+    [
+      "core\\runtime\\runtime_recovery_integration_seal.py",
+      1
+    ],
+    [
+      "core\\runtime\\runtime_state_machine.py",
+      1
+    ],
+    [
+      "core\\runtime\\task_step_executor_adapter.py",
+      1
+    ]
+  ],
+  "zero_patch_residue_count": 0,
+  "verification_passed": true,
+  "outputs": {
+    "promoted": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_contract_promotion_stage3.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_contract_promotion_stage3_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_contract_promotion_stage3_report.md"
+  }
+}

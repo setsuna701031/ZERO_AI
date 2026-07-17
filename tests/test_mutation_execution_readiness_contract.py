@@ -3,9 +3,12 @@ from __future__ import annotations
 import pytest
 
 from core.engineering.mutation_execution_readiness import (
+
     build_mutation_execution_readiness,
     validate_mutation_execution_readiness_contract,
 )
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_mutation_execution_readiness_allows_only_fully_gated_proposal() -> None:

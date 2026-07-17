@@ -1,0 +1,306 @@
+Runtime Entry Migration Closure Inventory
+Package 7
+
+Scope
+Inventory only. No runtime code changes.
+Reviewed surfaces:
+- core/agent/agent_loop.py
+- cli/control_cli.py
+- cli/task_cli.py
+- cli/work_package_cli.py
+- cli/goal_cli.py
+- cli/portfolio_cli.py
+- cli/program_cli.py
+- core/tasks/scheduler.py
+- core/runtime/task_runner.py
+
+Classification key
+1. already routed through registry
+2. intentionally direct read-only/status/control path
+3. still legacy execution bypass
+4. unsafe to migrate without larger refactor
+
+
+1. Already routed through RuntimeRouteRegistry
+
+AgentLoop pre-route / runtime admissions:
+- AgentLoop engineering goal route
+  - core/agent/agent_loop.py:410
+  - Registry call at core/agent/agent_loop.py:505
+  - Route key: RuntimeRouteKeys.ENGINEERING_GOAL
+  - Legacy callable: EngineeringProgramCycle.run_until_idle
+
+- AgentLoop engineering task route
+  - core/agent/agent_loop.py:661
+  - Registry call at core/agent/agent_loop.py:713
+  - Route key: RuntimeRouteKeys.ENGINEERING_TASK
+  - Legacy callable: core.tasks.engineering_task_runner.run_engineering_task
+
+- AgentLoop work package route
+  - core/agent/agent_loop.py:832
+  - Registry calls at core/agent/agent_loop.py:901 and core/agent/agent_loop.py:920
+  - Route key: RuntimeRouteKeys.WORK_PACKAGE
+  - Legacy callables:
+    - RuntimeWorkPackageOperator.submit_package / run_package path
+    - core.tasks.work_package_intake.submit_work_package
+
+- AgentLoop persistent runtime route
+  - core/agent/agent_loop.py:7335
+  - Route key: RuntimeRouteKeys.PERSISTENT_RUNTIME
+  - Legacy callable: _zero_v823_run_persistent_runtime_orchestrator
+
+- AgentLoop planner runtime dispatch route
+  - core/agent/agent_loop.py:7698
+  - Route key: RuntimeRouteKeys.PLANNER_RUNTIME
+  - Legacy callable: _zero_v824_dispatch_planner_result_to_persistent_runtime
+
+- AgentLoop planner step executor bridge route
+  - core/agent/agent_loop.py:7906
+  - Route key: RuntimeRouteKeys.PLANNER_RUNTIME
+  - Legacy callable: v8.2.5 planner dispatch bridge
+
+- AgentLoop planner-owned code chain route
+  - core/agent/agent_loop.py:8460
+  - Route key: RuntimeRouteKeys.PLANNER_OWNED_CODE_CHAIN
+  - Legacy callable: run_planner_owned_code_chain_bridge
+
+- AgentLoop code-chain controlled self-edit bridge
+  - core/agent/agent_loop.py:314
+  - Route key: RuntimeRouteKeys.CODE_CHAIN_CONTROLLED_SELF_EDIT
+  - Legacy callable: _zero_v826_agent_try_code_chain_controlled_self_edit_bridge
+
+- AgentLoop code-chain repair preflight response
+  - core/agent/agent_loop.py:331
+  - Route key: RuntimeRouteKeys.REPAIR_PREFLIGHT
+  - Legacy callable: _zero_v710_make_preflight_response
+  - Note: pure preflight decision remains direct by design; only response/execution-producing callable is wrapped.
+
+- AgentLoop autonomous repair route
+  - core/agent/agent_loop.py:364
+  - Route key: RuntimeRouteKeys.AUTONOMOUS_REPAIR
+  - Legacy callable: self._run_task_mode with autonomous repair route/context
+
+
+2. Intentionally direct read-only/status/control paths
+
+CLI read-only/status/reporting:
+- cli.control_cli inspect / monitor / list
+  - cli/control_cli.py:86, cli/control_cli.py:88, cli/control_cli.py:90
+  - Direct TaskControlAPI reads/monitoring. Not execution-producing.
+
+- cli.control_cli evidence
+  - cli/control_cli.py:58
+  - Direct DecisionEvidenceViewer render. Read-only reporting.
+
+- cli.work_package_cli status / progress / summary / report / memory / memory-status / list
+  - cli/work_package_cli.py:263, 296, 299, 308, 317, 332
+  - Direct operator read/report methods. Not execution-producing.
+
+- cli.goal_cli list / status / deps
+  - cli/goal_cli.py:411, 420, 500
+  - Direct repository/graph reads. Not execution-producing.
+
+- cli.portfolio_cli list / show / state / summary
+  - cli/portfolio_cli.py:252, 266, 363, 371
+  - Direct repository/state reads. Summary may apply issue summary but does not execute work.
+
+- cli.program_cli list / show / state / summary / tree / observability
+  - cli/program_cli.py:225, 233, 327, 335, 344, 352
+  - Direct repository/observability reads.
+
+- cli.task_cli graph / list / audit
+  - cli/task_cli.py:440, 994, 1153
+  - Direct task/artifact reads and inspection.
+
+CLI control/state mutation that is allowed to remain direct for now:
+- cli.control_cli cancel
+  - cli/control_cli.py:92
+  - Control command, not an execution-producing runtime entry.
+
+- cli.work_package_cli pause / resume / cancel
+  - cli/work_package_cli.py:323, 326, 329
+  - Package lifecycle control commands; not direct execution.
+
+- cli.goal_cli pause / resume / cancel / defer
+  - cli/goal_cli.py:477
+  - Scheduler status control over goal records.
+
+- cli.task_cli cleanup --apply
+  - cli/task_cli.py:1274
+  - Direct task index archival/status mutation. Control/maintenance path, not runtime execution.
+  - Keep explicit because it writes state outside registry.
+
+- cli.task_cli smoke task creators
+  - cli/task_cli.py:494, 541, 578, 623, 671, 728, 785, 862, 900, 947
+  - These create queued task records and sometimes seed target files. They do not execute the created tasks.
+  - Allowed as test/control scaffolding, but should remain visibly non-mainline.
+
+
+3. Still legacy execution bypasses relative to RuntimeRouteRegistry
+
+These entries are execution-producing or execution-adjacent and currently use RuntimeNativeMainline directly, not RuntimeRouteRegistry:
+
+- cli.control_cli submit
+  - cli/control_cli.py:68
+  - Current path: run_via_runtime_native_mainline -> TaskControlAPI.submit_task
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: CONTROL_SUBMIT or TASK_SUBMIT.
+
+- cli.task_cli drain
+  - cli/task_cli.py:1322
+  - Current path: run_via_runtime_native_mainline -> drain_ingestion_tasks
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: TASK_DRAIN.
+
+- cli.task_cli run / run_selected
+  - cli/task_cli.py:1603 and cli/task_cli.py:1647
+  - Current path: run_via_runtime_native_mainline -> run_ingestion_tasks
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: TASK_RUN_FAST_INGESTION.
+
+- cli.work_package_cli submit / submit_scheduler_package / intake
+  - cli/work_package_cli.py:222, 230, 245
+  - Current path: run_via_runtime_native_mainline -> WorkPackageScheduler.submit / RuntimeWorkPackageOperator.submit_package / intake_package
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: WORK_PACKAGE_CLI_SUBMIT or WORK_PACKAGE_INTAKE.
+
+- cli.work_package_cli run-validation
+  - cli/work_package_cli.py:254
+  - Current path: run_via_runtime_native_mainline -> RuntimeWorkPackageOperator.run_validation_only
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: WORK_PACKAGE_VALIDATION.
+
+- cli.work_package_cli dispatch-request
+  - cli/work_package_cli.py:278
+  - Current path: run_via_runtime_native_mainline -> RuntimeWorkPackageOperator.runtime_dispatch_request
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: WORK_PACKAGE_DISPATCH_REQUEST.
+
+- cli.work_package_cli run
+  - cli/work_package_cli.py:287
+  - Current path: run_via_runtime_native_mainline -> RuntimeWorkPackageOperator.run_package
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: WORK_PACKAGE_RUN.
+
+- cli.goal_cli run-next / run / loop
+  - cli/goal_cli.py:428, 442, 456
+  - Current path: run_via_runtime_native_mainline -> EngineeringGoalRunner / EngineeringGoalLoop
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: GOAL_RUN, GOAL_LOOP.
+
+- cli.portfolio_cli run-next / cycle / run-until-idle
+  - cli/portfolio_cli.py:305, 320, 342
+  - Current path: run_via_runtime_native_mainline -> EngineeringPortfolioCoordinator / EngineeringPortfolioCycle
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: PORTFOLIO_RUN, PORTFOLIO_CYCLE.
+
+- cli.program_cli run-next / cycle / run-until-idle
+  - cli/program_cli.py:269, 284, 306
+  - Current path: run_via_runtime_native_mainline -> EngineeringProgramCoordinator / EngineeringProgramCycle
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Migration candidate route key: PROGRAM_RUN, PROGRAM_CYCLE.
+
+- Scheduler submit_task / submit_existing_task
+  - core/tasks/scheduler.py:4077 and core/tasks/scheduler.py:4139
+  - Current path: Scheduler._run_via_runtime_native_mainline
+  - Registry status: bypasses RuntimeRouteRegistry.
+  - Produces queued/submitted execution work; should be considered a future registry admission surface.
+
+
+4. Unsafe to migrate without larger refactor
+
+These are execution-producing but sit inside the execution machinery itself. They should not be migrated casually into RuntimeRouteRegistry because doing so could create recursive admission, alter runtime authority semantics, or blur runner ownership.
+
+- Scheduler.tick
+  - core/tasks/scheduler.py:595
+  - Current path: RuntimeNativeMainline wrapper, then scheduler dispatch pipeline.
+  - Unsafe reason: tick is the scheduler event loop and owns dispatch timing/evidence.
+
+- Scheduler.run_one_step
+  - core/tasks/scheduler.py:819
+  - Current path: RuntimeNativeMainline wrapper, then _execution_pipeline_run_one_step.
+  - Unsafe reason: this is inside scheduler execution machinery, not an outer admission point.
+
+- Scheduler._run_step_via_task_runner
+  - core/tasks/scheduler.py:1156
+  - Current path: RuntimeDispatcher.run_scheduler_boundary -> TaskRunner -> StepExecutor.
+  - Unsafe reason: formal execution boundary with authority handoff; registry wrapping here would risk changing execution gateway semantics.
+
+- Scheduler._run_task_via_agent_loop and _run_task_via_agent_loop_with_fallback_check
+  - core/tasks/scheduler.py:765 and core/tasks/scheduler.py:1510
+  - Current path: direct AgentLoop compatibility fallback.
+  - Unsafe reason: fallback/yield logic decides whether scheduler-owned simple runner should proceed; migration needs a scheduler-level route design.
+
+- Scheduler._run_scheduler_owned_simple_task_until_stop
+  - core/tasks/scheduler.py:844
+  - Current path: scheduler-owned simple runner delegation.
+  - Unsafe reason: local loop owns persisted simple step advancement.
+
+- TaskRunner.execute_owned_step
+  - core/runtime/task_runner.py:432
+  - Current path: RuntimeNativeMainline wrapper, then TaskRunner-issued authority and StepExecutor.execute_step.
+  - Unsafe reason: canonical owner-issued capability boundary; registry should remain upstream.
+
+- TaskRunner.execute_owned_steps
+  - core/runtime/task_runner.py:501
+  - Current path: RuntimeNativeMainline wrapper, then TaskRunner-issued batch capability and StepExecutor.execute_steps.
+  - Unsafe reason: canonical batch execution endpoint.
+
+- TaskRunner.run_task_tick / run_one_step / run_task / run
+  - core/runtime/task_runner.py:1066, 1360
+  - Current path: RuntimeNativeMainline wrapper, then runtime state load, step execution, mutation metadata, completion authority.
+  - Unsafe reason: core task execution machinery; route registry should admit into it, not wrap inside it.
+
+- TaskRunner.complete_task / record_terminal_observation
+  - core/runtime/task_runner.py:1390 and following
+  - Current path: direct runtime terminal marking with terminal evidence/capability checks.
+  - Unsafe reason: terminal authority sealing; migration would require explicit terminal-observation route semantics.
+
+
+Next migration candidates
+
+Recommended near-term candidates:
+1. CLI work package execution-admission entries
+   - submit, intake, dispatch-request, run, run-validation.
+   - Reason: clear outer CLI admission surfaces; existing runner callables are already compact lambdas behind run_via_runtime_native_mainline.
+   - Proposed keys: WORK_PACKAGE_CLI_SUBMIT, WORK_PACKAGE_CLI_INTAKE, WORK_PACKAGE_DISPATCH_REQUEST, WORK_PACKAGE_RUN, WORK_PACKAGE_VALIDATION.
+
+2. CLI goal/portfolio/program cycle entries
+   - goal run/run-next/loop, portfolio run-next/cycle/run-until-idle, program run-next/cycle/run-until-idle.
+   - Reason: outer orchestration admissions, not execution machinery internals.
+   - Proposed keys: GOAL_RUN, GOAL_LOOP, PORTFOLIO_RUN, PORTFOLIO_CYCLE, PROGRAM_RUN, PROGRAM_CYCLE.
+
+3. CLI task fast ingestion run/drain
+   - task drain, task run, task run_selected.
+   - Reason: outer fast CLI admission into thin runtime bridge.
+   - Proposed keys: TASK_DRAIN, TASK_RUN_FAST_INGESTION.
+
+4. control_cli submit
+   - Reason: user-facing task submission admission.
+   - Proposed key: TASK_CONTROL_SUBMIT.
+
+Defer / larger refactor candidates:
+1. Scheduler tick/run_one_step/submit_existing_task
+   - Needs scheduler-level route model and recursion guard.
+
+2. TaskRunner run_task_tick / execute_owned_step(s)
+   - Needs authority-preserving runtime route design. Do not wrap ad hoc.
+
+3. AgentLoop natural language patch helpers
+   - core/agent/agent_loop.py:1695, 1872, 2384
+   - These appear to be direct AgentLoop patch helpers outside the explicitly migrated mature runtime/code-chain entries. They need separate review before classification because they may produce execution/mutation responses and may overlap with direct route handling.
+
+
+Non-mainline issue notes
+
+- RuntimeRouteRegistry coverage is now strong for the selected AgentLoop runtime/code-chain entries, but CLI/Scheduler/TaskRunner still expose compatibility entry paths that bypass the registry while entering RuntimeNativeMainline directly.
+
+- Direct CLI control/status/read-only paths are acceptable when they only inspect or update lifecycle status, but state-mutating maintenance commands should continue to mark themselves non-mainline or control-plane-only in output/evidence.
+
+- Scheduler and TaskRunner are not good Package 8 first targets unless the migration explicitly models recursion, authority propagation, terminal evidence, and RuntimeDispatcher boundaries.
+
+- The most valuable closure step is to introduce route keys for CLI outer admissions first. That preserves the principle:
+  CLI/AgentLoop/Scheduler outer admission -> RuntimeRouteRegistry -> RuntimeNativeMainline.run_compatibility_entry -> existing callable.
+
+- Non-mainline issue reporting appears preserved in the work-package CLI report surface via non_mainline_findings, and engineering goal/portfolio/program summaries carry issues_found/blocking_issues/deferred_issues. Future migrations should keep those payload fields intact when wrapping CLI callables.
+

@@ -3,9 +3,12 @@ from __future__ import annotations
 import pytest
 
 from core.engineering.sandbox_apply_executor import (
+
     build_sandbox_apply_dry_run,
     validate_sandbox_apply_dry_run_contract,
 )
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_sandbox_apply_dry_run_builds_without_real_mutation() -> None:

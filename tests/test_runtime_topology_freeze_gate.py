@@ -9,6 +9,7 @@ import pytest
 from core.runtime.execution_gateway import safe_subprocess_run
 from core.runtime.executor import Executor
 from core.runtime.governed_cross_session_handoff_contract import (
+
     build_governed_cross_session_handoff_contract,
     validate_governed_cross_session_handoff_contract,
 )
@@ -39,6 +40,8 @@ from core.tasks.runtime_repair_transaction import (
     create_runtime_repair_transaction,
     stage_runtime_repair_mutation,
 )
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_runtime_topology_freeze_gate_preserves_governed_lineage(tmp_path: Path) -> None:

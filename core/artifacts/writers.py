@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import Any, Dict
+
+
+def write_text_file(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def safe_artifact_name(task_id: str, suffix: str) -> str:
+    clean = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in task_id)
+    return f"{clean}_{suffix}"
+
+
+def resolve_repo_path(repo_root: Path, raw_path: str) -> Path:
+    text = str(raw_path or "").strip().strip('"').strip("'")
+    text = text.replace("\\", os.sep).replace("/", os.sep)
+    path = Path(text)
+    if path.is_absolute():
+        return path
+    return repo_root / path
+
+
+def extract_first_path_after(goal: str, keyword: str) -> str | None:
+    pattern = re.compile(rf"{re.escape(keyword)}\s+([^\s]+)", re.IGNORECASE)
+    match = pattern.search(goal)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def extract_source_path(repo_root: Path, shared_dir: Path, goal: str, default_name: str = "input.txt") -> Path:
+    for keyword in ("from", "summarize"):
+        raw = extract_first_path_after(goal, keyword)
+        if raw and "." in raw:
+            return resolve_repo_path(repo_root, raw)
+
+    for raw in re.findall(r"[\w./\\-]+\.[A-Za-z0-9]+", goal):
+        if "summary" in raw.lower() or "report" in raw.lower():
+            continue
+        return resolve_repo_path(repo_root, raw)
+
+    return shared_dir / default_name
+
+
+def extract_output_path(repo_root: Path, shared_dir: Path, goal: str, default_filename: str) -> Path:
+    # Prefer explicit destination wording before semantic/default file names.
+    # This protects Planner/goal contracts such as:
+    #   read workspace/input.txt and write a short summary to workspace/output.txt
+    for keyword in ("into", "to", "as", "output", "output to", "save to", "write to"):
+        raw = extract_first_path_after(goal, keyword)
+        if raw and "." in raw:
+            return resolve_repo_path(repo_root, raw)
+
+    destination_patterns = (
+        r"\bwrite\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+        r"\bsave\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+        r"\boutput\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+        r"\bexport\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+    )
+    for pattern in destination_patterns:
+        match = re.search(pattern, goal, flags=re.IGNORECASE)
+        if match:
+            raw = match.group(1).strip()
+            if raw and "." in raw:
+                return resolve_repo_path(repo_root, raw)
+
+    candidates = re.findall(r"[\w./\\-]+\.[A-Za-z0-9]+", goal)
+    for candidate in reversed(candidates):
+        lowered = candidate.lower()
+        if default_filename.lower() in lowered or "summary" in lowered or "report" in lowered:
+            return resolve_repo_path(repo_root, candidate)
+
+    # If multiple paths are present and no semantic filename was found, treat the
+    # last path as the destination and earlier paths as sources.
+    if len(candidates) >= 2:
+        return resolve_repo_path(repo_root, candidates[-1])
+
+    return shared_dir / default_filename
+
+
+def compact_summary(text: str, limit: int = 260) -> str:
+    cleaned = " ".join(str(text or "").split())
+    if not cleaned:
+        return "No input content was available."
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)].rstrip() + "..."
+
+
+def build_python_hello_world_artifact(repo_root: Path, shared_dir: Path, task_id: str) -> Dict[str, Any]:
+    artifact_path = shared_dir / safe_artifact_name(task_id, "hello_world.py")
+    code = 'print("Hello, world!")\n'
+    write_text_file(artifact_path, code)
+    return {
+        "ok": True,
+        "artifact_type": "python_file",
+        "artifact_path": str(artifact_path),
+        "content_preview": code,
+        "message": "Created Python hello world artifact.",
+    }
+
+
+def build_summary_artifact(
+    repo_root: Path,
+    shared_dir: Path,
+    goal: str,
+    output_path: str | Path | None = None,
+) -> Dict[str, Any]:
+    input_path = extract_source_path(repo_root, shared_dir, goal, "input.txt")
+    resolved_output_path = (
+        resolve_repo_path(repo_root, str(output_path))
+        if output_path is not None and str(output_path).strip()
+        else extract_output_path(repo_root, shared_dir, goal, "summary.txt")
+    )
+    source_text = read_text_file(input_path)
+    summary = f"Summary: {compact_summary(source_text)}\n"
+    write_text_file(resolved_output_path, summary)
+    return {
+        "ok": True,
+        "artifact_type": "summary_text",
+        "input_path": str(input_path),
+        "artifact_path": str(resolved_output_path),
+        "content_preview": summary,
+        "message": "Created summary artifact.",
+    }
+
+
+def build_markdown_report_artifact(
+    repo_root: Path,
+    shared_dir: Path,
+    goal: str,
+    output_path: str | Path | None = None,
+) -> Dict[str, Any]:
+    input_path = extract_source_path(repo_root, shared_dir, goal, "input.txt")
+    resolved_output_path = (
+        resolve_repo_path(repo_root, str(output_path))
+        if output_path is not None and str(output_path).strip()
+        else extract_output_path(repo_root, shared_dir, goal, "report.md")
+    )
+    source_text = read_text_file(input_path)
+    summary = compact_summary(source_text, limit=420)
+    text = (
+        "# Report\n\n"
+        "## Source\n\n"
+        f"- Input: `{input_path.as_posix()}`\n"
+        f"- Generated by: ZERO thin execution bridge v1\n\n"
+        "## Summary\n\n"
+        f"{summary}\n\n"
+        "## Execution Notes\n\n"
+        "- Task was accepted through the fast CLI path.\n"
+        "- Markdown report artifact was written by the thin artifact writer.\n"
+        "- Legacy runtime boot was avoided for this smoke path.\n"
+    )
+    write_text_file(resolved_output_path, text)
+    return {
+        "ok": True,
+        "artifact_type": "markdown_report",
+        "input_path": str(input_path),
+        "artifact_path": str(resolved_output_path),
+        "content_preview": text,
+        "message": "Created markdown report artifact.",
+    }
+
+
+def build_system_analysis_artifact(
+    *,
+    repo_root: Path,
+    shared_dir: Path,
+    task_id: str,
+    total_tasks: int,
+    queued: int,
+    finished: int,
+    failed: int,
+) -> Dict[str, Any]:
+    artifact_path = shared_dir / safe_artifact_name(task_id, "system_analysis.md")
+    text = (
+        "# ZERO System Analysis\n\n"
+        "- Thin launcher: active\n"
+        "- Fast CLI path: active\n"
+        "- Legacy boot avoided for ask/chat/task run/help/runtime/health/replay\n"
+        f"- Total tasks index entries: {total_tasks}\n"
+        f"- Queued tasks: {queued}\n"
+        f"- Finished tasks: {finished}\n"
+        f"- Failed tasks: {failed}\n\n"
+        "Current state: ingestion shell is working. Next layer is planner/executor bridge.\n"
+    )
+    write_text_file(artifact_path, text)
+    return {
+        "ok": True,
+        "artifact_type": "markdown_report",
+        "artifact_path": str(artifact_path),
+        "content_preview": text,
+        "message": "Created system analysis artifact.",
+    }
+
+
+def build_generic_ingestion_artifact(shared_dir: Path, task_id: str, task_type: str, goal: str) -> Dict[str, Any]:
+    artifact_path = shared_dir / safe_artifact_name(task_id, "result.txt")
+    text = (
+        "ZERO thin execution bridge v1 accepted this task.\n\n"
+        f"task_id: {task_id}\n"
+        f"type: {task_type}\n"
+        f"goal: {goal}\n\n"
+        "Planner/executor runtime is not attached in this bridge yet.\n"
+    )
+    write_text_file(artifact_path, text)
+    return {
+        "ok": True,
+        "artifact_type": "text_result",
+        "artifact_path": str(artifact_path),
+        "content_preview": text,
+        "message": "Created generic thin execution artifact.",
+    }

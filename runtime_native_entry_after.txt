@@ -1,0 +1,99 @@
+Runtime Native Mainline Package 2 - Canonical Entry Wiring After Report
+
+Scope
+- Entry routing only.
+- Existing scheduler, task runner, work-package, engineering goal, and CLI runtime behavior was preserved behind compatibility delegation.
+- Repair, mutation, scheduler execution internals, and AER contracts were not intentionally changed.
+
+Canonical wiring added
+- core/runtime/runtime_native_mainline.py
+  - Added RuntimeNativeMainline.run_compatibility_entry(...).
+  - Purpose: provide canonical RuntimeNativeMainline admission for legacy public entrypoints while delegating to the existing runtime callable.
+  - Return compatibility: dict results are returned with additive mainline metadata; non-dict results are returned unchanged so fall-through semantics are preserved.
+- core/runtime/runtime_native_entry_adapter.py
+  - Added run_via_runtime_native_mainline(...).
+  - Purpose: small shared entry adapter for AgentLoop, Scheduler, TaskRunner, and CLIs.
+
+Redirected entrypoints
+- core/agent/agent_loop.py
+  - AgentLoop engineering goal route now calls EngineeringProgramCycle.run_until_idle(...) from inside RuntimeNativeMainline.
+  - AgentLoop legacy JSON engineering_task route now calls engineering_task_runner.run_engineering_task(...) from inside RuntimeNativeMainline.
+  - AgentLoop work-package route now calls RuntimeWorkPackageOperator / WorkPackageIntake from inside RuntimeNativeMainline.
+  - AgentLoop.run_task_loop(...) now enters RuntimeNativeMainline before delegating to the existing AgentExecutionRuntime path.
+- core/tasks/scheduler.py
+  - Scheduler.tick(...) now enters RuntimeNativeMainline before delegating to scheduler_core tick.
+  - Scheduler.run_one_step(...) now enters RuntimeNativeMainline before delegating to scheduler_core run_one_step.
+  - Scheduler.submit_task(...) now enters RuntimeNativeMainline before preserving the existing create + submit flow.
+  - Scheduler.submit_existing_task(...) now enters RuntimeNativeMainline before preserving the existing enqueue/status flow.
+- core/runtime/task_runner.py
+  - TaskRunner.execute_owned_step(...) now enters RuntimeNativeMainline before delegating to the existing StepExecutor-owned path.
+  - TaskRunner.execute_owned_steps(...) now enters RuntimeNativeMainline before delegating to the existing batch path.
+  - TaskRunner.run_task_tick(...) now enters RuntimeNativeMainline before executing the existing tick body.
+  - TaskRunner run_one_tick/run_one_step/run_task/run wrappers pass through the delegate flag to avoid double admission.
+- cli/task_cli.py
+  - task drain / auto-drain / run-all now enter RuntimeNativeMainline before drain_ingestion_tasks(...).
+  - task run selected/count paths now enter RuntimeNativeMainline before run_ingestion_tasks(...).
+  - Read-only/list/graph/status/cleanup style paths remain direct.
+- cli/goal_cli.py
+  - goal run-next, run, and loop now enter RuntimeNativeMainline before existing EngineeringGoalRunner / EngineeringGoalLoop calls.
+- cli/portfolio_cli.py
+  - portfolio run-next, cycle, and run-until-idle now enter RuntimeNativeMainline before existing coordinator/cycle calls.
+- cli/program_cli.py
+  - program run-next, cycle, and run-until-idle now enter RuntimeNativeMainline before existing coordinator/cycle calls.
+- cli/work_package_cli.py
+  - submit, intake, run-validation, dispatch-request, and run now enter RuntimeNativeMainline before existing WorkPackageScheduler / RuntimeWorkPackageOperator calls.
+  - status/plan/propose/approval/package/report/memory/list control or read-only paths remain direct.
+- cli/control_cli.py
+  - control submit now enters RuntimeNativeMainline before TaskControlAPI.submit_task(...).
+  - inspect/monitor/list/cancel/evidence remain direct control-plane/read-only paths.
+
+Compatibility wrappers
+- RuntimeNativeMainline.run_compatibility_entry(...)
+  - Stores a mainline run record and event for legacy entry admission.
+  - Calls the supplied runner without replacing the existing downstream runtime.
+  - Adds runtime_native_mainline_entrypoint, runtime_native_mainline_compatibility_wrapper, and runtime_native_mainline_canonical_entry to dict results.
+- Scheduler private delegate flag
+  - _runtime_native_mainline_delegate_active and _runtime_native_mainline_delegate prevent recursive re-entry while the old scheduler body runs below mainline.
+- TaskRunner private delegate flag
+  - _runtime_native_mainline_delegate_active and _runtime_native_mainline_delegate prevent recursive re-entry while the old runner body runs below mainline.
+- AgentLoop private delegate flag
+  - _runtime_native_mainline_delegate_active and _runtime_native_mainline_delegate prevent recursive re-entry while the old task loop runs below mainline.
+
+Remaining legacy entrypoints
+- RuntimeNativeAgentLoop.run_goal(...)
+  - Remains a lower-level native delegated component below RuntimeNativeMainline.
+- RuntimeNativeExecutionDispatch.dispatch_goal(...), dispatch_schedule_item(...), run_dispatch(...)
+  - Already native and still delegate to RuntimeNativeMainline.run_goal(...).
+- Scheduler.create_task(...)
+  - Remains direct because it creates task records but does not itself execute runtime work.
+- Scheduler enqueue/dequeue/rebuild/status methods
+  - Remain direct queue/control-plane operations.
+- Work-package CLI status/plan/propose/approve/execution-package/progress/summary/report/memory/list
+  - Remain direct control/read/reporting operations.
+- Goal/portfolio/program add/list/show/state/summary/tree/observability/dependency commands
+  - Remain direct persistence/read/planning-control operations.
+- Verification CLI run_command(...)
+  - Remains direct subprocess verification and is not routed as engineering runtime mainline execution.
+
+Remaining bypasses, if any
+- RuntimeNativeEngineeringSession.run_mutation(...)
+  - Still can execute through mutation_loop directly. It was not changed because the scope explicitly forbids changing mutation logic.
+- Internal StepExecutor calls inside TaskRunner
+  - Still exist below the now-canonical TaskRunner public admission wrapper. These are downstream runtime endpoints, not public entrypoints after this package.
+- Internal Scheduler -> RuntimeDispatcher -> TaskRunner path
+  - Still exists below Scheduler public admission wrapper. This preserves existing runtime behavior.
+- AgentLoop direct/single-shot/tool execution routes
+  - Not fully redirected in this package because they are broader conversational/tool routes, not all engineering-runtime entrypoints. They should be audited separately if Package 3 expands canonical admission beyond engineering execution.
+- CLI smoke/setup commands in task_cli
+  - Some smoke creation/setup helpers remain direct when they create fixtures or inspect state rather than executing queued runtime work.
+
+Non-mainline issue reporting
+- Existing mojibake/garbled text remains in core/agent/agent_loop.py comments/strings and cli/task_cli.py identifier formatting. Not fixed.
+- scheduler.py and task_runner.py still contain extensive tail compatibility monkey patches. Not fixed.
+- The requested pytest glob tests/test_runtime_native*.py has no matching files in this workspace, so the targeted pytest command cannot run any tests here.
+
+Validation notes
+- The exact command `python -m compileall core/runtime core/tasks core/agent cli` could not run because `python` is not on PATH in this shell.
+- The exact command `python -m pytest tests/test_runtime_native*.py -q` could not run because `python` is not on PATH in this shell.
+- Equivalent compile validation was run with the bundled workspace Python and passed.
+- The pytest command was attempted with the bundled workspace Python, but no files matched tests/test_runtime_native*.py.

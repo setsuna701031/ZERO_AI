@@ -1,0 +1,268 @@
+Legacy Surface Retirement Plan
+
+Scope
+- Based on Package 7 inventory, Package 8 registry closure, and Package 9 seal results.
+- Report only. No runtime code changes.
+- "Deprecated" in this plan means the direct legacy admission surface can be marked deprecated for new callers. It does not mean deleting the legacy callable or changing execution machinery.
+
+
+1. Legacy surfaces ready to mark deprecated
+
+These execution-producing surfaces now have RuntimeRouteRegistry admission and seal coverage or representative seal coverage. New callers should use the route-registry path. Existing legacy callables must remain as compatibility runners behind the registry.
+
+AgentLoop runtime/code-chain admissions:
+- AgentLoop engineering goal route
+  - Route key: ENGINEERING_GOAL
+  - Legacy callable retained: EngineeringProgramCycle.run_until_idle
+  - Retirement status: direct/non-registry admission can be marked deprecated.
+
+- AgentLoop engineering task route
+  - Route key: ENGINEERING_TASK
+  - Legacy callable retained: core.tasks.engineering_task_runner.run_engineering_task
+  - Retirement status: direct engineering task runner admission can be marked deprecated, while legacy response markers remain for compatibility.
+
+- AgentLoop work package route
+  - Route key: WORK_PACKAGE
+  - Legacy callables retained: RuntimeWorkPackageOperator submit/run path and work_package_intake.submit_work_package
+  - Retirement status: direct work-package admission can be marked deprecated for new AgentLoop callers.
+
+- AgentLoop persistent runtime route
+  - Route key: PERSISTENT_RUNTIME
+  - Seal coverage: Package 9 representative wave1 test.
+  - Retirement status: direct persistent runtime admission can be marked deprecated.
+
+- AgentLoop planner runtime dispatch / planner step executor bridge
+  - Route key: PLANNER_RUNTIME
+  - Retirement status: direct planner runtime dispatch admission can be marked deprecated.
+
+- AgentLoop planner-owned code chain
+  - Route key: PLANNER_OWNED_CODE_CHAIN
+  - Seal coverage: Package 9 representative wave2 test.
+  - Retirement status: direct planner-owned code-chain admission can be marked deprecated.
+
+- AgentLoop code-chain controlled self-edit bridge
+  - Route key: CODE_CHAIN_CONTROLLED_SELF_EDIT
+  - Retirement status: direct self-edit bridge admission can be marked deprecated after retaining the callable as the compatibility runner.
+
+- AgentLoop repair preflight response
+  - Route key: REPAIR_PREFLIGHT
+  - Retirement status: execution-producing preflight response admission can be marked deprecated.
+  - Note: pure preflight decision remains direct and is not an execution-producing surface.
+
+- AgentLoop autonomous repair route
+  - Route key: AUTONOMOUS_REPAIR
+  - Retirement status: direct autonomous repair admission can be marked deprecated.
+
+CLI execution-producing admissions:
+- cli.task_cli run / run_selected
+  - Route key: CLI_TASK_RUN
+  - Seal coverage: Package 9 CLI execution seal.
+  - Retirement status: direct RuntimeNativeMainline admission helper for task run can be marked deprecated.
+
+- cli.task_cli drain
+  - Route key: CLI_TASK_DRAIN
+  - Seal coverage: Package 9 CLI execution seal.
+  - Retirement status: direct RuntimeNativeMainline admission helper for drain can be marked deprecated.
+
+- cli.work_package_cli run
+  - Route key: CLI_WORK_PACKAGE_RUN
+  - Seal coverage: Package 9 CLI execution seal.
+  - Retirement status: direct RuntimeNativeMainline admission helper for package run can be marked deprecated.
+
+- cli.work_package_cli submit / scheduler submit / intake
+  - Route key: CLI_WORK_PACKAGE_SUBMIT
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated after adding a narrow seal test for submit/intake variants.
+
+- cli.work_package_cli run-validation
+  - Route key: CLI_WORK_PACKAGE_VALIDATION
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated after adding a narrow seal test.
+
+- cli.work_package_cli dispatch-request
+  - Route key: CLI_WORK_PACKAGE_DISPATCH_REQUEST
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated after adding a narrow seal test.
+
+- cli.control_cli submit
+  - Route key: CLI_CONTROL_SUBMIT
+  - Seal coverage: Package 9 control submit seal.
+  - Retirement status: direct control submit native-mainline admission can be marked deprecated.
+
+- cli.goal_cli run / run-next
+  - Route key: CLI_GOAL_RUN
+  - Seal coverage: Package 9 goal run representative seal.
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated.
+
+- cli.goal_cli loop
+  - Route key: CLI_GOAL_LOOP
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated after adding a narrow loop seal test.
+
+- cli.portfolio_cli cycle / run-until-idle
+  - Route key: CLI_PORTFOLIO_CYCLE
+  - Seal coverage: Package 9 portfolio cycle representative seal.
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated.
+
+- cli.portfolio_cli run-next
+  - Route key: CLI_PORTFOLIO_RUN
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated after adding a narrow run-next seal test.
+
+- cli.program_cli cycle / run-until-idle
+  - Route key: CLI_PROGRAM_CYCLE
+  - Seal coverage: Package 9 program cycle representative seal.
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated.
+
+- cli.program_cli run-next
+  - Route key: CLI_PROGRAM_RUN
+  - Retirement status: direct RuntimeNativeMainline admission helper can be marked deprecated after adding a narrow run-next seal test.
+
+Scheduler / TaskRunner public execution admissions:
+- Scheduler.tick
+  - Route key: SCHEDULER_TICK
+  - Seal coverage: Package 9 scheduler tick seal.
+  - Retirement status: direct native-mainline-only public tick admission can be marked deprecated.
+
+- Scheduler.run_one_step
+  - Route key: SCHEDULER_RUN_STEP
+  - Retirement status: direct native-mainline-only public run_one_step admission can be marked deprecated after a narrow seal test.
+
+- Scheduler.submit_task / submit_existing_task
+  - Route key: SCHEDULER_SUBMIT_TASK
+  - Retirement status: direct native-mainline-only submit admission can be marked deprecated after a narrow seal test.
+
+- TaskRunner.run / run_task / run_one_step / run_one_tick / run_task_tick
+  - Route key: TASK_RUNNER_TICK or TASK_RUNNER_RUN depending entrypoint mapping.
+  - Seal coverage: Package 9 TaskRunner run/run_task_tick representative seal.
+  - Retirement status: direct native-mainline-only public TaskRunner run/tick admission can be marked deprecated.
+
+- TaskRunner.execute_owned_step
+  - Route key: TASK_RUNNER_EXECUTE_STEP
+  - Seal coverage: Package 8 surface closure test.
+  - Retirement status: direct native-mainline-only execute step admission can be marked deprecated.
+
+- TaskRunner.execute_owned_steps
+  - Route key: TASK_RUNNER_EXECUTE_STEPS
+  - Retirement status: direct native-mainline-only execute steps admission can be marked deprecated after a narrow seal test.
+
+
+2. Legacy surfaces that must remain
+
+These should not be retired or routed differently in the near term.
+
+Legacy callables behind registry:
+- All legacy callables listed above must remain as compatibility runners.
+- Do not delete legacy bridge functions, operator methods, scheduler methods, TaskRunner methods, or StepExecutor paths.
+- Reason: RuntimeRouteRegistry is now the admission layer, but legacy callables still own behavior and compatibility contracts.
+
+Read-only/status/reporting paths:
+- control inspect / monitor / list / evidence
+- work_package status / progress / summary / report / memory / memory-status / list
+- goal list / status / deps
+- portfolio list / show / state / summary
+- program list / show / state / summary / tree / observability
+- task graph / list / audit
+- Reason: not execution-producing; Package 9 verifies representative inspect/list paths do not trigger registry.
+
+Control/state mutation paths:
+- control cancel
+- work_package pause / resume / cancel
+- goal pause / resume / cancel / defer
+- task cleanup / archive-stale
+- Reason: control-plane or maintenance operations, not execution-producing runtime admission.
+
+CLI smoke task creators:
+- task dag-smoke
+- mutation-smoke / controlled-mutation-smoke
+- source-mutation-smoke
+- mutation-transaction-smoke
+- engineering-batch-smoke
+- runtime-plan-smoke
+- runtime-session-smoke / runtime-session-resume
+- runtime-session-finalize / recovery-finalize
+- runtime-supervisor-smoke
+- Reason: create queued records and sometimes seed target files; they do not execute the created work.
+
+Execution machinery internals:
+- RuntimeDispatcher.run_scheduler_boundary
+- Scheduler._run_step_via_task_runner
+- Scheduler._run_scheduler_owned_simple_task_until_stop
+- Scheduler._run_task_via_agent_loop and fallback/yield helpers
+- TaskRunner internal _run_one_step, mutation boundary integration, terminal evidence/completion sealing
+- StepExecutor / ExecutionFabric
+- Reason: these are machinery behind admitted routes. Retiring or wrapping them as surface admissions would risk authority, recursion, and execution semantics.
+
+Pure decision helpers:
+- repair preflight decision helpers
+- route candidate predicates
+- planner/persistent candidate checks
+- Reason: not execution-producing. Only execution-producing response/callable surfaces are registry admissions.
+
+
+3. Surfaces needing follow-up seal tests
+
+These appear migrated or intentionally retained, but need narrower tests before marking the direct admission fully sealed.
+
+CLI:
+- work_package submit, scheduler-submit branch, and intake branch
+  - Add tests proving each entrypoint maps to CLI_WORK_PACKAGE_SUBMIT and preserves result payload.
+
+- work_package run-validation
+  - Add test proving CLI_WORK_PACKAGE_VALIDATION route admission.
+
+- work_package dispatch-request
+  - Add test proving CLI_WORK_PACKAGE_DISPATCH_REQUEST route admission.
+
+- goal loop
+  - Add test proving CLI_GOAL_LOOP route admission.
+
+- portfolio run-next
+  - Add test proving CLI_PORTFOLIO_RUN route admission.
+
+- portfolio run-until-idle
+  - Existing cycle representative uses CLI_PORTFOLIO_CYCLE; add explicit run-until-idle mapping test.
+
+- program run-next
+  - Add test proving CLI_PROGRAM_RUN route admission.
+
+- program run-until-idle
+  - Existing cycle representative uses CLI_PROGRAM_CYCLE; add explicit run-until-idle mapping test.
+
+Scheduler:
+- Scheduler.run_one_step
+  - Add test proving SCHEDULER_RUN_STEP route admission and final result preservation.
+
+- Scheduler.submit_task and submit_existing_task
+  - Add tests proving SCHEDULER_SUBMIT_TASK route admission without changing enqueue semantics.
+
+TaskRunner:
+- execute_owned_steps
+  - Add test proving TASK_RUNNER_EXECUTE_STEPS route admission and batch result preservation.
+
+- run_one_step / run_task / run_one_tick aliases
+  - Add alias tests proving they still route to TaskRunner registry admission and preserve compatibility return shape.
+
+Read-only/control negative seals:
+- work_package status / pause / cancel
+- goal status / cancel
+- task cleanup
+- program/portfolio show/list
+  - Package 9 covers control inspect/list/cancel. Add broader negative tests only if regressions appear.
+
+AgentLoop:
+- Natural language patch helper surfaces
+  - Need classification and seal tests before any retirement label.
+  - Current status: out of Package 8/9 scope.
+
+
+4. Retirement sequence
+
+Recommended order:
+1. Mark direct native-mainline-only surface helpers as deprecated in comments/docs after follow-up seals pass.
+2. Keep legacy callables in place behind RuntimeRouteRegistry.
+3. Keep read-only/control paths direct and explicitly documented as non-execution surfaces.
+4. Add focused alias/variant seal tests before removing any compatibility wording.
+5. Defer any machinery-level retirement until a separate execution-authority refactor exists.
+
+Do not do yet:
+- Do not delete legacy callable implementations.
+- Do not remove route markers or legacy response fields.
+- Do not wrap read-only/control paths in RuntimeRouteRegistry.
+- Do not migrate StepExecutor/ExecutionFabric internals as surface admissions.
+

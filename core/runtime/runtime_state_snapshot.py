@@ -9,6 +9,20 @@ import hashlib
 from typing import Any
 
 
+MAX_INLINE_SNAPSHOT_BYTES = 1024 * 1024
+
+IGNORED_PATH_PARTS = {
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "workspace",
+}
+
+
 @dataclass(frozen=True)
 class RuntimeStateSnapshotRecord:
     target_path: str
@@ -80,15 +94,72 @@ class RuntimeStateSnapshotter:
 
     def _capture_path(self, *, path: Path, timestamp: str) -> RuntimeStateSnapshotRecord:
         exists = path.exists()
-        content = path.read_bytes() if exists and path.is_file() else None
+        metadata: dict[str, Any] = {}
+
+        if _is_ignored_path(path):
+            return RuntimeStateSnapshotRecord(
+                target_path=str(path),
+                content_hash=hash_bytes(b""),
+                timestamp=timestamp,
+                exists=exists,
+                content=None,
+                metadata={
+                    "size": 0,
+                    "snapshot_skipped": True,
+                    "skip_reason": "ignored_runtime_path",
+                },
+            )
+
+        if not exists or not path.is_file():
+            return RuntimeStateSnapshotRecord(
+                target_path=str(path),
+                content_hash=hash_bytes(b""),
+                timestamp=timestamp,
+                exists=exists,
+                content=None,
+                metadata={"size": 0},
+            )
+
+        size = path.stat().st_size
+        metadata["size"] = size
+
+        if size > MAX_INLINE_SNAPSHOT_BYTES:
+            return RuntimeStateSnapshotRecord(
+                target_path=str(path),
+                content_hash=_hash_file_streaming(path),
+                timestamp=timestamp,
+                exists=True,
+                content=None,
+                metadata={
+                    **metadata,
+                    "snapshot_skipped": True,
+                    "skip_reason": "file_too_large_for_inline_snapshot",
+                    "max_inline_snapshot_bytes": MAX_INLINE_SNAPSHOT_BYTES,
+                },
+            )
+
+        content = path.read_bytes()
         return RuntimeStateSnapshotRecord(
             target_path=str(path),
-            content_hash=hash_bytes(content or b""),
+            content_hash=hash_bytes(content),
             timestamp=timestamp,
-            exists=exists,
+            exists=True,
             content=content,
-            metadata={"size": len(content or b"")},
+            metadata=metadata,
         )
+
+
+def _is_ignored_path(path: Path) -> bool:
+    parts = set(path.parts)
+    return bool(parts.intersection(IGNORED_PATH_PARTS))
+
+
+def _hash_file_streaming(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def hash_bytes(content: bytes) -> str:

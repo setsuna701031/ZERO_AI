@@ -63,6 +63,7 @@ def print_help() -> None:
     safe_print("  python main.py start")
     safe_print("  python main.py runtime")
     safe_print("  python main.py smoke")
+    safe_print("  python main.py verify <fast|contract|full|long|all>")
     safe_print("  python main.py doc-demo")
     safe_print("  python main.py document-flow-demo")
     safe_print("  python main.py requirement-demo")
@@ -72,6 +73,7 @@ def print_help() -> None:
     safe_print("  python main.py search-demo")
     safe_print("  python main.py hybrid-demo")
     safe_print("  python main.py l5-run [--json] [--tts] <task>")
+    safe_print("  python main.py control <submit|inspect|monitor|list|cancel> ...")
     safe_print("  python main.py persona-chat")
     safe_print("  python main.py persona-runtime")
     safe_print("  python main.py health")
@@ -80,7 +82,8 @@ def print_help() -> None:
     safe_print("Commands:")
     safe_print("  start             Launch interactive ZERO CLI")
     safe_print("  runtime           Show runtime information")
-    safe_print("  smoke             Run stable mainline smoke validation")
+    safe_print("  smoke             Run fast verification tier (backward-compatible)")
+    safe_print("  verify            Run explicit verification tier")
     safe_print("  doc-demo          Run end-to-end document demo flow")
     safe_print("  document-flow-demo  Run document flow showcase through official tasks")
     safe_print("  requirement-demo  Run requirement-pack demo flow")
@@ -90,6 +93,7 @@ def print_help() -> None:
     safe_print("  search-demo       Run Persona web_search demo flow")
     safe_print("  hybrid-demo       Run Persona web_search -> file_write -> github_commit demo flow")
     safe_print("  l5-run            Submit a task to L5 runtime bridge and print display_state output")
+    safe_print("  control           Submit, inspect, list, or request cancellation of tasks")
     safe_print("  persona-chat      Run the ZERO persona text shell")
     safe_print("  persona-runtime   Launch the ZERO persona runtime window")
     safe_print("  health            Show health information")
@@ -168,10 +172,16 @@ def main(argv: List[str]) -> int:
         return result.returncode
 
     if command == "smoke":
-        if not MAINLINE_SMOKE_PATH.exists():
-            raise FileNotFoundError(f"mainline smoke not found: {MAINLINE_SMOKE_PATH}")
-        result = run_process([sys.executable, str(MAINLINE_SMOKE_PATH)], capture=False)
-        return result.returncode
+        from cli.verification_cli import run_verification_cli
+
+        safe_print("[smoke] main.py smoke now runs the fast verification tier.")
+        safe_print("[smoke] Use `python main.py verify long` for document/semantic/full-build demo coverage.")
+        return run_verification_cli(["fast"])
+
+    if command == "verify":
+        from cli.verification_cli import run_verification_cli
+
+        return run_verification_cli(argv[2:])
 
     if command == "doc-demo":
         return run_doc_demo()
@@ -201,6 +211,11 @@ def main(argv: List[str]) -> int:
         ensure_required_paths()
         result = run_app_command("l5-run", *argv[2:], capture=False)
         return result.returncode
+
+    if command == "control":
+        from cli.control_cli import main as run_control_cli
+
+        return run_control_cli(argv[2:])
 
     if command == "persona-chat":
         return run_persona_chat_shell()

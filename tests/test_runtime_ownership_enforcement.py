@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from core.runtime.runtime_state_guard import RuntimeStateGuard, RuntimeStateGuardError
 from core.runtime.task_runtime import TaskRuntime
 
@@ -108,25 +110,17 @@ def test_task_runtime_stamps_mark_running_ownership() -> None:
     assert state["last_transition_action"] == "mark_running"
 
 
-def test_task_runtime_stamps_mark_finished_ownership() -> None:
+def test_task_runtime_rejects_direct_mark_finished_without_runner_authority() -> None:
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     task = _task("mark_finished_owner")
 
-    result = runtime.mark_finished(
-        task,
-        current_tick=2,
-        final_answer="done",
-        final_result={"ok": True, "message": "done"},
-    )
-    state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
-
-    assert result["status"] == "finished"
-    assert result["runtime_owner"] == "task_runtime"
-    assert result["transition_owner"] == "task_runtime"
-    assert result["transition_action"] == "mark_finished"
-    assert state["status"] == "finished"
-    assert state["runtime_owner"] == "task_runtime"
-    assert state["last_transition_action"] == "mark_finished"
+    with pytest.raises(PermissionError, match="taskrunner_completion_authority_required"):
+        runtime.mark_finished(
+            task,
+            current_tick=2,
+            final_answer="done",
+            final_result={"ok": True, "message": "done"},
+        )
 
 
 def test_task_runtime_stamps_mark_failed_ownership() -> None:

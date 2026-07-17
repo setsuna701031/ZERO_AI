@@ -8,7 +8,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.runtime.step_executor import StepExecutor
+from core.runtime.task_runner import TaskRunner
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.tasks.execution_guard import ExecutionGuard
+from tests.authority_test_support import sealed_dispatch_task
 
 
 def _write(path: Path, text: str) -> None:
@@ -16,11 +19,31 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _executor(tmp_path: Path) -> tuple[StepExecutor, Path]:
+class _OwnedStepExecutor:
+    def __init__(self, endpoint: StepExecutor) -> None:
+        self.endpoint = endpoint
+        self.runner = TaskRunner(step_executor=endpoint)
+
+    def execute_step(self, step: dict, task: dict | None = None, **kwargs):
+        owned = sealed_dispatch_task({
+            "task_id": "apply-patch-transaction-test",
+            "package_id": "apply-patch-transaction-package",
+            **dict(task or {}),
+        })
+        return self.runner.execute_owned_step(step, task=owned, **kwargs)
+
+    def has_handler(self, step_type: str) -> bool:
+        return self.endpoint.has_handler(step_type)
+
+    def list_handlers(self) -> list[str]:
+        return self.endpoint.list_handlers()
+
+
+def _executor(tmp_path: Path) -> tuple[_OwnedStepExecutor, Path]:
     workspace = tmp_path / "workspace"
     shared = workspace / "shared"
     shared.mkdir(parents=True, exist_ok=True)
-    return StepExecutor(workspace_root=str(workspace)), shared
+    return _OwnedStepExecutor(StepExecutor(workspace_root=str(workspace))), shared
 
 
 def _result(payload: dict) -> dict:

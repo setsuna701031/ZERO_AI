@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.planning.planner_contract import normalize_planner_payload
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy, pytest.mark.integration]
+
+
 
 
 def test_contract_accepts_document_write_shape():

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _continuation(reason: str, *, terminal: bool = False, classification: str = "review_required") -> dict:

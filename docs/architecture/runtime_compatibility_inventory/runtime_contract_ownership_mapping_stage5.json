@@ -1,0 +1,1916 @@
+[
+  {
+    "id": "native-contract-owner-0001",
+    "source": {
+      "contract_id": "native-contract-001",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 74,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_001",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if payload.get(\"descriptive_only\") or payload.get(\"compatibility_authority_adapter\"):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0002",
+    "source": {
+      "contract_id": "native-contract-002",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 152,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_002",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "authority_source: str = \"runtime_compatibility\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0003",
+    "source": {
+      "contract_id": "native-contract-003",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 269,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_003",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"legacy_task\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0004",
+    "source": {
+      "contract_id": "native-contract-004",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 277,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_004",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"legacy_step\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0005",
+    "source": {
+      "contract_id": "native-contract-005",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 303,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_005",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"compatibility_authority_adapter\": not has_explicit_authority,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0006",
+    "source": {
+      "contract_id": "native-contract-006",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 387,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_006",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "Compatibility policy: strict explicit denial is preserved, while sealed",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0007",
+    "source": {
+      "contract_id": "native-contract-007",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 388,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_007",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "TEST/SYSTEM/RUNTIME and traced legacy runtime paths may receive the missing",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0008",
+    "source": {
+      "contract_id": "native-contract-008",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 420,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_008",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "or {\"source\": authority_source or \"runtime_authority_gate_compat\"}",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0009",
+    "source": {
+      "contract_id": "native-contract-009",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 467,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_009",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "merged.setdefault(\"authority_policy\", \"runtime_authority_gate_compat\")",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0010",
+    "source": {
+      "contract_id": "native-contract-010",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 472,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_010",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"identity_id\": \"runtime:compat\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0011",
+    "source": {
+      "contract_id": "native-contract-011",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 474,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_011",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"source\": \"runtime_authority_gate_compat\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0012",
+    "source": {
+      "contract_id": "native-contract-012",
+      "source_path": "core/runtime/execution_authority.py",
+      "source_line": 515,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "execution_authority_is_explicit_and_enforced",
+      "recommended_test_name": "test_native_authority_runtime_execution_authority_py_012",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"compatibility_seal\": \"runtime_authority_gate_compat\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "extract_native_authority_contract_test"
+  },
+  {
+    "id": "native-contract-owner-0013",
+    "source": {
+      "contract_id": "native-contract-013",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 677,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_013",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "normalized_context = {\"compatibility_flow\": \"execute_steps\"}",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0014",
+    "source": {
+      "contract_id": "native-contract-014",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 903,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_014",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "helper keeps those legacy callers governed without making StepExecutor",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0015",
+    "source": {
+      "contract_id": "native-contract-015",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 1023,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_015",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing: bool = True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0016",
+    "source": {
+      "contract_id": "native-contract-016",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 1030,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_016",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing=return_fallback_candidate_if_missing,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0017",
+    "source": {
+      "contract_id": "native-contract-017",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2062,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_017",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing=True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0018",
+    "source": {
+      "contract_id": "native-contract-018",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2208,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_018",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing=True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0019",
+    "source": {
+      "contract_id": "native-contract-019",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2358,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_019",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing=True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0020",
+    "source": {
+      "contract_id": "native-contract-020",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2641,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_020",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing=True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0021",
+    "source": {
+      "contract_id": "native-contract-021",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2846,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_021",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "legacy_verify = self._verify_apply_patch_target(step, full_target_path)",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0022",
+    "source": {
+      "contract_id": "native-contract-022",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2847,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_022",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "checks.extend(str(check) for check in legacy_verify.get(\"checks\", []) if str(check))",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0023",
+    "source": {
+      "contract_id": "native-contract-023",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2848,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_023",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if not bool(legacy_verify.get(\"ok\", False)):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0024",
+    "source": {
+      "contract_id": "native-contract-024",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 2849,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_024",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "add_error(str(legacy_verify.get(\"message\") or \"legacy verification failed\"))",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0025",
+    "source": {
+      "contract_id": "native-contract-025",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 3806,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_025",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"legacy_result_compatibility\": True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0026",
+    "source": {
+      "contract_id": "native-contract-026",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 5500,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_026",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "has_legacy_patch = bool(str((step or {}).get(\"patch_path\") or (step or {}).get(\"path\") or \"\").strip())",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0027",
+    "source": {
+      "contract_id": "native-contract-027",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 5501,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_027",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if has_legacy_patch:",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0028",
+    "source": {
+      "contract_id": "native-contract-028",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 6201,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_028",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "# runtime_execution_result compatibility layers can rebuild a successful",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0029",
+    "source": {
+      "contract_id": "native-contract-029",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 6502,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_029",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "# constructors or from_runtime_mapping, so it cannot re-trigger legacy signature",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0030",
+    "source": {
+      "contract_id": "native-contract-030",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 6685,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_030",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "# failed because unsupported legacy kwargs were passed into RuntimeExecutionResult.",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0031",
+    "source": {
+      "contract_id": "native-contract-031",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7369,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_031",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "# legacy gateway contracts.  StepExecutor's direct public step output, however,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0032",
+    "source": {
+      "contract_id": "native-contract-032",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7406,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_032",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "# Inventory-only compatibility layer: classify side-effect steps and expose the",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0033",
+    "source": {
+      "contract_id": "native-contract-033",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7429,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_authority_runtime_step_executor_py_033",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "_ZERO_V7334_AUTHORITY_POLICY = \"legacy_step_executor_policy\"",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0034",
+    "source": {
+      "contract_id": "native-contract-034",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7557,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_034",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"reason\": \"legacy_step_executor_policy_unsealed\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0035",
+    "source": {
+      "contract_id": "native-contract-035",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7568,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_035",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"reason\": \"legacy_step_executor_policy_unsealed\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0036",
+    "source": {
+      "contract_id": "native-contract-036",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7608,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_authority_runtime_step_executor_py_036",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "decision = \"allowed_with_legacy_policy\" if authority_required else \"read_only\"",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0037",
+    "source": {
+      "contract_id": "native-contract-037",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7836,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_037",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "patch_transaction_compat = (",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0038",
+    "source": {
+      "contract_id": "native-contract-038",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7841,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_038",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "repair_chain_compat = (",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0039",
+    "source": {
+      "contract_id": "native-contract-039",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7860,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_039",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "and not repair_chain_compat",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0040",
+    "source": {
+      "contract_id": "native-contract-040",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7879,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_040",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "and not repair_chain_compat",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0041",
+    "source": {
+      "contract_id": "native-contract-041",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7937,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_authority_runtime_step_executor_py_041",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if not authority and not task and not context and not patch_transaction_compat and not repair_chain_compat:",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0042",
+    "source": {
+      "contract_id": "native-contract-042",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7959,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_042",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "compatibility_context = context if isinstance(context, dict) and context else None",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0043",
+    "source": {
+      "contract_id": "native-contract-043",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7961,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_043",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "compatibility_context is None",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0044",
+    "source": {
+      "contract_id": "native-contract-044",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7963,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_044",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "and (patch_transaction_compat or repair_chain_compat)",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0045",
+    "source": {
+      "contract_id": "native-contract-045",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7965,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_045",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "compatibility_context = {",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0046",
+    "source": {
+      "contract_id": "native-contract-046",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7966,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_046",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"compatibility_flow\": \"repair_chain\" if repair_chain_compat else \"patch_transaction\"",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0047",
+    "source": {
+      "contract_id": "native-contract-047",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 7972,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_047",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "context=compatibility_context,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0048",
+    "source": {
+      "contract_id": "native-contract-048",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 8895,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_048",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "#   Keep document/semantic chains moving when later compatibility wrappers",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0049",
+    "source": {
+      "contract_id": "native-contract-049",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 9239,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_049",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "def _zero_boundary_execute_simple_fallback(self, step, context, decision):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0050",
+    "source": {
+      "contract_id": "native-contract-050",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 9478,
+      "contract_domain": "authority_contract",
+      "native_owner": "RuntimeExecutionAuthorityGate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_authority_runtime_step_executor_py_050",
+      "recommended_test_targets": [
+        "tests/test_runtime_execution_ownership_migration_contract.py",
+        "tests/test_runtime_mainline_freeze_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "\"compatibility_seal\": \"step_executor_authority_entry\",",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "RuntimeExecutionAuthorityGate",
+    "owner_domain": "runtime_authority",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_execution_ownership_migration_contract.py",
+      "tests/test_runtime_mainline_freeze_contract.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0051",
+    "source": {
+      "contract_id": "native-contract-051",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 9614,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_051",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "fallback = _zero_boundary_execute_simple_fallback(self, step, context, decision)",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0052",
+    "source": {
+      "contract_id": "native-contract-052",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 9615,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_052",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if isinstance(fallback, dict):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0053",
+    "source": {
+      "contract_id": "native-contract-053",
+      "source_path": "core/runtime/step_executor.py",
+      "source_line": 9616,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_step_executor_runtime_step_executor_py_053",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return fallback",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0054",
+    "source": {
+      "contract_id": "native-contract-054",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 1263,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_054",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "# compatibility entrypoints",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0055",
+    "source": {
+      "contract_id": "native-contract-055",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 3758,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_055",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return_fallback_candidate_if_missing=True,",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0056",
+    "source": {
+      "contract_id": "native-contract-056",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 3884,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_056",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if not self._syntax_strategy_compat_marker_present():",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0057",
+    "source": {
+      "contract_id": "native-contract-057",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 3923,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_057",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "def _syntax_strategy_compat_marker_present(self) -> bool:",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0058",
+    "source": {
+      "contract_id": "native-contract-058",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5582,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_058",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "def _taskrunner_runtime_gate_fallback_step(self, task, current_tick=None):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0059",
+    "source": {
+      "contract_id": "native-contract-059",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5614,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_059",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "result.setdefault(\"compatibility_seal\", \"taskrunner_runtime_gate_consolidated\")",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0060",
+    "source": {
+      "contract_id": "native-contract-060",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5625,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_060",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "fallback = _taskrunner_runtime_gate_fallback_step(self, task, current_tick=current_tick)",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0061",
+    "source": {
+      "contract_id": "native-contract-061",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5626,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_061",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if isinstance(fallback, dict):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0062",
+    "source": {
+      "contract_id": "native-contract-062",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5627,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_062",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return fallback",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0063",
+    "source": {
+      "contract_id": "native-contract-063",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5638,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_063",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "fallback = _taskrunner_runtime_gate_fallback_step(self, task, current_tick=kwargs.get(\"current_tick\"))",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0064",
+    "source": {
+      "contract_id": "native-contract-064",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5639,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_064",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "if isinstance(fallback, dict):",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0065",
+    "source": {
+      "contract_id": "native-contract-065",
+      "source_path": "core/runtime/task_runner.py",
+      "source_line": 5640,
+      "contract_domain": "taskrunner_contract",
+      "native_owner": "TaskRunner runtime gate contract",
+      "assertion_hint": "legacy_compatibility_path_has_native_owner_or_blocker",
+      "recommended_test_name": "test_native_taskrunner_runtime_task_runner_py_065",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runner_scheduler_boundary_survival.py"
+      ],
+      "source_category": "runtime_core_compatibility",
+      "source_action": null,
+      "source_text": "return fallback",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "TaskRunner",
+    "owner_domain": "task_runner",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "bind_compatibility_path_to_native_owner_test"
+  },
+  {
+    "id": "native-contract-owner-0066",
+    "source": {
+      "contract_id": "native-contract-066",
+      "source_path": "core/runtime/task_step_executor_adapter.py",
+      "source_line": 218,
+      "contract_domain": "step_executor_contract",
+      "native_owner": "StepExecutor authority entry contract",
+      "assertion_hint": "planning_or_recovery_fallback_has_contract_evidence",
+      "recommended_test_name": "test_native_step_executor_runtime_task_step_executor_adapter_py_066",
+      "recommended_test_targets": [
+        "tests/test_runtime_mode_propagation.py",
+        "tests/test_runtime_execution_ownership_migration_contract.py"
+      ],
+      "source_category": "fallback_planning_or_recovery",
+      "source_action": null,
+      "source_text": "當 planner 還沒真的產 steps 時，做最小可用 fallback。",
+      "next_action": "extract_native_contract_test"
+    },
+    "native_owner": "StepExecutor",
+    "owner_domain": "step_executor",
+    "bridge_dependency": "none_or_native",
+    "retirement_prerequisite": "native_owner_contract_test_passes",
+    "test_coverage_candidates": [
+      "tests/test_runtime_mode_propagation.py",
+      "tests/test_runner_scheduler_boundary_survival.py"
+    ],
+    "next_action": "extract_planning_recovery_contract_test"
+  }
+]

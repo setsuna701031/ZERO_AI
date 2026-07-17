@@ -1,10 +1,7 @@
 import os
 from typing import Any, Dict, List, Optional
 
-try:
-    from core.task_memory import TaskMemory
-except ImportError:
-    from task_memory import TaskMemory
+from core.memory.memory_repository import MemoryRepository
 
 
 class ContextManager:
@@ -15,11 +12,16 @@ class ContextManager:
     def __init__(self, workspace_root: str, recent_limit: int = 5) -> None:
         self.workspace_root = os.path.abspath(workspace_root)
         self.recent_limit = max(1, int(recent_limit))
-        self.task_memory = TaskMemory(self.workspace_root)
+        self.memory_repository = MemoryRepository(self.workspace_root)
 
     def get_recent_task_records(self, limit: Optional[int] = None) -> Dict[str, Any]:
         safe_limit = self.recent_limit if limit is None else max(1, int(limit))
-        return self.task_memory.get_recent_records(limit=safe_limit)
+        return {
+            "ok": True,
+            "records": self.memory_repository.list_recent(limit=safe_limit),
+            "source": "MemoryRepository.list_recent",
+            "read_only": True,
+        }
 
     def build_context_bundle(self, limit: Optional[int] = None) -> Dict[str, Any]:
         recent_result = self.get_recent_task_records(limit=limit)

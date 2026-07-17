@@ -14,6 +14,9 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
+from core.runtime.runtime_authority import build_authority_metadata
+from core.runtime.runtime_closure import build_runtime_closure_fields
+from core.runtime.runtime_recovery_readiness import build_runtime_recovery_readiness_fields
 from core.runtime.runtime_transaction_coordinator import (
     RuntimeTransactionCoordinator,
     RuntimeTransactionResult,
@@ -33,6 +36,168 @@ _CURRENT_COORDINATOR: ContextVar[RuntimeTransactionCoordinator | None] = Context
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+TRANSACTION_BOUNDARY_STATUSES = {
+    "opened",
+    "committed",
+    "rolled_back",
+    "denied",
+    "failed",
+    "incomplete",
+}
+
+
+def build_transaction_boundary_metadata(
+    payload: dict[str, Any] | None = None,
+    *,
+    transaction_id: Any = "",
+    transaction_source: Any = "",
+    transaction_status: Any = "",
+    transaction_scope: Any = "",
+    transaction_timestamp: Any = "",
+) -> dict[str, Any]:
+    data = dict(payload or {})
+    nested = data.get("transaction_boundary")
+    if isinstance(nested, dict):
+        data = {**dict(nested), **data}
+
+    tx_id = _clean_text(transaction_id) or _clean_text(data.get("transaction_id"))
+    source = (
+        _clean_text(transaction_source)
+        or _clean_text(data.get("transaction_source"))
+        or _clean_text(data.get("source"))
+        or "runtime_transaction"
+    )
+    status = (
+        _clean_text(transaction_status)
+        or _clean_text(data.get("transaction_status"))
+        or _clean_text(data.get("status"))
+        or "opened"
+    ).lower()
+    scope = (
+        _clean_text(transaction_scope)
+        or _clean_text(data.get("transaction_scope"))
+        or _clean_text(data.get("scope"))
+        or "runtime"
+    )
+    timestamp = _clean_text(transaction_timestamp) or _clean_text(
+        data.get("transaction_timestamp") or data.get("timestamp") or data.get("created_at")
+    )
+
+    duplicate = isinstance(data.get("runtime_transaction"), dict) or isinstance(
+        data.get("transaction_boundary"),
+        dict,
+    )
+    incomplete = not tx_id or status == "incomplete"
+    denied = status in {"denied", "blocked", "rejected"}
+    failed = status in {"failed", "error", "exception"}
+    committed = status == "committed"
+
+    if duplicate:
+        legality = "duplicate"
+        reason = "duplicate_transaction_propagation"
+    elif denied:
+        legality = "denied"
+        reason = _clean_text(data.get("denial_reason") or data.get("blocked_reason")) or "transaction_denied"
+    elif failed:
+        legality = "failed"
+        reason = _clean_text(data.get("failure_reason") or data.get("error_type") or data.get("error")) or "transaction_failed"
+    elif incomplete and committed:
+        legality = "incomplete"
+        reason = "incomplete_transaction_cannot_commit"
+    elif incomplete:
+        legality = "incomplete"
+        reason = "transaction_id_missing"
+    elif committed and data.get("commit_allowed") is False:
+        legality = "denied"
+        reason = "transaction_commit_not_allowed"
+    else:
+        legality = "legal"
+        reason = ""
+
+    canonical_status = status
+    if status in {"active", "created", "staged"}:
+        canonical_status = "opened"
+    elif denied:
+        canonical_status = "denied"
+    elif failed:
+        canonical_status = "failed"
+    elif canonical_status not in TRANSACTION_BOUNDARY_STATUSES:
+        canonical_status = "opened"
+
+    boundary = {
+        "transaction_id": tx_id,
+        "transaction_source": source,
+        "transaction_status": canonical_status,
+        "transaction_legality": legality,
+        "transaction_scope": scope,
+        "transaction_timestamp": timestamp,
+    }
+    if reason:
+        boundary["denial_reason" if legality == "denied" else "boundary_reason"] = reason
+    if duplicate:
+        boundary["duplicate_transaction_propagation"] = True
+        existing = data.get("runtime_transaction") if isinstance(data.get("runtime_transaction"), dict) else {}
+        existing_provenance = existing.get("provenance") if isinstance(existing.get("provenance"), dict) else {}
+        boundary["duplicate_transaction_evidence"] = {
+            "transaction_id": _clean_text(existing.get("transaction_id")),
+            "transaction_status": _clean_text(existing.get("status") or existing.get("transaction_status")),
+            "transaction_source": _clean_text(existing.get("transaction_source") or existing_provenance.get("source")),
+        }
+    boundary.update(
+        build_runtime_closure_fields(
+            {
+                **data,
+                **boundary,
+                "source": source,
+            },
+            artifact_type="transaction",
+            artifact_id=tx_id,
+            finalized_by=source,
+        )
+    )
+    boundary.update(
+        build_runtime_recovery_readiness_fields(
+            {
+                **data,
+                "transaction_boundary": boundary,
+                "closure_evidence": boundary.get("closure_evidence"),
+                "runtime_closure": {
+                    key: boundary.get(key)
+                    for key in (
+                        "closure_status",
+                        "closure_reason",
+                        "finalized_timestamp",
+                        "finalized_by",
+                        "immutable_state",
+                        "closure_evidence",
+                    )
+                },
+            },
+            artifact_type="transaction",
+            artifact_id=tx_id,
+        )
+    )
+    return boundary
+
+
+def attach_transaction_boundary_metadata(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    boundary = build_transaction_boundary_metadata(merged)
+    merged["transaction_boundary"] = boundary
+    for key, value in boundary.items():
+        merged.setdefault(key, value)
+    return merged
+
+
+def attach_authority_metadata(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    authority = build_authority_metadata(merged)
+    merged["authority_seal"] = authority
+    for key, value in authority.items():
+        merged.setdefault(key, value)
+    return merged
 
 
 @dataclass(frozen=True)
@@ -63,9 +228,20 @@ class RuntimeTransactionContext:
         )
 
     def to_metadata(self) -> dict[str, Any]:
+        boundary = build_transaction_boundary_metadata(
+            {
+                **dict(self.metadata),
+                "transaction_id": self.transaction_id,
+                "parent_transaction_id": self.parent_transaction_id,
+                "transaction_source": self.provenance.get("source") if isinstance(self.provenance, dict) else "",
+                "transaction_status": self.metadata.get("transaction_status", "opened"),
+                "transaction_scope": self.metadata.get("transaction_scope", "runtime"),
+            }
+        )
         return {
             "transaction_id": self.transaction_id,
             "parent_transaction_id": self.parent_transaction_id,
+            "transaction_boundary": boundary,
             "lineage": dict(self.lineage),
             "authority": dict(self.authority_metadata),
             "provenance": dict(self.provenance),
@@ -214,6 +390,26 @@ def merge_current_transaction_metadata(metadata: dict[str, Any] | None = None) -
     if context is not None:
         merged.setdefault("runtime_transaction", context.to_metadata())
         merged.setdefault("transaction_id", context.transaction_id)
+        merged = attach_transaction_boundary_metadata(
+            {
+                **merged,
+                "transaction_id": context.transaction_id,
+                "transaction_source": context.provenance.get("source") if isinstance(context.provenance, dict) else "",
+                "transaction_status": merged.get("transaction_status", "opened"),
+                "transaction_scope": merged.get("transaction_scope", context.metadata.get("transaction_scope", "runtime")),
+            }
+        )
+        merged = attach_authority_metadata(
+            {
+                **merged,
+                "authority_source": merged.get("authority_source", "runtime_transaction_context"),
+                "authority_scope": merged.get("authority_scope", "runtime_transaction"),
+                "authority_status": merged.get("authority_status", "allowed"),
+                "authority_reason": merged.get("authority_reason", "current_transaction_authorized"),
+                "ownership_source": merged.get("ownership_source", "core.runtime.runtime_transaction_context"),
+                "ownership_scope": merged.get("ownership_scope", "runtime_transaction"),
+            }
+        )
         if context.parent_transaction_id:
             merged.setdefault("parent_transaction_id", context.parent_transaction_id)
         if context.lineage:

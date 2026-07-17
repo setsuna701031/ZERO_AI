@@ -1,0 +1,284 @@
+[
+  {
+    "path": "core\\runtime\\execution_authority.py",
+    "line": 323,
+    "marker": "ZERO_PATCH_RUNTIME_AUTHORITY_GATE_COMPAT_V1",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\execution_authority.py",
+    "line": 536,
+    "marker": "ZERO_PATCH_RUNTIME_AUTHORITY_GATE_COMPAT_V2_END",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\operator_integration_bridge.py",
+    "line": 221,
+    "marker": "ZERO_PATCH_OPERATOR_REPLAY_EVIDENCE_V22",
+    "category": "replay_evidence"
+  },
+  {
+    "path": "core\\runtime\\operator_session_bootstrap.py",
+    "line": 266,
+    "marker": "ZERO_PATCH_OPERATOR_BOOTSTRAP_TASK_RUNTIME_REF_V12",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 380,
+    "marker": "ZERO_PATCH_OPERATOR_RUNTIME_GET_SESSION_COMPLETION_READBACK_V13B",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 419,
+    "marker": "ZERO_PATCH_OPERATOR_RUNTIME_GET_SESSION_FAILURE_READBACK_V14",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 462,
+    "marker": "ZERO_PATCH_OPERATOR_RUNTIME_GET_SESSION_FAILED_STEP_V15",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 494,
+    "marker": "ZERO_PATCH_OPERATOR_STATUS_RESUMABLE_V17",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 531,
+    "marker": "ZERO_PATCH_OPERATOR_FAILED_CHECKPOINT_V18",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 603,
+    "marker": "ZERO_PATCH_OPERATOR_FAILED_CHECKPOINT_V19",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 660,
+    "marker": "ZERO_PATCH_OPERATOR_FAILED_CHECKPOINT_V20",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 722,
+    "marker": "ZERO_PATCH_OPERATOR_RECOVERY_PAYLOAD_V21",
+    "category": "recovery"
+  },
+  {
+    "path": "core\\runtime\\persistent_operator.py",
+    "line": 761,
+    "marker": "ZERO_PATCH_OPERATOR_REPLAY_EVIDENCE_V22",
+    "category": "replay_evidence"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_engineering_session.py",
+    "line": 498,
+    "marker": "ZERO_PATCH_OPERATOR_RUNTIME_GET_SESSION_COMPLETION_READBACK_V13B",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_engineering_session.py",
+    "line": 537,
+    "marker": "ZERO_PATCH_OPERATOR_RUNTIME_GET_SESSION_FAILURE_READBACK_V14",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_engineering_session.py",
+    "line": 580,
+    "marker": "ZERO_PATCH_OPERATOR_RUNTIME_GET_SESSION_FAILED_STEP_V15",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\runtime_native_engineering_session.py",
+    "line": 612,
+    "marker": "ZERO_PATCH_OPERATOR_STATUS_RESUMABLE_V17",
+    "category": "operator_session"
+  },
+  {
+    "path": "core\\runtime\\runtime_recovery_executor.py",
+    "line": 397,
+    "marker": "ZERO_PATCH_OPERATOR_RECOVERY_PAYLOAD_V21",
+    "category": "recovery"
+  },
+  {
+    "path": "core\\runtime\\runtime_replay_engine.py",
+    "line": 1289,
+    "marker": "ZERO_PATCH_OPERATOR_REPLAY_EVIDENCE_V22",
+    "category": "replay_evidence"
+  },
+  {
+    "path": "core\\runtime\\step_executor.py",
+    "line": 9523,
+    "marker": "ZERO_PATCH_STEP_EXECUTOR_AUTHORITY_ENTRY_V1",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\step_executor.py",
+    "line": 9656,
+    "marker": "ZERO_PATCH_STEP_EXECUTOR_AUTHORITY_ENTRY_V2_END",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 63,
+    "marker": "ZERO_PATCH_TASKRUNNER_SCHEDULER_STEP_AUTHORITY_V1",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5478,
+    "marker": "ZERO_PATCH_TASKRUNNER_RUNTIME_GATE_FALLBACK_V1",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5588,
+    "marker": "ZERO_PATCH_TASKRUNNER_RUNTIME_GATE_FALLBACK_V2",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5687,
+    "marker": "ZERO_PATCH_TASKRUNNER_RUNTIME_GATE_FALLBACK_V3",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5725,
+    "marker": "ZERO_PATCH_RUNTIME_GATE_FINAL_V4",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5795,
+    "marker": "ZERO_PATCH_RUNTIME_GATE_FINAL_V5",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5865,
+    "marker": "ZERO_PATCH_RUNTIME_GATE_FINAL_V6",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5925,
+    "marker": "ZERO_PATCH_RUNTIME_GATE_FINAL_V7",
+    "category": "authority"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 6000,
+    "marker": "ZERO_PATCH_RUNTIME_GATE_FINAL_V8",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 235,
+    "marker": "ZERO_PATCH_TASKRUNNER_SCHEDULER_STEP_AUTHORITY_V1",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10415,
+    "marker": "ZERO_PATCH_SCHEDULER_RUNTIME_GATE_FALLBACK_V1",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10495,
+    "marker": "ZERO_PATCH_SCHEDULER_RUNTIME_GATE_FALLBACK_V2",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10572,
+    "marker": "ZERO_PATCH_SCHEDULER_RUNTIME_GATE_FALLBACK_V3",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10643,
+    "marker": "ZERO_PATCH_SCHEDULER_EXPLICIT_AUTHORITY_FALLBACK_V4",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10709,
+    "marker": "ZERO_PATCH_SCHEDULER_EXPLICIT_AUTHORITY_DIRECT_HANDLER_V5",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10795,
+    "marker": "ZERO_PATCH_SCHEDULER_EXPLICIT_AUTHORITY_RESULT_SHAPE_V6",
+    "category": "authority"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10822,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_SESSION_COMPLETION_V7",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10893,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V8",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10980,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V9",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11051,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V10",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11157,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V11",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11246,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V12",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11310,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11334,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_FAILURE_READBACK_V14",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11366,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_FAILED_STEP_V15",
+    "category": "scheduler"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11400,
+    "marker": "ZERO_PATCH_SCHEDULER_OPERATOR_FAILED_STEP_V16",
+    "category": "scheduler"
+  }
+]

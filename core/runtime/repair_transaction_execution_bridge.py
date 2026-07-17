@@ -10,6 +10,8 @@ from core.runtime.mutation_session import (
     MutationRiskLevel,
     MutationVerificationRequirement,
 )
+from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
+from core.runtime.runtime_authority import build_authority_metadata
 
 GovernedRepairGateHook = Callable[[dict[str, Any]], Any]
 
@@ -117,6 +119,25 @@ def build_executable_repair_transaction(transaction: Any) -> dict[str, Any]:
         "audit_events": [dict(item) for item in tx.get("audit_events", []) if isinstance(item, Mapping)],
         "metadata": {
             "source": "runtime_repair_transaction",
+            "transaction_boundary": build_transaction_boundary_metadata(
+                {
+                    "transaction_id": transaction_id,
+                    "transaction_source": "repair_transaction_execution_bridge",
+                    "transaction_status": "opened",
+                    "transaction_scope": "repair_transaction_bridge",
+                    "transaction_timestamp": _first_nonempty(tx.get("created_at")),
+                }
+            ),
+            "authority_seal": build_authority_metadata(
+                {
+                    "authority_source": "repair_transaction_execution_bridge",
+                    "authority_scope": "repair_transaction_bridge",
+                    "authority_status": "allowed",
+                    "authority_reason": "repair_transaction_bridge_metadata_only",
+                    "ownership_source": "core.runtime.repair_transaction_execution_bridge",
+                    "ownership_scope": "repair_transaction_bridge",
+                }
+            ),
             "original_state": state,
             "transaction_type": _first_nonempty(tx.get("transaction_type"), "runtime_repair_transaction"),
             "transaction_version": _first_nonempty(tx.get("transaction_version")),

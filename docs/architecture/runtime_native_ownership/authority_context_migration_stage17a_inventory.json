@@ -1,0 +1,309 @@
+{
+  "stage": "Stage17A — Wave1 Authority Context Migration",
+  "canonical_owner": "core.runtime.taskrunner_authority_contract.build_taskrunner_authority_context",
+  "entrypoint": "core.runtime.task_runner.TaskRunner._build_taskrunner_authority_context",
+  "consumers": {
+    "definitions": [
+      {
+        "file": "core/runtime/task_runner.py",
+        "line": 1776,
+        "symbol": "_build_taskrunner_authority_context"
+      }
+    ],
+    "calls": [
+      {
+        "file": "core/runtime/task_runner.py",
+        "line": 353
+      },
+      {
+        "file": "core/runtime/task_runner.py",
+        "line": 2246
+      },
+      {
+        "file": "tests/test_aer_live_execution_lineage_subject_binding.py",
+        "line": 48
+      },
+      {
+        "file": "tests/test_aer_live_execution_lineage_subject_binding.py",
+        "line": 80
+      },
+      {
+        "file": "tests/test_aer_live_execution_lineage_subject_binding.py",
+        "line": 105
+      },
+      {
+        "file": "tests/test_agentloop_createtask_mutation_bridge_contract.py",
+        "line": 195
+      },
+      {
+        "file": "tests/test_operator_session_bootstrap_contract.py",
+        "line": 178
+      },
+      {
+        "file": "tests/test_runtime_dispatcher_execution_authority_bridge.py",
+        "line": 77
+      },
+      {
+        "file": "tests/test_scheduler_no_direct_mutation_contract.py",
+        "line": 210
+      },
+      {
+        "file": "tests/test_scheduler_taskrunner_authority_propagation_contract.py",
+        "line": 85
+      },
+      {
+        "file": "tests/test_taskrunner_authority_context_canonical_migration.py",
+        "line": 44
+      },
+      {
+        "file": "tests/test_taskrunner_document_authority_metadata.py",
+        "line": 24
+      },
+      {
+        "file": "tests/test_taskrunner_document_authority_metadata.py",
+        "line": 52
+      },
+      {
+        "file": "tests/test_taskrunner_document_authority_metadata.py",
+        "line": 74
+      }
+    ],
+    "overlays": []
+  },
+  "active_authority_context_overlay_count": 0,
+  "compatibility_classification": {
+    "retired_active_overlay": "_zero_boundary_build_taskrunner_authority_context assignment",
+    "inactive_legacy_helpers_visible": true,
+    "scheduler_boundary_overlay_deferred": true,
+    "scheduler_boundary_overlay_reason": "tracked compatibility bridge; it no longer owns TaskRunner authority propagation and remains visible for Wave8 retirement",
+    "compatibility_bridge_count": 15,
+    "compatibility_bridge_ids": [
+      "S14-CB-001",
+      "S14-CB-002",
+      "S14-CB-003",
+      "S14-CB-004",
+      "S14-CB-005",
+      "S14-CB-006",
+      "S14-CB-007",
+      "S14-CB-008",
+      "S14-CB-009",
+      "S14-CB-010",
+      "S14-CB-011",
+      "S14-CB-012",
+      "S14-CB-013",
+      "S14-CB-014",
+      "S14-CB-015"
+    ]
+  },
+  "propagation_graph_before": [
+    "Scheduler._build_scheduler_authority_context",
+    "Scheduler._run_step_via_task_runner",
+    "RuntimeDispatcher.run_scheduler_boundary",
+    "TaskRunner._build_taskrunner_authority_context (module-level overlay replacement)",
+    "delegate_taskrunner_execution_capability",
+    "StepExecutor.execute_step"
+  ],
+  "propagation_graph_after": [
+    "Scheduler._build_scheduler_authority_context",
+    "Scheduler canonical root-lineage normalization",
+    "Scheduler._run_step_via_task_runner",
+    "RuntimeDispatcher.run_scheduler_boundary",
+    "TaskRunner._build_taskrunner_authority_context (class entrypoint)",
+    "taskrunner_authority_contract.build_taskrunner_authority_context",
+    "delegate_taskrunner_execution_capability",
+    "StepExecutor.execute_step"
+  ],
+  "domain_propagation": {
+    "authority_context": "incoming scheduler context + immutable capability provenance",
+    "runtime_session": [
+      "session_id",
+      "runtime_session_id",
+      "operator_session_id",
+      "persistent_operator_session_id"
+    ],
+    "goal_lineage": "canonical goal_lineage plus runtime_identity and runtime_identity_graph",
+    "continuation_chain": [
+      "continuation_id",
+      "parent_continuation_id",
+      "continuation_chain",
+      "continuation_lineage"
+    ],
+    "repair_chain": [
+      "repair_chain_id",
+      "repair_context"
+    ]
+  },
+  "invariants": {
+    "runtime_identity_preserved": true,
+    "goal_lineage_preserved": true,
+    "continuation_chain_preserved": true,
+    "repair_chain_preserved": true,
+    "scheduler_delegation_boundary_preserved": true,
+    "taskrunner_does_not_grant_execution_authority": true
+  },
+  "non_mainline_issue_reporting": {
+    "covered": 6,
+    "total": 6,
+    "status": "preserved",
+    "tracking_ids": [
+      "S14-NM-001",
+      "S14-NM-002",
+      "S14-NM-003",
+      "S14-NM-004",
+      "S14-NM-005",
+      "S14-NM-006"
+    ],
+    "records": [
+      {
+        "tracking_id": "S14-NM-001",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8325,
+        "symbol": "Scheduler.get_queue_snapshot",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:8325",
+        "native_owner": "core.tasks.scheduler.Scheduler.get_queue_snapshot",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:8325"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-002",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8326,
+        "symbol": "Scheduler.get_queue_rows",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:8326",
+        "native_owner": "core.tasks.scheduler.Scheduler.get_queue_rows",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:8326"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-003",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9343,
+        "symbol": "Scheduler.approve_review_item",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:9343",
+        "native_owner": "core.tasks.scheduler.Scheduler.approve_review_item",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:9343"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-004",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9344,
+        "symbol": "Scheduler.reject_review_item",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:9344",
+        "native_owner": "core.tasks.scheduler.Scheduler.reject_review_item",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:9344"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-005",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9381,
+        "symbol": "Scheduler.get_review_queue",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:9381",
+        "native_owner": "core.tasks.scheduler.Scheduler.get_review_queue",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:9381"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-006",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "source_line": 227,
+        "symbol": "Scheduler._attach_autonomous_repair_chain_summary",
+        "current_owner": "class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+        "native_owner": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler_core/runtime_overlay_helpers.py:227"
+        ]
+      }
+    ]
+  }
+}

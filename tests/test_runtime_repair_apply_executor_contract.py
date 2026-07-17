@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.tasks.runtime_repair_apply_executor_contract import (
+
     build_runtime_repair_apply_executor_contract,
     build_runtime_repair_execution_audit_payload,
     build_runtime_repair_execution_receipt,
@@ -20,6 +21,10 @@ from core.tasks.runtime_repair_transaction_review import (
     approve_runtime_repair_transaction_review,
     build_runtime_repair_transaction_review,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def _build_controlled_apply():

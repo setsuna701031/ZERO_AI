@@ -4,6 +4,11 @@ from pathlib import Path
 from typing import Any, Dict
 
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
 
 
 def _make_scheduler(tmp_path: Path) -> Scheduler:

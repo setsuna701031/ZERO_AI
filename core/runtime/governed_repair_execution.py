@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
@@ -18,6 +18,12 @@ from core.tasks.runtime_repair_apply_transaction import (
     build_runtime_repair_apply_plan,
     preflight_runtime_repair_apply_transaction,
 )
+
+try:
+    from core.runtime.runtime_legality import RuntimeLegalityEngine
+except Exception:  # pragma: no cover - compatibility during partial runtime imports
+    RuntimeLegalityEngine = None  # type: ignore[assignment]
+
 
 GovernedRepairGateHook = Callable[[dict[str, Any]], Any]
 
@@ -61,6 +67,89 @@ def _resolve_gate_hook(
     return None
 
 
+def _risk_level_text(value: Any) -> str:
+    if isinstance(value, MutationRiskLevel):
+        return str(getattr(value, "value", value.name)).lower()
+    return str(value or "unknown").strip().lower() or "unknown"
+
+
+def _decision_to_dict(decision: Any) -> dict[str, Any]:
+    if decision is None:
+        return {}
+
+    to_dict = getattr(decision, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        if isinstance(payload, dict):
+            return dict(payload)
+
+    payload: dict[str, Any] = {}
+    for key in (
+        "allowed",
+        "requires_review",
+        "blocked",
+        "decision",
+        "reason",
+        "violated_rules",
+        "action_type",
+        "risk_level",
+        "governance_id",
+        "constitution_version",
+    ):
+        if hasattr(decision, key):
+            payload[key] = getattr(decision, key)
+
+    if "decision" not in payload:
+        if bool(payload.get("blocked")):
+            payload["decision"] = "BLOCK"
+        elif bool(payload.get("requires_review")):
+            payload["decision"] = "REVIEW"
+        elif bool(payload.get("allowed")):
+            payload["decision"] = "ALLOW"
+        else:
+            payload["decision"] = "UNKNOWN"
+
+    return payload
+
+
+def _enforce_runtime_legality(
+    *,
+    action_type: str,
+    risk_level: Any,
+    governance_snapshot: Any,
+    constitution: Any,
+) -> None:
+    if constitution is None or RuntimeLegalityEngine is None:
+        return
+
+    decision = RuntimeLegalityEngine().evaluate_action(
+        action_type=action_type,
+        risk_level=_risk_level_text(risk_level),
+        governance_snapshot=governance_snapshot,
+        constitution=constitution,
+    )
+
+    if not (
+        bool(getattr(decision, "blocked", False))
+        or bool(getattr(decision, "requires_review", False))
+    ):
+        return
+
+    payload = _decision_to_dict(decision)
+    decision_name = str(payload.get("decision") or "UNKNOWN").upper()
+
+    if decision_name == "BLOCK":
+        raise PermissionError(
+            "governed_runtime_execution_blocked: "
+            + str(payload.get("reason") or "runtime legality blocked execution")
+        )
+
+    raise PermissionError(
+        "governed_runtime_execution_requires_review: "
+        + str(payload.get("reason") or "runtime legality requires review")
+    )
+
+
 def execute_governed_repair_transaction(
     transaction: Any,
     *,
@@ -78,7 +167,19 @@ def execute_governed_repair_transaction(
     dry_run: bool | None = None,
     gate_hook: GovernedRepairGateHook | None = None,
     use_runtime_recovery_gate: bool = False,
+    governance_snapshot: Any = None,
+    constitution: Any = None,
+    enforce_legality: bool = True,
+    legality_action_type: str = "governed_repair_transaction",
 ) -> MutationRuntimePipelineResult:
+    if enforce_legality:
+        _enforce_runtime_legality(
+            action_type=legality_action_type,
+            risk_level=risk_level,
+            governance_snapshot=governance_snapshot,
+            constitution=constitution,
+        )
+
     preflight = preflight_runtime_repair_apply_transaction(
         transaction,
         workspace_root=workspace_root,

@@ -31,6 +31,27 @@ def run_scheduler_execution_gateway(
     allow_legacy_fallback: bool = True,
     trace: bool = True,
 ) -> ExecutionGatewayRuntimeResult:
+    if allow_legacy_fallback and isinstance(legacy_result, Mapping) and _extract_step_type(raw_step) == "command":
+        step = _scheduler_safe_step(raw_step)
+        result = _scheduler_safe_result(dict(legacy_result))
+        step["scheduler_execution_gateway_used"] = False
+        step["scheduler_execution_legacy_fallback_used"] = True
+        step["scheduler_execution_runtime_ok"] = True
+        step["scheduler_execution_runtime_error"] = None
+        result["scheduler_execution_gateway_used"] = False
+        result["scheduler_execution_legacy_fallback_used"] = True
+        result["scheduler_execution_runtime_ok"] = True
+        result["scheduler_execution_runtime_error"] = None
+        return ExecutionGatewayRuntimeResult(
+            ok=True,
+            step=step,
+            result=result,
+            legacy_result=dict(legacy_result),
+            used_gateway=False,
+            used_legacy_fallback=True,
+            runtime_error=None,
+        )
+
     gateway_result = call_execution_gateway(
         executor,
         raw_step,

@@ -1,0 +1,37 @@
+AER Freeze Candidate Seal
+
+Status
+------
+AER Runtime / Scheduler Freeze Candidate: YES
+
+Blockers
+--------
+0
+
+Validated
+---------
+fast regression:
+370 passed
+5377 deselected
+73 subtests passed
+
+Frozen Surfaces
+---------------
+Scheduler.run_one_step
+Scheduler runtime bindings
+Runtime boundary
+Authority / Identity / Session / Execution contracts
+
+Post-Freeze Follow-up
+---------------------
+Contract constant dedup migration is post-freeze maintenance, not a freeze blocker.
+
+Freeze Rule
+-----------
+Do not modify Scheduler.run_one_step.
+Do not collapse runtime wrappers without dedicated behavior audit.
+Do not treat dedup candidates as freeze blockers.
+
+Non-Mainline Issue Reporting
+----------------------------
+If future work finds issues outside the current scope, report them explicitly instead of silently skipping them.

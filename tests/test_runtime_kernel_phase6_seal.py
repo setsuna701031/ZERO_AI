@@ -5,6 +5,7 @@ from pathlib import Path
 from core.runtime.governed_mutation_runtime import run_governed_mutation_runtime
 from core.runtime.mutation_gateway import MutationGatewayRequest
 from core.runtime.mutation_session import (
+
     MutationApprovalMode,
     MutationScope,
     MutationVerificationRequirement,
@@ -22,6 +23,10 @@ from core.runtime.runtime_replay_session import RuntimeReplaySession
 from core.runtime.runtime_seal import seal_runtime_artifact, verify_runtime_seal
 from core.runtime.runtime_self_protection import RuntimeSelfProtectionController
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_runtime_seal_snapshot_verifies_and_detects_tamper() -> None:

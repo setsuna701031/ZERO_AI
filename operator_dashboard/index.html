@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ZERO Operator Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to runtime overview</a>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">Z</span><div><strong>ZERO</strong><span>Operator Dashboard</span></div></div>
+    <div class="topbar-actions">
+      <span id="modeBadge" class="mode-badge">Connecting</span>
+      <span id="snapshotBadge" class="snapshot-badge" title="Current operations snapshot">snapshot —</span>
+      <button id="refreshButton" class="icon-button" type="button" aria-label="Refresh dashboard">↻</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="pageTitle">
+      <div><p class="eyebrow">LONG-HORIZON GOAL RUNTIME</p><h1 id="pageTitle">Operational control, without losing the thread.</h1><p id="lastUpdated" class="subtle">Loading persisted runtime state…</p></div>
+      <div id="healthHero" class="health-orb" role="status"><span class="orb-dot"></span><div><small>Runtime health</small><strong>Checking</strong></div></div>
+    </section>
+
+    <section id="metricGrid" class="metric-grid" aria-label="Runtime metrics"></section>
+
+    <div class="workspace-grid">
+      <section class="panel goals-panel" aria-labelledby="goalsHeading">
+        <div class="panel-head"><div><p class="eyebrow">GOAL OPERATIONS</p><h2 id="goalsHeading">Long-horizon goals</h2></div><label class="filter-label">View<select id="goalFilter"><option value="all">All</option><option value="active">Active</option><option value="waiting_for_approval">Waiting approval</option><option value="paused">Paused</option><option value="blocked">Blocked</option><option value="failed">Failed</option><option value="stalled">Stalled</option><option value="completed">Completed</option></select></label></div>
+        <div id="goalList" class="goal-list" aria-live="polite"></div>
+      </section>
+
+      <aside class="side-stack">
+        <section class="panel approval-panel" aria-labelledby="approvalsHeading">
+          <div class="panel-head compact"><div><p class="eyebrow">OPERATOR QUEUE</p><h2 id="approvalsHeading">Pending approvals</h2></div><span id="approvalCount" class="count-pill">0</span></div>
+          <div id="approvalList" class="approval-list"></div>
+        </section>
+        <section class="panel health-panel" aria-labelledby="healthHeading">
+          <div class="panel-head compact"><div><p class="eyebrow">INTEGRITY</p><h2 id="healthHeading">Health checks</h2></div></div>
+          <div id="healthList" class="health-list"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <dialog id="detailDialog" class="detail-dialog"><div class="dialog-shell"><header><div><p class="eyebrow">GOAL INSPECTION</p><h2 id="detailTitle">Goal</h2></div><button class="icon-button" data-close="detailDialog" aria-label="Close">×</button></header><div id="detailBody" class="detail-body"></div></div></dialog>
+  <dialog id="actionDialog" class="action-dialog"><form id="actionForm" method="dialog"><header><div><p class="eyebrow">EXPLICIT OPERATOR ACTION</p><h2 id="actionTitle">Confirm action</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></header><div id="actionContext" class="action-context"></div><label>Operator identity<input id="operatorIdentity" name="operatorIdentity" maxlength="128" autocomplete="off" required aria-label="Operator identity"></label><label id="reasonLabel">Reason<textarea id="actionReason" maxlength="500" rows="3"></textarea></label><label class="confirm-check"><input id="confirmAction" type="checkbox" required><span>I reviewed the identity, scope, and runtime impact.</span></label><div id="actionError" class="form-error" role="alert"></div><footer><button class="button ghost" value="cancel">Cancel</button><button id="confirmButton" class="button danger" value="default">Confirm</button></footer></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

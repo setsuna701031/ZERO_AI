@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -140,7 +141,7 @@ class StepReflectionEngine:
         # -----------------------------------------------------
         # 1. terminal runtime 狀態
         # -----------------------------------------------------
-        if status == "finished":
+        if canonical_runtime_status(status) == "completed":
             return self._result(
                 decision="finish",
                 reason="runtime_state marked finished",

@@ -3,6 +3,11 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    SYSTEM_CAPABILITY_INVENTORY,
+)
+
 
 class RuntimeOwner(str, Enum):
     SCHEDULER = "scheduler"
@@ -38,6 +43,11 @@ class RuntimeAuthorityError(PermissionError):
 
 
 AuthorityRule = tuple[RuntimeOwner, RuntimeResource, RuntimeAction]
+
+# Public inventory aliases keep policy review in the ownership module while
+# token issuance and validation remain isolated in runtime_system_capability.
+SYSTEM_PERMISSION_CLASSES = RuntimeCapabilityClass
+SYSTEM_EXPLICIT_CAPABILITIES = SYSTEM_CAPABILITY_INVENTORY
 
 
 _ALLOWED_RULES: frozenset[AuthorityRule] = frozenset(
@@ -98,6 +108,17 @@ _ALLOWED_RULES: frozenset[AuthorityRule] = frozenset(
     }
 )
 
+# SYSTEM is retained as a metadata/bootstrapping owner, but it is no longer a
+# wildcard policy authority. SYSTEM can only perform explicitly listed
+# low-risk observability operations. Any runtime mutation, transition, dispatch,
+# or execution-result write must be performed by the concrete runtime owner or
+# by a live capability/token authority in the domain-specific authority modules.
+_SYSTEM_ALLOWED_RULES: frozenset[AuthorityRule] = frozenset(
+    (RuntimeOwner.SYSTEM, RuntimeResource(resource), RuntimeAction(action))
+    for capability_class in (RuntimeCapabilityClass.READ, RuntimeCapabilityClass.WRITE)
+    for resource, action in SYSTEM_CAPABILITY_INVENTORY[capability_class]
+)
+
 
 def _coerce_enum(enum_type: type[Enum], value: Any) -> Enum | None:
     if isinstance(value, enum_type):
@@ -117,6 +138,15 @@ def _coerce_enum(enum_type: type[Enum], value: Any) -> Enum | None:
     return None
 
 
+def system_authority_rules() -> frozenset[AuthorityRule]:
+    """Return the explicitly scoped SYSTEM policy rules.
+
+    This is intentionally narrow and inspectable. Do not replace it with a
+    blanket SYSTEM bypass; SYSTEM metadata identities are not policy authority.
+    """
+    return _SYSTEM_ALLOWED_RULES
+
+
 def can_access(owner: Any, resource: Any, action: Any) -> bool:
     runtime_owner = _coerce_enum(RuntimeOwner, owner)
     runtime_resource = _coerce_enum(RuntimeResource, resource)
@@ -125,10 +155,11 @@ def can_access(owner: Any, resource: Any, action: Any) -> bool:
     if runtime_owner is None or runtime_resource is None or runtime_action is None:
         return False
 
+    rule = (runtime_owner, runtime_resource, runtime_action)
     if runtime_owner is RuntimeOwner.SYSTEM:
-        return True
+        return rule in _SYSTEM_ALLOWED_RULES
 
-    return (runtime_owner, runtime_resource, runtime_action) in _ALLOWED_RULES
+    return rule in _ALLOWED_RULES
 
 
 def assert_runtime_authority(owner: Any, resource: Any, action: Any) -> None:

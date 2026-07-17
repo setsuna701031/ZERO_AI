@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MAINLINE = ROOT / "core" / "runtime" / "runtime_native_mainline.py"
+ADAPTER = ROOT / "core" / "runtime" / "runtime_native_entry_adapter.py"
+
+
+def test_runtime_native_mainline_compatibility_retirement_phase2_single_active_marker() -> None:
+    source = MAINLINE.read_text(encoding="utf-8")
+
+    assert "ZERO_PACKAGE16_RUNTIME_NATIVE_ENTRY_ADAPTER_BINDING_BEGIN" not in source
+    assert "ZERO_PACKAGE17_RUNTIME_NATIVE_ENTRY_ADAPTER_BINDING_BEGIN" not in source
+    assert "ZERO_PACKAGE18_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_BEGIN" not in source
+
+    assert source.count("ZERO_PACKAGE19_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_PHASE2_BEGIN") == 1
+    assert source.count("ZERO_PACKAGE19_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_PHASE2_END") == 1
+
+
+def test_runtime_native_mainline_compatibility_retirement_phase2_import_safe() -> None:
+    ast.parse(MAINLINE.read_text(encoding="utf-8"))
+    ast.parse(ADAPTER.read_text(encoding="utf-8"))
+
+    import core.runtime.runtime_native_mainline as mainline
+    import core.runtime.runtime_native_entry_adapter as adapter
+
+    assert mainline is not None
+    assert adapter is not None
+
+
+def test_runtime_native_mainline_compatibility_retirement_phase2_adapter_owns_legacy_normalization() -> None:
+    mainline_source = MAINLINE.read_text(encoding="utf-8")
+    adapter_source = ADAPTER.read_text(encoding="utf-8")
+
+    assert "normalize_runtime_native_entry_request" in adapter_source
+    assert "run_via_runtime_native_mainline" in adapter_source
+    assert "core.runtime.runtime_native_entry_adapter" in mainline_source
+
+    assert mainline_source.count("normalize_runtime_native_entry_request") <= 2
+    assert mainline_source.count("run_runtime_native_entry") <= 2
+
+
+def test_runtime_native_mainline_compatibility_retirement_phase2_no_duplicate_bridge_helpers() -> None:
+    source = MAINLINE.read_text(encoding="utf-8")
+
+    assert source.count("def _zero_runtime_native_mainline_admit_legacy_request") == 1
+    assert source.count("def _zero_runtime_native_mainline_normalize_legacy_request") == 1
+    assert source.count("def _zero_runtime_native_mainline_retire_legacy_entry") == 1
+    assert source.count("def _zero_runtime_native_mainline_dispatch_legacy_entry") == 1
+
+
+def test_runtime_native_mainline_compatibility_retirement_phase2_bridge_methods_exist_when_class_exists() -> None:
+    import core.runtime.runtime_native_mainline as module
+
+    for name in ("RuntimeNativeMainLine", "RuntimeNativeMainline", "RuntimeNativeMainlineV1"):
+        cls = getattr(module, name, None)
+        if isinstance(cls, type):
+            assert hasattr(cls, "admit_legacy_request")
+            assert hasattr(cls, "normalize_legacy_request")
+            assert hasattr(cls, "retire_legacy_entry")
+            assert hasattr(cls, "dispatch_legacy_entry")
+
+
+def test_runtime_native_mainline_compatibility_retirement_phase2_adapter_dispatch_contract() -> None:
+    from core.runtime.runtime_native_entry_adapter import run_runtime_native_entry
+
+    class FakeMainline:
+        def run(self, payload):
+            return {"ok": True, "status": "success", "payload": payload}
+
+    result = run_runtime_native_entry(
+        FakeMainline(),
+        {"request": {"prompt": "phase2 dispatch", "runtime_session_id": "r19"}},
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "finished"
+    assert result["payload"]["goal"] == "phase2 dispatch"
+    assert result["payload"]["runtime_session_id"] == "r19"

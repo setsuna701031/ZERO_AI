@@ -1,0 +1,29 @@
+Package16 v5 Runtime Native Adapter Extraction Report
+
+root: E:\zero_ai
+adapter: core\runtime\runtime_native_entry_adapter.py
+mainline: core\runtime\runtime_native_mainline.py
+test: tests\test_runtime_native_compatibility_adapter_extraction.py
+
+Touched:
+- core/runtime/runtime_native_entry_adapter.py
+- core/runtime/runtime_native_mainline.py
+- tests/test_runtime_native_compatibility_adapter_extraction.py
+- runtime_native_compatibility_adapter_extraction_report.txt
+
+Compatibility restored:
+- core.runtime.runtime_native_entry_adapter.run_via_runtime_native_mainline
+
+Not touched:
+- Scheduler
+- TaskRunner
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+
+Validation:
+python -m compileall core/runtime tests
+python -m pytest tests/test_runtime_native_compatibility_adapter_extraction.py tests/test_runtime_native_compatibility_entry_semantics.py tests/test_runtime_route_registry_admission.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting:
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

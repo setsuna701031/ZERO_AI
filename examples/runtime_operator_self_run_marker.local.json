@@ -1,0 +1,19 @@
+﻿{
+  "package_id": "zero-self-run-marker-20260706143205",
+  "task_id": "zero-self-run-marker-task-20260706143205",
+  "goal": "Create a ZERO self-run marker file through controlled runtime mutation.",
+  "requested_mode": "controlled",
+  "authority_context": {
+    "operator_approved": true,
+    "controlled_mutation": true,
+    "validation_required": true,
+    "commit_allowed": true
+  },
+  "requested_changes": [
+    {
+      "action": "write_file",
+      "path": "workspace/self_run_markers/zero_self_run_marker_20260706143205.txt",
+      "content": "ZERO self-run marker 20260706143205\n"
+    }
+  ]
+}

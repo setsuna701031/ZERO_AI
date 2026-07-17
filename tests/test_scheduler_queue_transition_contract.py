@@ -5,12 +5,17 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from core.tasks.scheduler_core.queue_transition_helpers import (
+
     decide_queue_transition,
     is_blocked_queue_status,
     is_dispatchable_queue_status,
     is_terminal_queue_status,
 )
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
+
 
 
 class RecordingQueue:

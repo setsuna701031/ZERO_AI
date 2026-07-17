@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+from core.runtime.controlled_mutation_bridge import execute_controlled_mutation_probe
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
+
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRIDGE_PATH = REPO_ROOT / "core" / "runtime" / "controlled_mutation_bridge.py"
+
+
+def _tree() -> ast.AST:
+    return ast.parse(BRIDGE_PATH.read_text(encoding="utf-8-sig"), filename=str(BRIDGE_PATH))
+
+
+def _call_name(call: ast.Call) -> str:
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return ""
+
+
+def test_controlled_mutation_bridge_has_no_direct_executor_authority() -> None:
+    violations: list[str] = []
+
+    for node in ast.walk(_tree()):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = {alias.name.rsplit(".", 1)[-1] for alias in node.names}
+            if "StepExecutor" in names:
+                violations.append(f"{node.lineno}:import StepExecutor")
+        if isinstance(node, ast.Call) and _call_name(node) in {"StepExecutor", "execute_step"}:
+            violations.append(f"{node.lineno}:{_call_name(node)}")
+
+    assert violations == []
+
+
+def test_controlled_mutation_bridge_has_no_hidden_executor_adapter() -> None:
+    names = {
+        node.name.lower()
+        for node in ast.walk(_tree())
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+
+    assert not {name for name in names if "executor_adapter" in name or "step_executor_from" in name}
+
+
+def test_controlled_mutation_probe_returns_runtime_owned_execution_path(tmp_path: Path) -> None:
+    result = execute_controlled_mutation_probe(
+        repo_root=tmp_path,
+        task={},
+        task_id="mutation-authority-seal",
+        goal="prove runtime-owned mutation path",
+        target_path="workspace/shared/target.py",
+    )
+
+    assert result["ok"] is True
+    assert result["mutation_executed"] is False
+    assert result["mutation_probe_executed"] is True
+    assert result["requires_review_before_real_source_edit"] is True
+    assert not (tmp_path / "workspace" / "shared" / "target.py").exists()
+    proof_artifact = Path(result["proof_artifact_path"])
+    assert proof_artifact.exists()
+    assert "mutation_executed\": false" in proof_artifact.read_text(encoding="utf-8")
+
+    path = result["execution_path"]
+    assert path["direct_execution"] is False
+    assert path["runtime_owns_execution"] is True
+    assert path["taskrunner_required"] is True
+    assert path["step_executor_endpoint_only"] is True
+
+    step_result = result["step_result"]
+    transaction = step_result["runtime_transaction"]
+    authority_decision = step_result["runtime_transaction"]["approval_result"]
+    pre_execution_authority = step_result["runtime_transaction"]["authority_source"]
+
+    assert step_result["ok"] is True
+    assert step_result["execution_path"]["runtime_owns_execution"] is True
+    assert transaction["authority_source"] == "runtime_dispatcher"
+    assert transaction["state"] == "audited"
+    assert transaction["failure_result"] == {}
+    assert authority_decision["authority_source"] == "runtime_dispatcher"
+    assert pre_execution_authority == "runtime_dispatcher"

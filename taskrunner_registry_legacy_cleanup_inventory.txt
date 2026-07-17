@@ -1,0 +1,22 @@
+TaskRunner Registry Legacy Cleanup Inventory
+
+Purpose
+Deterministic inventory of TaskRunner compatibility entrypoints.
+
+Scope
+core/runtime/task_runner.py
+
+Package24/26 Helper Presence
+_aer_registry_admit and compatibility guards are preserved.
+
+Remaining Direct Registry Calls
+No removable standalone candidate calls were found.
+
+Cleanup Classification
+Preserve repair, rollback, and evidence specialized paths.
+
+Recommended Package28
+Keep _aer_registry_admit as the canonical cleanup target boundary.
+
+Non-mainline issue reporting
+Non-mainline Issues Found: none.

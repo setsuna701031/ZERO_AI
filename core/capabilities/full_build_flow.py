@@ -13,6 +13,7 @@ from core.runtime.execution_gateway import safe_subprocess_run
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_PATH = REPO_ROOT / "app.py"
 SHARED_DIR = REPO_ROOT / "workspace" / "shared"
+DEMO_SUBPROCESS_TIMEOUT_SECONDS = 600.0
 
 
 def safe_print(text: str = "") -> None:
@@ -50,6 +51,7 @@ def run_process(args: list[str], capture: bool = False) -> SimpleNamespace:
     result = safe_subprocess_run(
         args,
         cwd=str(REPO_ROOT),
+        timeout=DEMO_SUBPROCESS_TIMEOUT_SECONDS,
         capture_output=capture,
         text=False,
     )

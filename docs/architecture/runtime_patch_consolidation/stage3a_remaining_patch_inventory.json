@@ -1,0 +1,132 @@
+[
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 63,
+    "line_text": "# ZERO_PATCH_TASKRUNNER_SCHEDULER_STEP_AUTHORITY_V1"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5478,
+    "line_text": "# ZERO_PATCH_TASKRUNNER_RUNTIME_GATE_FALLBACK_V1"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5588,
+    "line_text": "# ZERO_PATCH_TASKRUNNER_RUNTIME_GATE_FALLBACK_V2"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5687,
+    "line_text": "# ZERO_PATCH_TASKRUNNER_RUNTIME_GATE_FALLBACK_V3"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5725,
+    "line_text": "# ZERO_PATCH_RUNTIME_GATE_FINAL_V4"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5795,
+    "line_text": "# ZERO_PATCH_RUNTIME_GATE_FINAL_V5"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5865,
+    "line_text": "# ZERO_PATCH_RUNTIME_GATE_FINAL_V6"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 5925,
+    "line_text": "# ZERO_PATCH_RUNTIME_GATE_FINAL_V7"
+  },
+  {
+    "path": "core\\runtime\\task_runner.py",
+    "line": 6000,
+    "line_text": "# ZERO_PATCH_RUNTIME_GATE_FINAL_V8"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 235,
+    "line_text": "# ZERO_PATCH_TASKRUNNER_SCHEDULER_STEP_AUTHORITY_V1"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10415,
+    "line_text": "# ZERO_PATCH_SCHEDULER_RUNTIME_GATE_FALLBACK_V1"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10495,
+    "line_text": "# ZERO_PATCH_SCHEDULER_RUNTIME_GATE_FALLBACK_V2"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10572,
+    "line_text": "# ZERO_PATCH_SCHEDULER_RUNTIME_GATE_FALLBACK_V3"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10643,
+    "line_text": "# ZERO_PATCH_SCHEDULER_EXPLICIT_AUTHORITY_FALLBACK_V4"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10709,
+    "line_text": "# ZERO_PATCH_SCHEDULER_EXPLICIT_AUTHORITY_DIRECT_HANDLER_V5"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10795,
+    "line_text": "# ZERO_PATCH_SCHEDULER_EXPLICIT_AUTHORITY_RESULT_SHAPE_V6"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10822,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_SESSION_COMPLETION_V7"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10893,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V8"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 10980,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V9"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11051,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V10"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11157,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V11"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11246,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_V12"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11310,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11334,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_FAILURE_READBACK_V14"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11366,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_FAILED_STEP_V15"
+  },
+  {
+    "path": "core\\tasks\\scheduler.py",
+    "line": 11400,
+    "line_text": "# ZERO_PATCH_SCHEDULER_OPERATOR_FAILED_STEP_V16"
+  }
+]

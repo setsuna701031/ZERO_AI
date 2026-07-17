@@ -1,0 +1,587 @@
+TaskRunner Runtime Boundary Inventory
+
+repo_root: E:\zero_ai
+scheduler_path: core\tasks\scheduler.py
+task_runner_path: core\runtime\task_runner.py
+scope: inventory only; production code not modified
+
+Summary
+-------
+text_hits: 68940
+ast_boundary_rows: 460
+scheduler_ast_rows: 267
+task_runner_ast_rows: 193
+scheduler_to_taskrunner_rows: 66
+taskrunner_to_scheduler_rows: 16
+unknown_rows: 26962
+
+Boundary Family Summary
+-----------------------
+- scheduler_to_taskrunner: 66
+- taskrunner_to_scheduler: 16
+- taskrunner_dispatch: 3798
+- authority_identity: 13217
+- operator_boundary: 965
+- step_execution: 6998
+- bridge_or_handoff: 8646
+- tests: 8732
+- unknown: 26962
+
+Bucket Summary
+--------------
+- docs: 44584
+- tests: 8732
+- production: 7620
+- text: 2995
+- tools: 2525
+- archive: 1283
+- scheduler: 747
+- task_runner: 454
+
+Scheduler To TaskRunner
+-----------------------
+- core/tasks/scheduler.py:24 [scheduler; scheduler_to_taskrunner] from core.runtime.task_runner import TaskRunner
+- core/tasks/scheduler.py:156 [scheduler; scheduler_to_taskrunner] resolve_task_runner as code_chain_replay_resolve_task_runner,
+- core/tasks/scheduler.py:324 [scheduler; scheduler_to_taskrunner] "source": "taskrunner_scheduler_step_authority_v1",
+- core/tasks/scheduler.py:356 [scheduler; scheduler_to_taskrunner] "authority_policy": "taskrunner_scheduler_step_authority_v1",
+- core/tasks/scheduler.py:358 [scheduler; scheduler_to_taskrunner] "provenance": {"source": "taskrunner_scheduler_step_authority_v1"},
+- core/tasks/scheduler.py:373 [scheduler; scheduler_to_taskrunner] "compatibility_seal": "taskrunner_scheduler_step_authority_v1",
+- core/tasks/scheduler.py:425 [scheduler; scheduler_to_taskrunner] task_runner: Any = None,
+- core/tasks/scheduler.py:457 [scheduler; scheduler_to_taskrunner] task_runner=task_runner,
+- core/tasks/scheduler.py:470 [scheduler; scheduler_to_taskrunner] self.task_runner = task_runner
+- core/tasks/scheduler.py:511 [scheduler; scheduler_to_taskrunner] if self.task_runner is None:
+- core/tasks/scheduler.py:512 [scheduler; scheduler_to_taskrunner] self.task_runner = TaskRunner(
+- core/tasks/scheduler.py:1090 [scheduler; scheduler_to_taskrunner] "authority_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
+- core/tasks/scheduler.py:1104 [scheduler; scheduler_to_taskrunner] def _run_step_via_task_runner(
+- core/tasks/scheduler.py:1145 [scheduler; scheduler_to_taskrunner] boundary_root = Path(self.workspace_dir) / "scheduler_taskrunner_boundary"
+- core/tasks/scheduler.py:1174 [scheduler; scheduler_to_taskrunner] dispatch_path="Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
+- core/tasks/scheduler.py:1237 [scheduler; scheduler_to_taskrunner] runner = getattr(self, "task_runner", None)
+- core/tasks/scheduler.py:1239 [scheduler; scheduler_to_taskrunner] raise RuntimeError("task_runner unavailable for scheduler delegation")
+- core/tasks/scheduler.py:1242 [scheduler; scheduler_to_taskrunner] task_runner=runner,
+- core/tasks/scheduler.py:1762 [scheduler; scheduler_to_taskrunner] risk_level = "high" if any(token in lowered for token in ("scheduler", "task_runtime", "task_runner", "execution_guard")) else "medium"
+- core/tasks/scheduler.py:2293 [scheduler; scheduler_to_taskrunner] executor_result = self._run_step_via_task_runner(
+- core/tasks/scheduler.py:6339 [scheduler; scheduler_to_taskrunner] return self._run_step_via_task_runner(
+- core/tasks/scheduler.py:6868 [scheduler; scheduler_to_taskrunner] return self._run_step_via_task_runner(
+- core/tasks/scheduler.py:6930 [scheduler; scheduler_to_taskrunner] return self._run_step_via_task_runner(
+- core/tasks/scheduler.py:7626 [scheduler; scheduler_to_taskrunner] # TaskRunner so runtime.advance_step() is the source of truth and the task can
+- core/tasks/scheduler.py:7637 [scheduler; scheduler_to_taskrunner] _zero_v733_resolve_task_runner = code_chain_replay_resolve_task_runner
+- core/tasks/scheduler.py:8086 [scheduler; scheduler_to_taskrunner] # mutation remains behind Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor.
+- core/tasks/scheduler.py:470 [assign; scheduler_to_taskrunner; owner=Scheduler.__init__] self.task_runner task_runner
+- core/tasks/scheduler.py:512 [assign; scheduler_to_taskrunner; owner=Scheduler.__init__] self.task_runner TaskRunner
+- core/tasks/scheduler.py:512 [call; scheduler_to_taskrunner; owner=Scheduler.__init__] TaskRunner
+- core/tasks/scheduler.py:1113 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] scheduler_authority self._build_scheduler_authority_context
+- core/tasks/scheduler.py:1113 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] self._build_scheduler_authority_context
+- core/tasks/scheduler.py:1115 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] boundary_lineage extract_goal_lineage
+- core/tasks/scheduler.py:1115 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] extract_goal_lineage
+- core/tasks/scheduler.py:1121 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] boundary_lineage create_root_goal_lineage
+- core/tasks/scheduler.py:1121 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] create_root_goal_lineage
+- core/tasks/scheduler.py:1147 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] handoff_context 
+- core/tasks/scheduler.py:1148 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] operator_session_id str.strip
+- core/tasks/scheduler.py:1149 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] handoff_context.get
+- core/tasks/scheduler.py:1150 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] handoff_context.get
+- core/tasks/scheduler.py:1165 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] enable_operator_session handoff_context.get
+- core/tasks/scheduler.py:1165 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] handoff_context.get
+- core/tasks/scheduler.py:1171 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] scheduler_runtime_contract seal_scheduler_runtime_contract
+- core/tasks/scheduler.py:1171 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] seal_scheduler_runtime_contract
+- core/tasks/scheduler.py:1177 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] scheduler_authority.get
+- core/tasks/scheduler.py:1188 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] runtime_identity copy.deepcopy
+- core/tasks/scheduler.py:1208 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] runtime_identity.get
+- core/tasks/scheduler.py:1215 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] runtime_identity.get
+- core/tasks/scheduler.py:1220 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] scheduler_authority.get
+- core/tasks/scheduler.py:1222 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] scheduler_authority.get
+- core/tasks/scheduler.py:1223 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] scheduler_authority.get
+- core/tasks/scheduler.py:1228 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] boundary_task attach_goal_lineage
+- core/tasks/scheduler.py:1228 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] attach_goal_lineage
+- core/tasks/scheduler.py:1233 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] boundary_task operator_session_id
+- core/tasks/scheduler.py:1234 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] boundary_task operator_session_id
+- core/tasks/scheduler.py:1240 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] runtime_dispatcher RuntimeDispatcher
+- core/tasks/scheduler.py:1240 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] RuntimeDispatcher
+- core/tasks/scheduler.py:1246 [assign; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] runner_result runtime_dispatcher.run_scheduler_boundary
+- core/tasks/scheduler.py:1246 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] runtime_dispatcher.run_scheduler_boundary
+- core/tasks/scheduler.py:1253 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] self._attach_scheduler_execution_path
+- core/tasks/scheduler.py:1255 [call; scheduler_to_taskrunner; owner=Scheduler._run_step_via_task_runner] self._attach_scheduler_execution_path
+- core/tasks/scheduler.py:2293 [assign; scheduler_to_taskrunner; owner=Scheduler._execute_simple_step] executor_result self._run_step_via_task_runner
+- core/tasks/scheduler.py:2293 [call; scheduler_to_taskrunner; owner=Scheduler._execute_simple_step] self._run_step_via_task_runner
+- core/tasks/scheduler.py:6339 [call; scheduler_to_taskrunner; owner=Scheduler._delegate_code_edit_patch_to_step_executor] self._run_step_via_task_runner
+- core/tasks/scheduler.py:6868 [call; scheduler_to_taskrunner; owner=_zero_v702_scheduler_execute_simple_step] self._run_step_via_task_runner
+- core/tasks/scheduler.py:6930 [call; scheduler_to_taskrunner; owner=_zero_v7335_scheduler_execute_simple_step_no_direct_mutation] self._run_step_via_task_runner
+- core/tasks/scheduler.py:7637 [assign; scheduler_to_taskrunner; owner=<module>] _zero_v733_resolve_task_runner code_chain_replay_resolve_task_runner
+
+TaskRunner To Scheduler
+-----------------------
+- core/runtime/task_runner.py:139 [task_runner; taskrunner_to_scheduler] "source": "taskrunner_scheduler_step_authority_v1",
+- core/runtime/task_runner.py:171 [task_runner; taskrunner_to_scheduler] "authority_policy": "taskrunner_scheduler_step_authority_v1",
+- core/runtime/task_runner.py:173 [task_runner; taskrunner_to_scheduler] "provenance": {"source": "taskrunner_scheduler_step_authority_v1"},
+- core/runtime/task_runner.py:188 [task_runner; taskrunner_to_scheduler] "compatibility_seal": "taskrunner_scheduler_step_authority_v1",
+- core/runtime/task_runner.py:1979 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:1992 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2007 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2101 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2117 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2282 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2616 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2765 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2777 [task_runner; taskrunner_to_scheduler] "scheduler_tick": current_tick,
+- core/runtime/task_runner.py:2896 [task_runner; taskrunner_to_scheduler] # It can recursively inflate task snapshots and returned scheduler payloads.
+- core/runtime/task_runner.py:4350 [task_runner; taskrunner_to_scheduler] # - TaskRunner may propagate scheduler authority metadata.
+- core/runtime/task_runner.py:4351 [task_runner; taskrunner_to_scheduler] # - TaskRunner must not convert scheduler/orchestration authority into an execution grant.
+
+TaskRunner Dispatch / Authority / Operator Boundary Rows
+--------------------------------------------------------
+- aer_mainline_closure_seal.txt:8 [text; step_execution] - TaskRunner execute_owned_step/run_task_tick public execution surfaces -> RuntimeRouteRegistry.
+- app_legacy.py:37 [production; bridge_or_handoff] from core.persona.presentation_bridge import render_cli_view, render_json_view
+- app_legacy.py:38 [production; bridge_or_handoff] from core.persona.runtime_bridge import PersonaRuntimeBridge
+- app_legacy.py:60 [production; bridge_or_handoff] from core.display.runtime_repair_planner_bridge_presenter import format_runtime_repair_planner_bridge
+- app_legacy.py:67 [production; bridge_or_handoff] "bridge": format_runtime_repair_planner_bridge,
+- app_legacy.py:78 [production; bridge_or_handoff] from core.tasks.runtime_repair_planner_bridge import build_runtime_repair_planner_bridge
+- app_legacy.py:87 [production; bridge_or_handoff] "bridge": build_runtime_repair_planner_bridge,
+- app_legacy.py:174 [production; bridge_or_handoff] bridge = PersonaRuntimeBridge(workspace_dir=_repo_root_path())
+- app_legacy.py:175 [production; bridge_or_handoff] display_state = bridge.submit_ui_task(str(options["task"]))
+- app_legacy.py:313 [production; step_execution] def _get_step_executor(system: Any) -> Any:
+- app_legacy.py:317 [production; step_execution] for attr in ("step_executor", "executor"):
+- app_legacy.py:912 [production; bridge_or_handoff] def _build_task_runtime_repair_planner_bridge_display(task: Dict[str, Any]) -> str:
+- app_legacy.py:919 [production; bridge_or_handoff] build_runtime_repair_planner_bridge = builders["bridge"]
+- app_legacy.py:920 [production; bridge_or_handoff] format_runtime_repair_planner_bridge = presenters["bridge"]
+- app_legacy.py:927 [production; bridge_or_handoff] bridge = build_runtime_repair_planner_bridge(envelope)
+- app_legacy.py:929 [production; bridge_or_handoff] bridge = {
+- app_legacy.py:933 [production; bridge_or_handoff] "bridge_mode": "read_only_planner_gate",
+- app_legacy.py:954 [production; bridge_or_handoff] "reason": f"runtime repair planner bridge unavailable: {exc}",
+- app_legacy.py:955 [production; bridge_or_handoff] "human_summary": "Planner bridge payload could not be built. Keep runtime repair planning manual until the bridge is available.",
+- app_legacy.py:958 [production; bridge_or_handoff] return format_runtime_repair_planner_bridge(bridge)
+- app_legacy.py:970 [production; bridge_or_handoff] build_runtime_repair_planner_bridge = builders["bridge"]
+- app_legacy.py:979 [production; bridge_or_handoff] bridge = build_runtime_repair_planner_bridge(envelope)
+- app_legacy.py:980 [production; bridge_or_handoff] proposal = build_runtime_repair_planner_proposal(bridge)
+- app_legacy.py:993 [production; bridge_or_handoff] "source": "runtime_repair_planner_bridge",
+- app_legacy.py:1023 [production; bridge_or_handoff] build_runtime_repair_planner_bridge = builders["bridge"]
+- app_legacy.py:1033 [production; bridge_or_handoff] bridge = build_runtime_repair_planner_bridge(envelope)
+- app_legacy.py:1034 [production; bridge_or_handoff] proposal = build_runtime_repair_planner_proposal(bridge)
+- app_legacy.py:1579 [production; bridge_or_handoff] print("runtime_repair_planner_bridge:")
+- app_legacy.py:1580 [production; bridge_or_handoff] print(textwrap.indent(_build_task_runtime_repair_planner_bridge_display(task), "  "))
+- app_legacy.py:1649 [production; bridge_or_handoff] print("runtime_repair_planner_bridge:")
+- app_legacy.py:1650 [production; bridge_or_handoff] print(textwrap.indent(_build_task_runtime_repair_planner_bridge_display(task), "  "))
+- app_legacy.py:1771 [production; authority_identity] authority_handoff = _persist_demo_execution_authority(system, task_id)
+- app_legacy.py:1774 [production; authority_identity] if authority_handoff:
+- app_legacy.py:1776 [production; authority_identity] result["authority_handoff"] = authority_handoff
+- app_legacy.py:1784 [production; authority_identity] def _demo_execution_authority_for_task(task: Any, task_id: str) -> Dict[str, Any]:
+- app_legacy.py:1816 [production; authority_identity] "trace_id": f"trace:{normalized_task_id}:demo_authority_handoff",
+- app_legacy.py:1818 [production; authority_identity] "authority_source": "operator_cli",
+- app_legacy.py:1819 [production; authority_identity] "authority_status": "allowed",
+- app_legacy.py:1820 [production; authority_identity] "execution_authority_endpoint": "step_executor",
+- app_legacy.py:1823 [production; authority_identity] "authority_scope": scope_values or [scenario or pipeline_name or task_type],
+- app_legacy.py:1834 [production; authority_identity] def _persist_demo_execution_authority(system: Any, task_id: str) -> Dict[str, Any]:
+- app_legacy.py:1836 [production; authority_identity] authority = _demo_execution_authority_for_task(task, task_id)
+- app_legacy.py:1837 [production; authority_identity] if not authority or not isinstance(task, dict):
+- app_legacy.py:1841 [production; authority_identity] updated_task["execution_authority"] = copy.deepcopy(authority)
+- app_legacy.py:1842 [production; authority_identity] updated_task["authority_propagation_required"] = True
+- app_legacy.py:1843 [production; authority_identity] updated_task["operator_session_id"] = authority["runtime_session"]
+- app_legacy.py:1844 [production; authority_identity] updated_task["authority_handoff"] = {
+- app_legacy.py:1847 [production; authority_identity] "status": "approved_authority_attached",
+- app_legacy.py:1848 [production; authority_identity] "execution_authority": copy.deepcopy(authority),
+- app_legacy.py:1853 [production; authority_identity] "status": "approved_authority_attached",
+- app_legacy.py:1854 [production; authority_identity] "execution_authority": copy.deepcopy(authority),
+- app_legacy.py:3994 [production; step_execution] step_executor = _get_step_executor(system)
+- app_legacy.py:3996 [production; step_execution] if planner is None or step_executor is None:
+- app_legacy.py:4041 [production; step_execution] execution_result = step_executor.execute_steps(
+- legacy_surface_retirement_plan.txt:34 [text; taskrunner_dispatch] - AgentLoop planner runtime dispatch / planner step executor bridge
+- legacy_surface_retirement_plan.txt:36 [text; taskrunner_dispatch] - Retirement status: direct planner runtime dispatch admission can be marked deprecated.
+- legacy_surface_retirement_plan.txt:43 [text; bridge_or_handoff] - AgentLoop code-chain controlled self-edit bridge
+- legacy_surface_retirement_plan.txt:45 [text; bridge_or_handoff] - Retirement status: direct self-edit bridge admission can be marked deprecated after retaining the callable as the compatibility runner.
+- legacy_surface_retirement_plan.txt:80 [text; taskrunner_dispatch] - cli.work_package_cli dispatch-request
+- legacy_surface_retirement_plan.txt:135 [text; step_execution] - TaskRunner.execute_owned_step
+- legacy_surface_retirement_plan.txt:140 [text; step_execution] - TaskRunner.execute_owned_steps
+- legacy_surface_retirement_plan.txt:151 [text; operator_boundary] - Do not delete legacy bridge functions, operator methods, scheduler methods, TaskRunner methods, or StepExecutor paths.
+- legacy_surface_retirement_plan.txt:183 [text; taskrunner_dispatch] - RuntimeDispatcher.run_scheduler_boundary
+- legacy_surface_retirement_plan.txt:189 [text; authority_identity] - Reason: these are machinery behind admitted routes. Retiring or wrapping them as surface admissions would risk authority, recursion, and execution semantics.
+- legacy_surface_retirement_plan.txt:209 [text; taskrunner_dispatch] - work_package dispatch-request
+- legacy_surface_retirement_plan.txt:235 [text; step_execution] - execute_owned_steps
+- legacy_surface_retirement_plan.txt:261 [text; authority_identity] 5. Defer any machinery-level retirement until a separate execution-authority refactor exists.
+- main.py:95 [production; bridge_or_handoff] safe_print("  l5-run            Submit a task to L5 runtime bridge and print display_state output")
+- persona_status_bridge.py:7 [production; bridge_or_handoff] E:\zero_ai\persona_status_bridge.py
+- persona_status_bridge.py:12 [production; bridge_or_handoff] - No write-back action exists in this bridge.
+- persona_status_bridge.py:31 [production; bridge_or_handoff] BRIDGE_REPORT_JSON = SELF_EDIT_ROOT / "persona_bridge_report.json"
+- persona_status_bridge.py:32 [production; bridge_or_handoff] BRIDGE_REPORT_TXT = SELF_EDIT_ROOT / "persona_bridge_report.txt"
+- persona_status_bridge.py:66 [production; bridge_or_handoff] "apply_back_allowed_by_bridge": False,
+- persona_status_bridge.py:106 [production; bridge_or_handoff] "This bridge does not apply changes back.",
+- persona_workcopy_executor.py:16 [production; bridge_or_handoff] - Fall back to rebuilding the generated status bridge if strategy repair fails.
+- persona_workcopy_executor.py:99 [production; bridge_or_handoff] "persona_status_bridge",
+- persona_workcopy_executor.py:103 [production; bridge_or_handoff] "bridge",
+- persona_workcopy_executor.py:387 [production; bridge_or_handoff] elif strategy == "fallback_rebuild_status_bridge" and path.name == "persona_status_bridge.py":
+- persona_workcopy_executor.py:388 [production; bridge_or_handoff] after = make_status_bridge_source()
+- persona_workcopy_executor.py:389 [production; bridge_or_handoff] actions = ["fallback_rebuild_status_bridge"]
+- persona_workcopy_executor.py:411 [production; bridge_or_handoff] fallback = ["fallback_rebuild_status_bridge"] if path.name == "persona_status_bridge.py" else []
+- persona_workcopy_executor.py:473 [production; bridge_or_handoff] if not validation.get("ok") and path.name == "persona_status_bridge.py":
+- persona_workcopy_executor.py:474 [production; bridge_or_handoff] repair = apply_repair_strategy(path, validation, "fallback_rebuild_status_bridge")
+- persona_workcopy_executor.py:481 [production; bridge_or_handoff] "strategy": "fallback_rebuild_status_bridge",
+- persona_workcopy_executor.py:523 [production; bridge_or_handoff] def make_status_bridge_source() -> str:
+- persona_workcopy_executor.py:646 [production; bridge_or_handoff] action="replace_status_bridge",
+- persona_workcopy_executor.py:647 [production; bridge_or_handoff] path=WORKCOPY_DIR / "persona_status_bridge.py",
+- persona_workcopy_executor.py:648 [production; bridge_or_handoff] intent="Improve Persona status/review display bridge.",
+- persona_workcopy_executor.py:758 [production; bridge_or_handoff] def replace_status_bridge(path: Path, command: str) -> EditOperation:
+- persona_workcopy_executor.py:762 [production; bridge_or_handoff] content = make_status_bridge_source()
+- persona_workcopy_executor.py:770 [production; bridge_or_handoff] reason = "Planner task replace_status_bridge"
+- persona_workcopy_executor.py:861 [production; bridge_or_handoff] if action == "replace_status_bridge":
+- persona_workcopy_executor.py:862 [production; bridge_or_handoff] return replace_status_bridge(path, command)
+- pytest.ini:26 [text; bridge_or_handoff] --ignore=tests/test_repo_edit_agent_bridge.py
+- pytest.ini:36 [text; authority_identity] contract: mainline contract, seal, authority, registry, and API-boundary tests
+- pytest.ini:37 [text; authority_identity] contract_fast: fast helper/runtime/authority/parser/payload/state/registry contract tests
+- pytest.ini:47 [text; operator_boundary] operator_sessions: scheduler compatibility marker for injected operator_sessions helpers
+- README.md:14 [text; authority_identity] -> TaskRunner authority propagation
+- README.md:22 [text; authority_identity] separate safety contracts. The sealed authority, mutation, evidence, replay, and
+- README.md:25 [text; authority_identity] authority.
+- README.md:29 [text; authority_identity] - Scheduler / TaskRunner authority propagation contract
+- README.md:31 [text; bridge_or_handoff] - AgentLoop / CreateTask mutation bridge contract
+- README.md:48 [text; bridge_or_handoff] python -m pytest tests/test_agentloop_createtask_mutation_bridge_contract.py -q
+- README.md:54 [text; authority_identity] python -m pytest tests/test_scheduler_taskrunner_authority_propagation_contract.py -q
+- README.md:57 [text; authority_identity] python -m pytest tests/test_step_executor_side_effect_pre_authority_contract.py -q
+- README.md:93 [text; bridge_or_handoff] CreateTask != hidden repo-edit bridge
+- README.md:95 [text; taskrunner_dispatch] Scheduler dispatch == orchestration only
+- README.md:96 [text; authority_identity] TaskRunner == authority propagation only
+- README.md:156 [text; bridge_or_handoff] Connected bridge points:
+- README.md:167 [text; authority_identity] workflow_runtime_session is read-only over execution authority.
+- README.md:204 [text; authority_identity] workflow coordination and authority-propagation layer, `StepExecutor` remains
+- README.md:290 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. It now records
+- README.md:328 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The graph records are
+- README.md:367 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The mutation and
+- README.md:391 [text; authority_identity] ZERO now preserves policy, authority, review, approval, blocked/resumed
+- README.md:399 [text; authority_identity] -> authority continuity
+- README.md:405 [text; authority_identity] -> governance / authority continuity summary
+- README.md:408 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. Governance records
+- README.md:412 [text; authority_identity] for policy decisions without target nodes, authority workflow/session
+- README.md:433 [text; authority_identity] ZERO now preserves distributed execution, replay, governance, authority, and
+- README.md:443 [text; authority_identity] -> federated authority continuity
+- README.md:449 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. Federation records
+- README.md:454 [text; authority_identity] federated authority mismatches, distributed recovery records that reference
+- README.md:475 [text; authority_identity] decisions, replay reconciliation, and cross-worker authority lineage inside the
+- README.md:483 [text; authority_identity] -> authority quorum records
+- README.md:491 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The arbitration and
+- README.md:496 [text; authority_identity] quorums with missing authority workers, votes not linked to a quorum,
+- README.md:527 [text; authority_identity] -> self-repair governance linked to authority / approval / consensus
+- README.md:533 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The self-healing
+- README.md:538 [text; authority_identity] observability parents, self-repair governance records missing authority,
+- README.md:577 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The constitutional
+- README.md:583 [text; authority_identity] observability or authority lineage, catastrophic recoveries without failure
+- README.md:623 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The evolution and
+- README.md:657 [text; authority_identity] -> mutation approval / authority lineage
+- README.md:665 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority only. This layer does
+- README.md:669 [text; authority_identity] active constitution/preservation lineage, approval/authority lineage, rollback
+- README.md:706 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. These records are
+- README.md:742 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. Archive,
+- README.md:746 [text; bridge_or_handoff] read-only validation bridge for sovereign archive replay continuity.
+- README.md:780 [text; authority_identity] `WorkflowRuntimeSession` remains the continuity authority. The consolidation
+- README.md:784 [text; authority_identity] to index, compact, snapshot, replay, and archive without breaking authority
+- README.md:820 [text; authority_identity] authority into Scheduler. `WorkflowRuntimeSession` remains the continuity
+- README.md:821 [text; authority_identity] authority and `RuntimeReplayEngine` only exposes read-only validation helpers.
+- README.md:896 [text; authority_identity] Artifact graph is a lineage/readability aid, not an authority source.
+- README.md:952 [text; taskrunner_dispatch] tests/test_planner_runtime_dispatch_contract.py \
+- README.md:953 [text; taskrunner_dispatch] tests/test_agent_loop_planner_runtime_dispatch_contract.py -q
+- README.md:1014 [text; authority_identity] Policy decides write authority.
+- README.md:1164 [text; authority_identity] queue, scheduler, resume, evidence, authority, and completion paths.
+- README.md:1175 [text; authority_identity] -> evidence authority validation
+- README.md:1176 [text; authority_identity] -> goal completion authority
+- README.md:1190 [text; bridge_or_handoff] - persistent runtime orchestrator lineage handoff
+- README.md:1195 [text; authority_identity] - evidence authority lineage validation
+- README.md:1196 [text; authority_identity] - goal completion authority lineage mismatch rejection
+- README.md:1203 [text; authority_identity] + goal_lineage_id
+- README.md:1211 [text; authority_identity] goal_lineage_id
+- README.md:1235 [text; authority_identity] Queue does not become completion authority.
+- README.md:1245 [text; authority_identity] python -m pytest tests/test_goal_lineage_coordination_seal.py -q
+- README.md:1296 [text; taskrunner_dispatch] ZERO has now sealed the Runtime Authority Stack across dispatch capability,
+- README.md:1303 [text; authority_identity] authority envelope
+- README.md:1304 [text; authority_identity] -> execution authority token
+- README.md:1305 [text; authority_identity] -> authority context
+- README.md:1306 [text; taskrunner_dispatch] -> dispatch capability
+- README.md:1309 [text; taskrunner_dispatch] -> dispatcher status projection
+- README.md:1313 [text; authority_identity] This milestone turns the recent Runtime authority work into a connected,
+- README.md:1316 [text; taskrunner_dispatch] canonical runtime-status boundary, and dispatcher / resume code keeps normalized
+- README.md:1322 [text; authority_identity] - Execution authority token contract
+- README.md:1325 [text; authority_identity] - Execution authority closure
+- README.md:1328 [text; authority_identity] - Runtime status write authority seal
+- README.md:1329 [text; taskrunner_dispatch] - Runtime dispatcher status authority seal
+- README.md:1345 [text; authority_identity] AER and inventory suites must remain clean after Runtime authority changes.
+- README.md:1354 [text; taskrunner_dispatch] python -m pytest tests/test_runtime_dispatch_capability.py -q
+- README.md:1357 [text; authority_identity] python -m pytest tests/test_execution_authority_closure.py tests/test_runtime_execution_ownership_migration_contract.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+- README.md:1360 [text; taskrunner_dispatch] python -m pytest tests/test_runtime_dispatcher_status_authority_seal.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+- README.md:1363 [text; authority_identity] python -m pytest tests -q -k "authority or ownership or governance or inventory"
+- README.md:1384 [text; authority_identity] python -m pytest tests/test_runtime_session_resume_seal_v1.py tests/test_scheduler_taskrunner_authority_propagation_contract.py -q
+- README.md:1387 [text; bridge_or_handoff] python -m pytest tests/test_runtime_supervisor_bridge_v1.py tests/test_runtime_supervisor_layer_v1.py tests/test_runtime_watchdog_lease_integration_v1.py -q
+- README.md:1393 [text; taskrunner_dispatch] python -m pytest tests/test_runtime_native_execution_dispatch_v1.py tests/test_runtime_native_scheduler_v1.py tests/test_runtime_native_agent_loop_seal_v1.py -q
+- README.md:1400 [text; authority_identity] 5605b9bf feat(runtime): add authority envelope contract
+- README.md:1401 [text; authority_identity] 353c17e8 feat(runtime): add execution authority token contract
+- README.md:1402 [text; authority_identity] b9552c97 feat(runtime): add authority context contract
+- README.md:1403 [text; taskrunner_dispatch] 11ca8b96 feat(runtime): add dispatch capability contract
+- README.md:1404 [text; authority_identity] d7020bb4 fix(runtime): close execution authority and status ownership seals
+- README_APPLY.md:8 [text; authority_identity] core/runtime/runtime_mutation_authority.py
+- README_APPLY.md:14 [text; authority_identity] tests/test_runtime_mutation_authority_inventory.py
+- README_APPLY.md:23 [text; authority_identity] pytest -q tests/test_runtime_mutation_sovereignty_closure.py tests/test_runtime_mutation_authority_inventory.py tests/test_runtime_mutation_gateway_sovereignty_seal.py tests/test_runtime_mutation_bypass_proof.py tests/test_mutation_patch_apply.py
+- README_APPLY.md:37 [text; authority_identity] Evidence reference ownership remains a separate distributed metadata authority surface and is not closed by this package.
+- regression_performance_inventory.txt:13 [text; operator_boundary] pytest.ini defines markers: runtime, integration, external, legacy, get_session, sessions, operator_sessions.
+- regression_performance_inventory.txt:46 [text; step_execution] - tests/runtime_contracts/test_step_executor_contracts.py
+- regression_performance_inventory.txt:47 [text; authority_identity] - tests/runtime_contracts/test_runtime_authority_contracts.py
+- regression_performance_inventory.txt:50 [text; taskrunner_dispatch] - tests/test_scheduler_dispatch_result_helpers.py
+- regression_performance_inventory.txt:66 [text; operator_boundary] - tests/test_persistent_operator_integration_bridge.py
+- regression_performance_inventory.txt:85 [text; authority_identity] - tests/test_step_executor_side_effect_pre_authority_contract.py
+- regression_performance_inventory.txt:87 [text; bridge_or_handoff] - tests/test_work_package_adaptive_planning_bridge.py
+- regression_performance_inventory.txt:101 [text; authority_identity] - tests/test_aer_execution_authority_inventory.py
+- regression_performance_inventory.txt:104 [text; bridge_or_handoff] - tests/test_controlled_mutation_bridge_landing.py
+- regression_performance_inventory.txt:106 [text; authority_identity] - tests/test_execution_authority_closure.py
+- regression_performance_inventory.txt:114 [text; authority_identity] - tests/test_runtime_mutation_authority_boundaries.py
+- regression_performance_inventory.txt:120 [text; authority_identity] - tests/test_runtime_status_write_authority_seal.py
+- regression_performance_inventory.txt:128 [text; bridge_or_handoff] - tests/test_runtime_replay_execution_bridge.py
+- regression_performance_inventory.txt:134 [text; taskrunner_dispatch] - tests/test_runtime_autonomous_dispatch.py
+- regression_performance_inventory.txt:136 [text; bridge_or_handoff] - tests/test_work_package_adaptive_planning_bridge.py
+- regression_performance_inventory.txt:176 [text; taskrunner_dispatch] - Add `integration` marker to CLI/subprocess-heavy pytest files listed above, especially work_package, engineering_*_cli, runtime_autonomous_dispatch, runtime_replay_execution_bridge, and validation long-running goal tests.
+- regression_performance_inventory.txt:207 [text; bridge_or_handoff] - tests/test_runtime_replay_execution_bridge.py is very large and includes many monkeypatched subprocess/timeout paths; even if mocked, it is a likely CPU hotspot during collection and execution.
+- runtime_native_entry_after.txt:29 [text; step_execution] - TaskRunner.execute_owned_step(...) now enters RuntimeNativeMainline before delegating to the existing StepExecutor-owned path.
+- runtime_native_entry_after.txt:30 [text; step_execution] - TaskRunner.execute_owned_steps(...) now enters RuntimeNativeMainline before delegating to the existing batch path.
+- runtime_native_entry_after.txt:44 [text; taskrunner_dispatch] - submit, intake, run-validation, dispatch-request, and run now enter RuntimeNativeMainline before existing WorkPackageScheduler / RuntimeWorkPackageOperator calls.
+- runtime_native_entry_after.txt:65 [text; taskrunner_dispatch] - RuntimeNativeExecutionDispatch.dispatch_goal(...), dispatch_schedule_item(...), run_dispatch(...)
+- runtime_native_entry_after.txt:83 [text; taskrunner_dispatch] - Internal Scheduler -> RuntimeDispatcher -> TaskRunner path
+- runtime_surface_registry_closure_non_mainline_issues.txt:17 [text; taskrunner_dispatch] - Scheduler RuntimeDispatcher handoff and TaskRunner StepExecutor execution internals were not refactored.
+- scheduler_freeze_readiness_report.txt:49 [text; taskrunner_dispatch] dispatch        | 3        | 11                  | min=0, max=0, zero_ref_bindings=3/3  | candidate_for_wrapper_collapse
+- scheduler_freeze_readiness_report.txt:66 [text; taskrunner_dispatch] dispatch        | keep_runtime_surface; protected runtime family, defer consolidation to a dedicated behavior audit.
+- scheduler_mainline_callgraph.txt:37 [text; operator_boundary] - line 8163: _zero_scheduler_complete_operator (active_refs=6; archived_refs=0; report_refs=4; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:39 [text; taskrunner_dispatch] - line 6690: _scheduler_dispatch_compat_handle_run_one_step_exception (active_refs=1; archived_refs=0; report_refs=41; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:41 [text; taskrunner_dispatch] - line 6690: def _scheduler_dispatch_compat_handle_run_one_step_exception(...)
+- scheduler_mainline_callgraph.txt:54 [text; operator_boundary] - line 8163: def _zero_scheduler_complete_operator(...)
+- scheduler_mainline_callgraph.txt:72 [text; operator_boundary] - _zero_scheduler_complete_operator: active_refs=6; archived_refs=0; report_refs=4; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:74 [text; taskrunner_dispatch] - _scheduler_dispatch_compat_handle_run_one_step_exception: active_refs=1; archived_refs=0; report_refs=41; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:102 [text; taskrunner_dispatch] dispatch:
+- scheduler_mainline_callgraph.txt:104 [text; taskrunner_dispatch] - line 6780: Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result (active_refs=0; archived_refs=2; report_refs=54; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:105 [text; taskrunner_dispatch] - line 6781: Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task (active_refs=0; archived_refs=0; report_refs=52; binding_class=runtime_binding)
+- ... truncated 33404
+
+Unknown Boundary Rows
+---------------------
+Unknown rows are not deletion candidates. They require a follow-up classifier or behavior audit before action.
+- aer_mainline_closure_seal.txt:7 [text; unknown] - Scheduler tick/run_one_step public execution surfaces -> RuntimeRouteRegistry.
+- app_legacy.py:284 [production; unknown] def _get_scheduler(system: Any) -> Any:
+- app_legacy.py:285 [production; unknown] scheduler = getattr(system, "scheduler", None)
+- app_legacy.py:286 [production; unknown] if scheduler is not None:
+- app_legacy.py:287 [production; unknown] return scheduler
+- app_legacy.py:304 [production; unknown] for owner in (system, _get_scheduler(system), _get_agent_loop(system)):
+- app_legacy.py:314 [production; unknown] for owner in (system, _get_scheduler(system), _get_agent_loop(system)):
+- app_legacy.py:336 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:337 [production; unknown] repo = getattr(scheduler, "task_repo", None)
+- app_legacy.py:362 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:363 [production; unknown] helper = getattr(scheduler, "_get_task_from_repo", None)
+- app_legacy.py:1744 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:1745 [production; unknown] create_fn = getattr(scheduler, "create_task", None)
+- app_legacy.py:1753 [production; unknown] return {"ok": False, "error": f"scheduler.create_task failed: {e}"}
+- app_legacy.py:1767 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:1768 [production; unknown] submit_fn = getattr(scheduler, "submit_existing_task", None)
+- app_legacy.py:1878 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:1879 [production; unknown] retry_fn = getattr(scheduler, "retry_task", None)
+- app_legacy.py:2037 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2040 [production; unknown] persist_fn = getattr(scheduler, "_persist_task_payload", None)
+- app_legacy.py:2049 [production; unknown] repo = getattr(scheduler, "task_repo", None)
+- app_legacy.py:2198 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2199 [production; unknown] preview_fn = getattr(scheduler, "preview_replan_task", None)
+- app_legacy.py:2236 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2237 [production; unknown] apply_fn = getattr(scheduler, "apply_replan_task", None)
+- app_legacy.py:2484 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2486 [production; unknown] persist_fn = getattr(scheduler, "_persist_task_payload", None)
+- app_legacy.py:2494 [production; unknown] repo = getattr(scheduler, "task_repo", None)
+- app_legacy.py:2661 [production; unknown] # "scheduler" or "scheduler status" that were created during probing.
+- app_legacy.py:2663 [production; unknown] accidental_cli_probe = 1 if goal in {"scheduler", "scheduler status", "scheduler run"} else 0
+- app_legacy.py:2789 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2794 [production; unknown] run_one_step = getattr(scheduler, "run_one_step", None)
+- app_legacy.py:2795 [production; unknown] if callable(run_one_step):
+- app_legacy.py:2805 [production; unknown] direct_step_result = run_one_step(task=copy.deepcopy(refreshed_before))
+- app_legacy.py:2807 [production; unknown] direct_step_result = run_one_step(copy.deepcopy(refreshed_before))
+- app_legacy.py:2816 [production; unknown] "driver": "run_one_step",
+- app_legacy.py:2824 [production; unknown] return {"ok": False, "mode": "target_task", "task_id": normalized_task_id, "driver": "run_one_step", "error": f"run_one_step failed: {e}"}
+- app_legacy.py:2834 [production; unknown] for owner in (scheduler, system):
+- app_legacy.py:2897 [production; unknown] if tick_status == "idle" or tick_action == "scheduler_idle":
+- app_legacy.py:2920 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2921 [production; unknown] run_fn = getattr(scheduler, "run_once", None)
+- app_legacy.py:2930 [production; unknown] tick_fn = getattr(scheduler, "tick", None)
+- app_legacy.py:2991 [production; unknown] if status == "idle" or action == "scheduler_idle":
+- app_legacy.py:2998 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:2999 [production; unknown] repo = getattr(scheduler, "task_repo", None)
+- app_legacy.py:3178 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:3183 [production; unknown] if llm_client is None and scheduler is not None:
+- app_legacy.py:3184 [production; unknown] llm_client = getattr(scheduler, "llm_client", None)
+- app_legacy.py:3185 [production; unknown] runtime_info: Dict[str, Any] = {"ok": True, "app": "ZERO Task OS", "workspace_dir": WORKSPACE_DIR, "has_scheduler": scheduler is not None, "has_agent_loop": agent is not None, "llm": {"plugin_name": "", "provider": "", "base_url": "", "model": "", "coder_model
+- app_legacy.py:3783 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:3816 [production; unknown] persist_fn = getattr(scheduler, "_persist_task_payload", None)
+- app_legacy.py:3825 [production; unknown] repo = getattr(scheduler, "task_repo", None)
+- app_legacy.py:4174 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:4175 [production; unknown] snapshot_fn = getattr(scheduler, "get_queue_snapshot", None)
+- app_legacy.py:4176 [production; unknown] rows_fn = getattr(scheduler, "get_queue_rows", None)
+- app_legacy.py:4551 [production; unknown] scheduler = _get_scheduler(system)
+- app_legacy.py:4552 [production; unknown] create_fn = getattr(scheduler, "create_task", None)
+- app_legacy.py:4554 [production; unknown] return {"ok": False, "error": "scheduler.create_task not available", "mode": "l5_task_suggestion"}
+- legacy_surface_retirement_plan.txt:21 [text; unknown] - Legacy callable retained: core.tasks.engineering_task_runner.run_engineering_task
+- legacy_surface_retirement_plan.txt:72 [text; unknown] - cli.work_package_cli submit / scheduler submit / intake
+- legacy_surface_retirement_plan.txt:116 [text; unknown] Scheduler / TaskRunner public execution admissions:
+- legacy_surface_retirement_plan.txt:119 [text; unknown] - Seal coverage: Package 9 scheduler tick seal.
+- legacy_surface_retirement_plan.txt:122 [text; unknown] - Scheduler.run_one_step
+- legacy_surface_retirement_plan.txt:124 [text; unknown] - Retirement status: direct native-mainline-only public run_one_step admission can be marked deprecated after a narrow seal test.
+- legacy_surface_retirement_plan.txt:130 [text; unknown] - TaskRunner.run / run_task / run_one_step / run_one_tick / run_task_tick
+- legacy_surface_retirement_plan.txt:132 [text; unknown] - Seal coverage: Package 9 TaskRunner run/run_task_tick representative seal.
+- legacy_surface_retirement_plan.txt:133 [text; unknown] - Retirement status: direct native-mainline-only public TaskRunner run/tick admission can be marked deprecated.
+- legacy_surface_retirement_plan.txt:184 [text; unknown] - Scheduler._run_step_via_task_runner
+- legacy_surface_retirement_plan.txt:185 [text; unknown] - Scheduler._run_scheduler_owned_simple_task_until_stop
+- legacy_surface_retirement_plan.txt:187 [text; unknown] - TaskRunner internal _run_one_step, mutation boundary integration, terminal evidence/completion sealing
+- legacy_surface_retirement_plan.txt:203 [text; unknown] - work_package submit, scheduler-submit branch, and intake branch
+- legacy_surface_retirement_plan.txt:228 [text; unknown] - Scheduler.run_one_step
+- legacy_surface_retirement_plan.txt:234 [text; unknown] TaskRunner:
+- legacy_surface_retirement_plan.txt:238 [text; unknown] - run_one_step / run_task / run_one_tick aliases
+- legacy_surface_retirement_plan.txt:239 [text; unknown] - Add alias tests proving they still route to TaskRunner registry admission and preserve compatibility return shape.
+- phase5_trace_redirect.py:3 [production; unknown] p = Path("core/tasks/scheduler.py")
+- phase5_trace_redirect.py:8 [production; unknown] return save_trace_for_task(scheduler=self, task=task, trace=trace)
+- phase5_trace_redirect.py:11 [production; unknown] return self.trace_runtime.save_scheduler_trace_for_task(
+- phase5_trace_redirect.py:20 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:28 [production; unknown] '''        return self.trace_runtime.scheduler_trace_summary(
+- phase5_trace_redirect.py:29 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:39 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:48 [production; unknown] '''        return self.trace_runtime.scheduler_trace_status(
+- phase5_trace_redirect.py:49 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:60 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:71 [production; unknown] '''        return self.trace_runtime.scheduler_trace_step(
+- phase5_trace_redirect.py:72 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:85 [production; unknown] scheduler=self,
+- phase5_trace_redirect.py:92 [production; unknown] '''        return self.trace_runtime.scheduler_trace_replan(
+- phase5_trace_redirect.py:93 [production; unknown] scheduler=self,
+- pytest.ini:45 [text; unknown] get_session: scheduler compatibility marker for injected get_session helpers
+- pytest.ini:46 [text; unknown] sessions: scheduler compatibility marker for injected sessions helpers
+- README.md:51 [text; unknown] python -m pytest tests/test_scheduler_no_direct_mutation_contract.py -q
+- README.md:159 [text; unknown] TaskRunner._persist_step_result_to_runtime_state
+- README.md:160 [text; unknown] TaskRunner._finalize_public_result
+- README.md:168 [text; unknown] It records and summarizes TaskRunner / StepExecutor results.
+- README.md:203 [text; unknown] records the persistent workflow identity and lineage, `TaskRunner` remains the
+- README.md:898 [text; unknown] Scheduler / TaskRunner / StepExecutor ownership boundaries remain unchanged.
+- README.md:1109 [text; unknown] -> scheduler
+- README.md:1120 [text; unknown] - scheduler decision records
+- README.md:1136 [text; unknown] python -m pytest tests/test_engineering_goal_scheduler.py -q
+- README.md:1150 [text; unknown] docs/images/milestone_engineering_goal_scheduler_v1_4273_passed.png
+- README.md:1172 [text; unknown] -> scheduler duplicate gate
+- README.md:1191 [text; unknown] - scheduler lineage-aware storage key and duplicate gate
+- README.md:1239 [text; unknown] No legacy direct JSON engineering_task_runner path is allowed to own mainline execution.
+- regression_performance_inventory.txt:45 [text; unknown] - tests/runtime_contracts/test_task_runner_contracts.py
+- regression_performance_inventory.txt:49 [text; unknown] - tests/test_scheduler_queue_formatting_helpers.py
+- regression_performance_inventory.txt:51 [text; unknown] - tests/test_scheduler_parser_helpers.py
+- regression_performance_inventory.txt:71 [text; unknown] - tests/test_scheduler_execution_gateway_integration.py
+- regression_performance_inventory.txt:79 [text; unknown] - tests/test_scheduler_execution_gateway_llm_step_integration.py
+- regression_performance_inventory.txt:82 [text; unknown] - tests/test_scheduler_planner_adapter_helpers.py
+- regression_performance_inventory.txt:83 [text; unknown] - tests/test_scheduler_private_result_history_contract.py
+- regression_performance_inventory.txt:84 [text; unknown] - tests/test_scheduler_public_snapshot_results_cap.py
+- regression_performance_inventory.txt:122 [text; unknown] - tests/test_scheduler_constitutional_integration.py
+- regression_performance_inventory.txt:173 [text; unknown] tests/test_scheduler_execution_gateway_llm_step_integration.py
+- regression_performance_inventory.txt:188 [text; unknown] python -m pytest tests/runtime_contracts tests/test_runtime_route_keys.py tests/test_scheduler_queue_formatting_helpers.py -q
+- runtime_native_entry_after.txt:5 [text; unknown] - Existing scheduler, task runner, work-package, engineering goal, and CLI runtime behavior was preserved behind compatibility delegation.
+- runtime_native_entry_after.txt:6 [text; unknown] - Repair, mutation, scheduler execution internals, and AER contracts were not intentionally changed.
+- runtime_native_entry_after.txt:15 [text; unknown] - Purpose: small shared entry adapter for AgentLoop, Scheduler, TaskRunner, and CLIs.
+- runtime_native_entry_after.txt:20 [text; unknown] - AgentLoop legacy JSON engineering_task route now calls engineering_task_runner.run_engineering_task(...) from inside RuntimeNativeMainline.
+- runtime_native_entry_after.txt:23 [text; unknown] - core/tasks/scheduler.py
+- runtime_native_entry_after.txt:24 [text; unknown] - Scheduler.tick(...) now enters RuntimeNativeMainline before delegating to scheduler_core tick.
+- runtime_native_entry_after.txt:25 [text; unknown] - Scheduler.run_one_step(...) now enters RuntimeNativeMainline before delegating to scheduler_core run_one_step.
+- runtime_native_entry_after.txt:28 [text; unknown] - core/runtime/task_runner.py
+- runtime_native_entry_after.txt:31 [text; unknown] - TaskRunner.run_task_tick(...) now enters RuntimeNativeMainline before executing the existing tick body.
+- runtime_native_entry_after.txt:32 [text; unknown] - TaskRunner run_one_tick/run_one_step/run_task/run wrappers pass through the delegate flag to avoid double admission.
+- runtime_native_entry_after.txt:56 [text; unknown] - _runtime_native_mainline_delegate_active and _runtime_native_mainline_delegate prevent recursive re-entry while the old scheduler body runs below mainline.
+- runtime_native_entry_after.txt:57 [text; unknown] - TaskRunner private delegate flag
+- runtime_native_entry_after.txt:81 [text; unknown] - Internal StepExecutor calls inside TaskRunner
+- runtime_native_entry_after.txt:82 [text; unknown] - Still exist below the now-canonical TaskRunner public admission wrapper. These are downstream runtime endpoints, not public entrypoints after this package.
+- runtime_native_entry_after.txt:92 [text; unknown] - scheduler.py and task_runner.py still contain extensive tail compatibility monkey patches. Not fixed.
+- runtime_surface_registry_closure_non_mainline_issues.txt:21 [text; unknown] - They require a separate migration decision because they are not among the Package 8 CLI/Scheduler/TaskRunner priority surfaces.
+- runtime_surface_registry_closure_seal.txt:11 [text; unknown] - TaskRunner public run/tick admission
+- runtime_surface_registry_closure_seal.txt:18 [text; unknown] - Existing route/final result markers are preserved in representative AgentLoop, CLI, Scheduler, and TaskRunner paths.
+- runtime_surface_registry_closure_seal.txt:36 [text; unknown] - TaskRunner:
+- runtime_surface_registry_closure_seal.txt:37 [text; unknown] - TaskRunner.run / run_task_tick -> RuntimeRouteKeys.TASK_RUNNER_TICK
+- run_scheduler.py:3 [production; unknown] from core.tasks.scheduler import Scheduler
+- run_scheduler.py:10 [production; unknown] scheduler = Scheduler(
+- run_scheduler.py:19 [production; unknown] scheduler.rebuild_queue_from_repo()
+- run_scheduler.py:20 [production; unknown] result = scheduler.run_one()
+- run_zero.py:94 [production; unknown] "-m", "core.watch.auto_task_runner",
+- run_zero_system.py:5 [production; unknown] from core.tasks.scheduler import Scheduler
+- run_zero_system.py:6 [production; unknown] from core.tasks.scheduler_thread import SchedulerThread
+- run_zero_system.py:28 [production; unknown] scheduler = Scheduler(
+- run_zero_system.py:34 [production; unknown] scheduler_thread = SchedulerThread(scheduler, interval=1)
+- run_zero_system.py:35 [production; unknown] scheduler_thread.start()
+- run_zero_system.py:45 [production; unknown] scheduler_thread.stop()
+- run_zero_system.py:52 [production; unknown] scheduler_thread.stop()
+- scheduler_freeze_readiness_report.txt:6 [text; unknown] - Production scheduler code was not modified by this report.
+- scheduler_freeze_readiness_report.txt:7 [text; unknown] - This report summarizes the current scheduler inventory and callgraph evidence.
+- scheduler_freeze_readiness_report.txt:12 [text; unknown] - inventory_report: scheduler_mainline_inventory.txt
+- scheduler_freeze_readiness_report.txt:13 [text; unknown] - callgraph_report: scheduler_mainline_callgraph.txt
+- scheduler_freeze_readiness_report.txt:22 [text; unknown] - scheduler_method_assignment_count: 46
+- scheduler_freeze_readiness_report.txt:38 [text; unknown] - Scheduler.run_one_step final binding not found
+- scheduler_freeze_readiness_report.txt:57 [text; unknown] run_one_step    | 4        | 8                   | min=0, max=33, zero_ref_bindings=1/4 | candidate_for_wrapper_collapse
+- scheduler_freeze_readiness_report.txt:74 [text; unknown] run_one_step    | freeze; final binding is documented and wrapper collapse is deferred.
+- scheduler_freeze_readiness_report.txt:83 [text; unknown] - The scheduler runtime surface is inventoried and grouped into functional families.
+- scheduler_freeze_readiness_report.txt:84 [text; unknown] - The final run_one_step binding is explicit in the callgraph report.
+- scheduler_freeze_readiness_report.txt:91 [text; unknown] - Do not collapse run_one_step wrappers without a dedicated behavior audit.
+- scheduler_mainline_callgraph.txt:4 [text; unknown] target: core\tasks\scheduler.py
+- scheduler_mainline_callgraph.txt:5 [text; unknown] inventory: scheduler_mainline_inventory.txt
+- scheduler_mainline_callgraph.txt:10 [text; unknown] - method definition: Scheduler.run_one_step (line 768; active_refs=unknown)
+- scheduler_mainline_callgraph.txt:11 [text; unknown] - helper definition: _zero_v352_scheduler_run_one_step (line 8045; active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:12 [text; unknown] - helper definition: _zero_scheduler_run_one_step_v8 (line 8133; active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:13 [text; unknown] - helper definition: _zero_scheduler_run_one_step_v16 (line 8219; active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:14 [text; unknown] - binding: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (line 8071; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:15 [text; unknown] - binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (line 8147; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:16 [text; unknown] - binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229; active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:17 [text; unknown] - final Scheduler.run_one_step binding: _zero_scheduler_run_one_step_v16 (line 8229)
+- scheduler_mainline_callgraph.txt:21 [text; unknown] run_one_step:
+- scheduler_mainline_callgraph.txt:23 [text; unknown] - line 8071: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:24 [text; unknown] - line 8147: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8 (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:25 [text; unknown] - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:27 [text; unknown] - line 7705: _zero_v11_scheduler_str (active_refs=unknown)
+- scheduler_mainline_callgraph.txt:28 [text; unknown] - line 7712: _zero_v11_scheduler_copy_dict (active_refs=unknown)
+- scheduler_mainline_callgraph.txt:29 [text; unknown] - line 7721: _zero_v11_extract_scheduler_error_type (active_refs=unknown)
+- scheduler_mainline_callgraph.txt:30 [text; unknown] - line 7746: _zero_v11_extract_scheduler_error_text (active_refs=unknown)
+- scheduler_mainline_callgraph.txt:31 [text; unknown] - line 7771: _zero_v11_extract_scheduler_runtime_mode (active_refs=2; archived_refs=0; report_refs=5; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:32 [text; unknown] - line 7790: _zero_v11_extract_scheduler_trace (active_refs=unknown)
+- scheduler_mainline_callgraph.txt:33 [text; unknown] - line 7813: _zero_v11_attach_scheduler_adapter_payload (active_refs=15; archived_refs=0; report_refs=5; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:34 [text; unknown] - line 8045: _zero_v352_scheduler_run_one_step (active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:35 [text; unknown] - line 8127: _zero_scheduler_update_step_progress (active_refs=unknown)
+- scheduler_mainline_callgraph.txt:36 [text; unknown] - line 8133: _zero_scheduler_run_one_step_v8 (active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:38 [text; unknown] - line 8219: _zero_scheduler_run_one_step_v16 (active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:42 [text; unknown] - line 7705: def _zero_v11_scheduler_str(...)
+- scheduler_mainline_callgraph.txt:43 [text; unknown] - line 7712: def _zero_v11_scheduler_copy_dict(...)
+- scheduler_mainline_callgraph.txt:44 [text; unknown] - line 7721: def _zero_v11_extract_scheduler_error_type(...)
+- scheduler_mainline_callgraph.txt:45 [text; unknown] - line 7746: def _zero_v11_extract_scheduler_error_text(...)
+- scheduler_mainline_callgraph.txt:46 [text; unknown] - line 7771: def _zero_v11_extract_scheduler_runtime_mode(...)
+- scheduler_mainline_callgraph.txt:47 [text; unknown] - line 7790: def _zero_v11_extract_scheduler_trace(...)
+- scheduler_mainline_callgraph.txt:48 [text; unknown] - line 7813: def _zero_v11_attach_scheduler_adapter_payload(...)
+- scheduler_mainline_callgraph.txt:49 [text; unknown] - line 8045: def _zero_v352_scheduler_run_one_step(...)
+- scheduler_mainline_callgraph.txt:50 [text; unknown] - line 8071: Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
+- scheduler_mainline_callgraph.txt:51 [text; unknown] - line 8127: def _zero_scheduler_update_step_progress(...)
+- scheduler_mainline_callgraph.txt:52 [text; unknown] - line 8133: def _zero_scheduler_run_one_step_v8(...)
+- scheduler_mainline_callgraph.txt:53 [text; unknown] - line 8147: Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
+- scheduler_mainline_callgraph.txt:55 [text; unknown] - line 8219: def _zero_scheduler_run_one_step_v16(...)
+- scheduler_mainline_callgraph.txt:56 [text; unknown] - line 8229: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
+- scheduler_mainline_callgraph.txt:57 [text; unknown] final active binding: Scheduler.run_one_step = _zero_scheduler_run_one_step_v16 (line 8229)
+- scheduler_mainline_callgraph.txt:59 [text; unknown] - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:60 [text; unknown] - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:61 [text; unknown] - Scheduler.run_one_step: active_refs=34; archived_refs=24; report_refs=971; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:62 [text; unknown] - _zero_v11_scheduler_str: active_refs=unknown
+- scheduler_mainline_callgraph.txt:63 [text; unknown] - _zero_v11_scheduler_copy_dict: active_refs=unknown
+- scheduler_mainline_callgraph.txt:64 [text; unknown] - _zero_v11_extract_scheduler_error_type: active_refs=unknown
+- scheduler_mainline_callgraph.txt:65 [text; unknown] - _zero_v11_extract_scheduler_error_text: active_refs=unknown
+- scheduler_mainline_callgraph.txt:66 [text; unknown] - _zero_v11_extract_scheduler_runtime_mode: active_refs=2; archived_refs=0; report_refs=5; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:67 [text; unknown] - _zero_v11_extract_scheduler_trace: active_refs=unknown
+- scheduler_mainline_callgraph.txt:68 [text; unknown] - _zero_v11_attach_scheduler_adapter_payload: active_refs=15; archived_refs=0; report_refs=5; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:69 [text; unknown] - _zero_v352_scheduler_run_one_step: active_refs=5; archived_refs=0; report_refs=20; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:70 [text; unknown] - _zero_scheduler_update_step_progress: active_refs=unknown
+- scheduler_mainline_callgraph.txt:71 [text; unknown] - _zero_scheduler_run_one_step_v8: active_refs=6; archived_refs=1; report_refs=21; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:73 [text; unknown] - _zero_scheduler_run_one_step_v16: active_refs=9; archived_refs=1; report_refs=30; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:126 [text; unknown] - Scheduler._handle_run_one_step_exception: active_refs=0; archived_refs=0; report_refs=54; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:148 [text; unknown] - line 6767: _scheduler_repo_state_compat_mark_repo_task_queued (active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:149 [text; unknown] - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:151 [text; unknown] - line 6767: def _scheduler_repo_state_compat_mark_repo_task_queued(...)
+- scheduler_mainline_callgraph.txt:162 [text; unknown] - line 8004: def _zero_scheduler_get_review_queue(...)
+- scheduler_mainline_callgraph.txt:175 [text; unknown] - _scheduler_repo_state_compat_mark_repo_task_queued: active_refs=1; archived_refs=0; report_refs=37; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:176 [text; unknown] - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=61; binding_class=runtime_binding
+- ... truncated 26742
+
+Initial Closure Decision
+------------------------
+- Do not modify scheduler.py in this package.
+- Do not modify task_runner.py in this package.
+- Treat Scheduler -> TaskRunner and TaskRunner -> Scheduler references as runtime boundary evidence, not cleanup candidates.
+- Any consolidation must be preceded by a behavior audit and targeted contract tests.
+
+Non-Mainline Issues
+-------------------
+- Inventory only. Report any unrelated runtime/operator/dispatcher issues in a separate package instead of silently modifying them.

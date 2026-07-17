@@ -1,0 +1,1499 @@
+TaskRunner Runtime Mainline Inventory
+
+repo_root: E:\zero_ai
+targets: 5
+entries: 162
+
+================================================================================
+core\runtime\task_runner.py
+================================================================================
+
+- line 121: function _zero_runtime_authority_for_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 193: function _zero_attach_step_authority
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_runtime_authority_for_step
+
+- line 228: function __init__
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RepairPlanner
+    - RepairStepInjector
+    - RuntimePersistenceService
+    - TaskRuntime
+    - self._build_mutation_runtime_integration
+
+- line 259: function _runtime_native_mainline_active
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 262: function _run_via_runtime_native_mainline
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - default_runtime_route_registry
+    - registry.register
+    - registry.run
+    - self._runtime_native_mainline_active
+    - self._runtime_route_key_for_entrypoint
+
+- line 295: function _runtime_route_key_for_entrypoint
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 307: function for_workspace
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - TaskRuntime
+
+- line 326: function _pre_execution_authority_denial
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - assert_runtime_capability_consistency
+    - canonical_runtime_identity_graph
+    - runtime_identity.get
+    - validate_runtime_system_capability
+
+- line 448: function execute_owned_step
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self._run_via_runtime_native_mainline
+    - self._runtime_native_mainline_active
+    - self.execute_owned_step
+    - self.step_executor.execute_step
+
+- line 517: function execute_owned_steps
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self._run_via_runtime_native_mainline
+    - self._runtime_native_mainline_active
+    - self.execute_owned_steps
+    - self.step_executor.execute_steps
+
+- line 589: function _build_mutation_runtime_integration
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - MutationRuntimeIntegration
+
+- line 608: function _is_autonomous_repair_mutation_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 621: function _is_self_repair_mutation_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 629: function _build_repair_chain_consistency_record
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - autonomous_repair.get
+    - existing_repair.get
+    - existing_replay.get
+    - repair_context.get
+    - repair_context.setdefault
+    - repair_session.get
+    - replay_validation.get
+    - self._is_autonomous_repair_mutation_step
+    - self._is_self_repair_mutation_step
+    - self._runtime_step_target
+
+- line 836: function _build_repair_replay_validation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - build_repair_replay_validation
+
+- line 856: function _attach_autonomous_repair_mutation_metadata
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - repair_context.setdefault
+    - repair_history.append
+    - self._build_repair_chain_consistency_record
+    - self._build_repair_replay_validation
+    - self._is_autonomous_repair_mutation_step
+    - self._is_self_repair_mutation_step
+    - self._runtime_step_target
+
+- line 946: function _attach_mutation_boundary_after_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - MutationRuntimeIntegration
+    - self._attach_autonomous_repair_mutation_metadata
+
+- line 1082: function run_task_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - _repair_chain_has_live_dispatcher_capability
+    - runtime_state.get
+    - self._resolve_max_auto_ticks
+    - self._run_via_runtime_native_mainline
+    - self._runtime_native_mainline_active
+    - self.run_task_tick
+    - self.runtime.load_runtime_state
+    - self.runtime.mark_failed
+    - self.runtime.mark_running
+    - self.runtime.record_engineering_decision
+    - self.runtime.record_engineering_observation
+    - self.runtime.record_step_failure
+    - self.runtime.save_runtime_state
+
+- line 1361: function run_one_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.run_task_tick
+
+- line 1376: function run_one_step
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.run_task_tick
+
+- line 1391: function run_task
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.run_task_tick
+
+- line 1406: function run
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.run_task_tick
+
+- line 1421: function complete_task
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self.runtime.mark_finished
+
+- line 1454: function _terminal_completion_authority
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - attach_runtime_identity_graph
+    - bind_runtime_identity_graph
+
+- line 1500: function record_terminal_observation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self.runtime.record_terminal_observation
+
+- line 1539: function _resolve_max_auto_ticks
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 1589: function _maybe_run_enabled_capability
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - execute_resolved_capability
+    - runtime_state.get
+    - self.runtime.mark_failed
+    - self.runtime.mark_finished
+    - self.runtime.save_runtime_state
+
+- line 1824: function _attach_system_rollback_capability
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - issue_runtime_system_capability
+
+- line 1898: function _normalize_runtime_mode
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - normalize_runtime_mode
+
+- line 1902: function _extract_runtime_mode_from_mapping
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - extract_runtime_mode_from_mapping
+
+- line 1906: function _resolve_runtime_mode
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - resolve_runtime_mode
+
+- line 1910: function _apply_runtime_mode_to_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - apply_runtime_mode_to_step
+
+- line 1917: function _runtime_step_action_type
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_step_action_type
+
+- line 1920: function _runtime_step_target
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_step_target
+
+- line 1923: function _runtime_step_id
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_step_id
+
+- line 1926: function _runtime_action_id
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_action_id
+
+- line 1929: function _runtime_linked_session_node
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_linked_session_node
+
+- line 1932: function _runtime_action_metadata
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_action_metadata
+
+- line 2007: function _run_one_step
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - canonical_runtime_status
+    - repair_context.get
+    - repair_injection_result.get
+    - restore_repair_backup
+    - runtime_state.get
+    - self._apply_runtime_mode_to_step
+    - self._maybe_inject_repair_steps_after_failure
+    - self._trace_tick_for_step
+    - self.runtime.advance_repair_strategy_after_failure
+    - self.runtime.advance_step
+    - self.runtime.load_runtime_state
+    - self.runtime.mark_failed
+    - self.runtime.mark_finished
+    - self.runtime.mark_waiting_review
+    - self.runtime.record_regression_verify
+    - self.runtime.record_step_failure
+    - self.runtime.rollback_last_apply
+    - self.step_executor.execute_step
+
+- line 2782: function _persist_step_result_to_runtime_state
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - persist_step_result_to_runtime_state
+
+- line 2803: function _sync_runtime_state_back_to_task
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - project_runtime_status
+    - self._compact_runtime_state_for_public_payload
+
+- line 2838: function _trace_tick_for_step
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - trace_tick_for_step
+
+- line 2936: function _maybe_inject_repair_steps_after_failure
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - maybe_inject_repair_steps_after_failure
+
+- line 2968: function _build_repair_chain_id
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 2980: function _infer_repair_source_path
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - infer_repair_source_path
+
+- line 2983: function _read_repair_source_text
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - read_repair_source_text
+
+- line 2993: function _first_repair_action_path
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - first_repair_action_path
+
+- line 3008: function _maybe_block_direct_missing_subgoal_dependency
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - project_runtime_status
+    - self.runtime._normalize_repair_context_for_task
+    - self.runtime._refresh_goal_state_summary
+    - self.runtime._set_subgoal_status
+    - self.runtime._subgoal_for_step_index
+    - self.runtime._sync_task_from_runtime_state
+    - self.runtime.apply_runtime_transition
+
+- line 3077: function _mark_syntax_function_rewrite_completion_if_needed
+  mainline_candidate: False
+  legacy_or_compat: True
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self.runtime._now
+    - self.runtime._sync_task_from_runtime_state
+    - self.runtime.save_runtime_state
+
+- line 3147: function _run_regression_verify_phase
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - repair_context.get
+
+- line 3337: function _compact_runtime_state_for_public_payload
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 3376: function _sync_repair_chain_summary_from_execution_log
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - sync_repair_chain_summary_from_execution_log
+
+- line 3388: function _finalize_public_result
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - project_runtime_status
+    - safe_runtime_state.get
+    - self._compact_runtime_state_for_public_payload
+    - self._sync_repair_chain_summary_from_execution_log
+    - self.runtime.save_runtime_state
+
+- line 3511: function _resolve_task_dir_for_trace
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_state.get
+
+- line 3600: function _zero_v702_runner_looks_like_autonomous_repair
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 3612: function _zero_v702_runner_repair_task_steps_if_needed
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_v702_runner_looks_like_autonomous_repair
+
+- line 3662: function _zero_v702_task_runner_run_one_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_v702_runner_repair_task_steps_if_needed
+    - self.runtime.load_runtime_state
+    - self.runtime.save_runtime_state
+
+- line 3838: function _zero_v800_extract_error
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_state.get
+
+- line 3854: function _zero_v800_build_observation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - repair_context.get
+    - runtime_state.get
+
+- line 3896: function _zero_v800_decide_from_observation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - canonical_runtime_status
+
+- line 3978: function _zero_v800_last_step_type
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_state.get
+
+- line 3993: function _zero_v800_represents_failed_step_observation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - repair_context.get
+    - runtime_state.get
+
+- line 4014: function _zero_v800_task_runner_run_one_step
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_state.get
+    - self.runtime.create_engineering_replan_candidate
+    - self.runtime.load_runtime_state
+    - self.runtime.record_engineering_decision
+    - self.runtime.record_engineering_observation
+    - self.runtime.save_runtime_state
+
+- line 4095: function _zero_v801_public_runtime_value
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 4109: function _zero_v801_task_runner_finalize_public_result
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_v801_public_runtime_value
+    - runtime_obj
+    - runtime_state.update
+
+- line 4201: function _zero_v810_persist_step_result_to_runtime_state
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self._sync_runtime_state_back_to_task
+    - self.runtime.save_runtime_state
+
+- line 4434: function _zero_boundary_build_taskrunner_authority_context
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - propagate_runtime_capability
+
+- line 4593: function _taskrunner_has_dispatch_authority
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 4626: function _taskrunner_authority_denial_shape
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _taskrunner_has_dispatch_authority
+    - project_runtime_status
+
+- line 4682: function _taskrunner_runtime_gate_fallback_step
+  mainline_candidate: True
+  legacy_or_compat: True
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _taskrunner_has_dispatch_authority
+    - self.step_executor.execute_step
+
+- line 4721: function _taskrunner_consolidated_run_task_tick
+  mainline_candidate: True
+  legacy_or_compat: True
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _TASK_RUNNER_CONSOLIDATED_RUN_TASK_TICK
+    - _taskrunner_runtime_gate_fallback_step
+
+- line 4735: function _taskrunner_consolidated_run_task
+  mainline_candidate: False
+  legacy_or_compat: True
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _taskrunner_runtime_gate_fallback_step
+
+- line 4752: function _stage3b_taskrunner_enrich_success_result
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - project_runtime_status
+    - runtime_state.setdefault
+
+- line 4784: function _stage3b_run_task_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _stage3b_taskrunner_base_run_task_tick
+
+- line 4821: function _zero_stage3b_runtime_mode_v2
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 4863: function _zero_stage3b_normalize_success_v2
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_stage3b_runtime_mode_v2
+    - project_runtime_status
+    - runtime_state.update
+
+- line 4925: function _zero_stage3b_normalize_blocked_v2
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - project_runtime_status
+
+- line 4981: function _zero_stage3b_run_task_tick_v2
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _ZERO_STAGE3B_ORIGINAL_RUN_TASK_TICK_V2
+
+- line 5032: function _zero_stage3b_runtime_state_from_task_v3
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 5052: function _zero_stage3b_normalize_taskrunner_result_v3
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_stage3b_runtime_state_from_task_v3
+    - canonical_runtime_status
+    - project_runtime_status
+    - runtime_state.get
+    - runtime_state.setdefault
+
+- line 5145: function _zero_stage3b_run_task_tick_v3
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _zero_stage3b_base_run_task_tick_v3
+
+- line 5168: function _zero_stage3b_taskrunner_record_operator_failure_v4
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - get_operator_registry_service
+    - get_operator_registry_service.mark_failed
+    - runtime_state.get
+    - runtime_state.setdefault
+
+- line 5194: function _zero_stage3b_run_task_tick_v4
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - _ZERO_STAGE3B_BASE_RUN_TASK_TICK_V4
+
+- line 5214: function _repair_chain_has_live_dispatcher_capability
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 5239: function _is_explicit_repair_chain_task
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 5253: function _repair_chain_dispatcher_denial_shape
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _is_explicit_repair_chain_task
+    - _repair_chain_has_live_dispatcher_capability
+    - project_runtime_status
+    - runtime_state.get
+
+- line 5310: function _repair_lineage_run_task_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _REPAIR_LINEAGE_BASE_RUN_TASK_TICK
+    - _is_explicit_repair_chain_task
+    - _repair_chain_dispatcher_denial_shape
+
+- line 5325: function _repair_lineage_run_task
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - _REPAIR_LINEAGE_BASE_RUN_TASK
+    - _is_explicit_repair_chain_task
+    - _repair_chain_dispatcher_denial_shape
+
+- line 5344: function _zero_operator_registry_phase1c_session_id
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+
+- line 5355: function _zero_operator_registry_phase1c_is_initial_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+
+- line 5364: function _zero_operator_registry_phase1c_run_task_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _ZERO_OPERATOR_REGISTRY_PHASE1C_BASE_RUN_TASK_TICK
+    - _zero_operator_registry_phase1c_is_initial_tick
+    - _zero_operator_registry_phase1c_session_id
+    - get_operator_registry_service
+    - get_operator_registry_service.clear_failure
+
+- line 5378: function _zero_taskrunner_registry_admit_aer_closure_v24
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+
+- line 5425: function _zero_taskrunner_registry_admit_owned_step_v24
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_admit_aer_closure_v24
+
+- line 5429: function _zero_taskrunner_registry_admit_tick_v24
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_admit_aer_closure_v24
+
+- line 5447: function _zero_taskrunner_registry_callsite_payload_v26
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+
+- line 5487: function _zero_taskrunner_registry_callsite_admit_v26
+  mainline_candidate: False
+  legacy_or_compat: True
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_callsite_payload_v26
+
+- line 5500: function _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_callsite_admit_v26
+
+- line 5501: function _zero_execute_owned_step_with_registry_admission
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_callsite_admit_v26
+
+- line 5511: function _zero_taskrunner_registry_callsite_wrap_tick_v26
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_callsite_admit_v26
+
+- line 5512: function _zero_tick_with_registry_admission
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - _zero_taskrunner_registry_callsite_admit_v26
+
+- line 5522: function _zero_taskrunner_registry_callsite_install_v26
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+
+- line 5546: function _zero_taskrunner_registry_legacy_cleanup_guard_v28
+  mainline_candidate: False
+  legacy_or_compat: True
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+
+- line 5570: function _zero_taskrunner_registry_legacy_cleanup_phase1_install_v28
+  mainline_candidate: False
+  legacy_or_compat: True
+  side_effect_hint: True
+  registry_admission_hint: True
+  relevant_calls:
+    - <none>
+================================================================================
+core\runtime\runtime_dispatcher.py
+================================================================================
+
+- line 79: function normalize_runtime_dispatcher_status
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RUNTIME_STATUS_ALIASES.get
+
+- line 105: function validate_runtime_transition
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - normalize_runtime_dispatcher_status
+
+- line 121: function _runtime_dispatcher_status_projection_contract_marker
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - normalize_runtime_status
+
+- line 134: class RuntimeDispatcher
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 137: function __init__
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - TaskRuntime
+
+- line 178: function dispatch
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - attach_runtime_identity_graph
+    - bind_runtime_identity_graph
+    - propagate_runtime_capability
+
+- line 195: function resume
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimePackageQueueError
+    - attach_runtime_identity_graph
+    - canonical_runtime_identity_graph
+    - normalize_runtime_status
+    - project_runtime_status
+    - propagate_runtime_capability
+    - runtime_state.get
+
+- line 266: function _continue_execution
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self.queue.record_runtime_completed
+    - self.queue.record_runtime_failure
+
+- line 344: function dispatch_next
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.dispatch
+
+- line 350: function progress
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.queue.runtime_progress
+
+- line 353: function _execution_task
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimePackageQueueError
+    - runtime_dispatch_contract_path
+    - seal_scheduler_runtime_contract
+
+- line 415: function _execution_capability
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - issue_dispatch_execution_capability
+
+- line 426: function _system_execution_capability
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - issue_runtime_system_capability
+
+- line 463: function _attach_execution_identity
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - attach_runtime_identity_graph
+    - bind_runtime_identity_graph
+    - build_runtime_execution_id
+
+- line 473: function run_scheduler_boundary
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - attach_runtime_identity_graph
+    - bind_runtime_identity_graph
+    - propagate_runtime_capability
+
+- line 583: function _step_feedback
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeDispatcher._output_summary
+    - normalize_runtime_dispatcher_status
+
+- line 655: function _replan
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - extract_runtime_identity
+    - runtime_identity.get
+
+- line 777: function _append_replan_task
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - normalize_runtime_status
+    - project_runtime_status
+
+- line 797: function _next_task
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - normalize_runtime_status
+    - project_runtime_status
+================================================================================
+core\runtime\runtime_execution_fabric.py
+================================================================================
+
+- line 63: class RuntimeExecutionCheckpoint
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 116: class RuntimeExecutionRecord
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 153: function from_dict
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionCheckpoint.from_dict
+
+- line 179: class RuntimeExecutionContinuation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 207: class RuntimeExecutionFabricEvent
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 227: class RuntimeExecutionFabricRejected
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 234: class RuntimeExecutionFabric
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 253: function __init__
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimePersistenceService
+
+- line 292: function start_execution
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricRejected
+    - RuntimeExecutionRecord
+
+- line 349: function checkpoint
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionCheckpoint
+    - RuntimeExecutionRecord.from_dict
+
+- line 454: function create_recovery_incident
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - extract_runtime_identity
+
+- line 499: function queue_recovery
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricRejected
+    - RuntimeExecutionRecord.from_dict
+    - self.create_recovery_incident
+    - self.recovery_orchestrator.submit_incident
+    - ticket.to_dict
+
+- line 540: function consume_recovery_and_build_continuation
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionContinuation
+    - RuntimeExecutionFabricRejected
+    - RuntimeExecutionRecord.from_dict
+    - record.recovery_ticket.get
+    - recovery_result.get
+    - self.recovery_orchestrator.consume_ready
+    - ticket.get
+
+- line 637: function resume_from_continuation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricRejected
+    - RuntimeExecutionRecord.from_dict
+
+- line 707: function get_execution
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricRejected
+
+- line 714: function get_continuation
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricRejected
+
+- line 754: function load
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionContinuation
+    - RuntimeExecutionFabricEvent
+    - RuntimeExecutionRecord.from_dict
+
+- line 825: function _append_event
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricEvent
+
+- line 864: function _validate_text
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeExecutionFabricRejected
+================================================================================
+core\runtime\runtime_recovery_orchestrator.py
+================================================================================
+
+- line 26: function stable_recovery_orchestrator_fingerprint
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 32: class RuntimeRecoveryBackoffPolicy
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 44: class RuntimeRecoveryCooldownPolicy
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 47: function next_allowed_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 52: class RuntimeRecoveryOrchestratorResult
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 75: class RuntimeRecoveryOrchestratorRejected
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 84: class RuntimeRecoveryOrchestrator
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 104: function __init__
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeRecoveryBackoffPolicy
+    - RuntimeRecoveryCooldownPolicy
+    - RuntimeRecoveryLineage
+    - RuntimeRecoveryQueue
+    - RuntimeRecoverySupervisor
+
+- line 132: function with_workspace
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeRecoveryLineage
+    - RuntimeRecoveryQueue
+    - RuntimeRecoverySupervisor
+    - recovery_dir.mkdir
+
+- line 147: function submit_incident
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeRecoveryOrchestratorRejected
+    - extract_runtime_identity
+    - runtime_identity.get
+    - self.lineage.link_recovery_chain
+    - stable_recovery_orchestrator_fingerprint
+    - ticket.to_dict
+
+- line 204: function consume_ready
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self.run_ticket
+
+- line 216: function run_ticket
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeRecoveryOrchestratorResult
+    - completed_ticket.to_dict
+    - failed_ticket.to_dict
+    - running_ticket.to_dict
+    - self._escalate_ticket
+    - self._next_retry_tick
+    - self._run_recovery_for_ticket
+    - self.lineage.link_recovery_chain
+
+- line 367: function _run_recovery_for_ticket
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.recovery_coordinator.create_recovery
+    - self.recovery_coordinator.run_recovery
+    - self.recovery_executor.execute_recovery
+    - ticket.to_dict
+
+- line 408: function _escalate_ticket
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - RuntimeRecoveryOrchestratorResult
+    - escalated_ticket.to_dict
+    - self.lineage.link_recovery_chain
+    - ticket.to_dict
+
+- line 465: function _next_retry_tick
+  mainline_candidate: True
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.cooldown_policy.next_allowed_tick
+================================================================================
+core\runtime\runtime_state_machine.py
+================================================================================
+
+- line 18: class RuntimeStateMachine
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 259: function ensure_runtime_status_fields
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - <none>
+
+- line 289: function transition
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - self.ensure_runtime_status_fields
+
+- line 546: function from_failure_policy
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: True
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_state.get
+
+- line 592: function summarize
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - self.ensure_runtime_status_fields
+
+- line 691: function _task_name
+  mainline_candidate: False
+  legacy_or_compat: False
+  side_effect_hint: False
+  registry_admission_hint: False
+  relevant_calls:
+    - runtime_state.get
+
+================================================================================
+Non-mainline Issues
+================================================================================
+- Inventory only. No code behavior was changed.
+- Any entry marked legacy_or_compat=True should be reviewed in Package 32/33.
+- Any entry with side_effect_hint=True but registry_admission_hint=False should be reviewed before cleanup.

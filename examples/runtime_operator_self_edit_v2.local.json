@@ -1,0 +1,21 @@
+﻿{
+  "package_id": "zero-self-edit-v2-20260706150623",
+  "task_id": "zero-self-edit-v2-task-20260706150623",
+  "goal": "Upgrade ZERO self execution marker through repo root controlled mutation.",
+  "requested_mode": "controlled",
+  "target_root": "repo",
+  "authority_context": {
+    "operator_approved": true,
+    "controlled_mutation": true,
+    "repo_root_mutation_allowed": true,
+    "validation_required": true,
+    "commit_allowed": true
+  },
+  "requested_changes": [
+    {
+      "action": "write_file",
+      "path": "core/runtime/runtime_self_execution_marker.py",
+      "content": "from __future__ import annotations\n\nSELF_EXECUTION_MARKER_SCHEMA = \"zero.runtime.self_execution_marker.v2\"\n\n\ndef build_self_execution_marker() -> dict[str, object]:\n    return {\n        \"schema\": SELF_EXECUTION_MARKER_SCHEMA,\n        \"self_execution_available\": True,\n        \"repo_root_self_edit\": True,\n        \"controlled_mutation_required\": True,\n        \"validation_required\": True,\n        \"governed_commit_required\": True,\n    }\n\n\n__all__ = [\"SELF_EXECUTION_MARKER_SCHEMA\", \"build_self_execution_marker\"]\n"
+    }
+  ]
+}

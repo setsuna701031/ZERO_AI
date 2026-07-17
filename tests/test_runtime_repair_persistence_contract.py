@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.tasks.runtime_repair_apply_executor_contract import (
+
     build_runtime_repair_apply_executor_contract,
 )
 
@@ -38,6 +39,10 @@ from core.tasks.runtime_repair_transaction_review import (
 from core.tasks.runtime_repair_transaction_snapshot import (
     build_runtime_repair_transaction_snapshot,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def _build_runtime_stack():

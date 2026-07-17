@@ -1,12 +1,25 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
+import functools
 import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Set
 
 from core.tasks.task_paths import TaskPathManager
+from core.tasks.task_store_lock import atomic_write_json, task_store_lock
+from core.runtime.runtime_authority_seal import is_task_completion_authority
+
+
+def _task_store_transaction(method):
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._store_lock.acquire():
+            return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 class TaskRepository:
@@ -23,12 +36,15 @@ class TaskRepository:
     """
 
     COMPLETED_STATUSES: Set[str] = {
+        "completed",
         "done",
         "finished",
+        "success",
     }
 
     def __init__(self, db_path: str = "workspace/tasks.json") -> None:
         self.db_path = os.path.abspath(db_path)
+        self._store_lock = task_store_lock(self.db_path)
         self.workspace_root = os.path.dirname(self.db_path)
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
@@ -40,6 +56,7 @@ class TaskRepository:
     # file io
     # ============================================================
 
+    @_task_store_transaction
     def load(self) -> None:
         if not os.path.exists(self.db_path):
             self.tasks = []
@@ -74,25 +91,22 @@ class TaskRepository:
     def reload(self) -> None:
         self.load()
 
+    @_task_store_transaction
     def save(self) -> None:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
+        # Keep save pure and cheap. Public mutators normalize before assigning
+        # to self.tasks, so save should not trigger another full repository
+        # normalize pass with path enrichment / filesystem mkdir work.
         normalized: List[Dict[str, Any]] = []
         for task in self.tasks:
             if not isinstance(task, dict):
                 continue
-            try:
-                normalized.append(self._normalize_task(task))
-            except Exception:
+            if not str(task.get("task_id") or "").strip():
                 continue
+            normalized.append(copy.deepcopy(task))
 
-        with open(self.db_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {"tasks": normalized},
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
+        atomic_write_json(self.db_path, {"tasks": normalized})
 
     # ============================================================
     # DAG helpers
@@ -199,7 +213,7 @@ class TaskRepository:
             return result
 
         if not deps:
-            result["status"] = "queued"
+            project_runtime_status(result, "queued", owner="core/tasks/task_repository.py")
             return result
 
         all_done = True
@@ -212,13 +226,14 @@ class TaskRepository:
                 all_done = False
                 break
 
-        result["status"] = "queued" if all_done else "blocked"
+        project_runtime_status(result, "queued" if all_done else "blocked", owner="core/tasks/task_repository.py")
         return result
 
     # ============================================================
     # basic repo api
     # ============================================================
 
+    @_task_store_transaction
     def list_tasks(self) -> List[Dict[str, Any]]:
         self.reload()
 
@@ -237,6 +252,7 @@ class TaskRepository:
 
         return copy.deepcopy(refreshed)
 
+    @_task_store_transaction
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         self.reload()
 
@@ -253,11 +269,17 @@ class TaskRepository:
 
         return None
 
-    def add_task(self, task: Dict[str, Any]) -> bool:
+    @_task_store_transaction
+    def add_task(self, task: Dict[str, Any], *, completion_authority: Any = None) -> bool:
         self.reload()
 
         normalized = self._normalize_task(task)
         task_id = normalized["task_id"]
+        if (
+            str(normalized.get("status") or "").strip().lower() in self.COMPLETED_STATUSES
+            and not is_task_completion_authority(completion_authority, task_id=task_id)
+        ):
+            raise PermissionError("task_completion_authority_required")
 
         if self._find_task_ref(task_id):
             return False
@@ -280,6 +302,7 @@ class TaskRepository:
         self.save()
         return True
 
+    @_task_store_transaction
     def create_task(
         self,
         task: Optional[Dict[str, Any]] = None,
@@ -288,7 +311,7 @@ class TaskRepository:
         self.reload()
 
         if isinstance(task, dict):
-            return self.add_task(task)
+            return self.add_task(task, completion_authority=kwargs.get("completion_authority"))
 
         goal = str(kwargs.get("goal") or "").strip()
         if not goal:
@@ -313,13 +336,19 @@ class TaskRepository:
             "history": history,
         }
 
-        return self.add_task(raw_task)
+        return self.add_task(raw_task, completion_authority=kwargs.get("completion_authority"))
 
-    def upsert_task(self, task: Dict[str, Any]) -> bool:
+    @_task_store_transaction
+    def upsert_task(self, task: Dict[str, Any], *, completion_authority: Any = None) -> bool:
         self.reload()
 
         normalized = self._normalize_task(task)
         task_id = normalized["task_id"]
+        if (
+            str(normalized.get("status") or "").strip().lower() in self.COMPLETED_STATUSES
+            and not is_task_completion_authority(completion_authority, task_id=task_id)
+        ):
+            raise PermissionError("task_completion_authority_required")
 
         depends_on = self._normalize_depends_on(normalized.get("depends_on", []))
         normalized["depends_on"] = depends_on
@@ -358,6 +387,7 @@ class TaskRepository:
         self.save()
         return True
 
+    @_task_store_transaction
     def delete_task(self, task_id: str) -> bool:
         self.reload()
 
@@ -369,6 +399,7 @@ class TaskRepository:
     # scheduler api
     # ============================================================
 
+    @_task_store_transaction
     def get_ready_tasks(self) -> List[Dict[str, Any]]:
         """
         只回傳依賴已完成且可進入執行的任務
@@ -411,25 +442,44 @@ class TaskRepository:
         status = self._resolve_default_status(task.get("status"), depends_on)
         history = self._normalize_history(task.get("history"), status)
 
-        enriched = self.path_manager.enrich_task(copy.deepcopy(task))
+        # Fast normalization path.
+        #
+        # Repository load/get/list operations are read paths. They must not call
+        # TaskPathManager.enrich_task(), because enrich_task() creates
+        # workspace/task/sandbox directories. With a large tasks.json, that turns
+        # one empty scheduler tick into hundreds of repeated Windows mkdir/stat
+        # calls. Derive path strings only; creation remains owned by
+        # ensure_task_paths() at create/execution boundaries.
+        paths = self.path_manager.get_task_paths(task_id)
+
+        raw_priority = task.get("priority", 0)
+        try:
+            priority = int(raw_priority)
+        except Exception:
+            priority = 0
+
+        raw_l5_trigger = task.get("l5_trigger", {})
+        l5_trigger = copy.deepcopy(raw_l5_trigger) if isinstance(raw_l5_trigger, dict) else {}
 
         normalized = {
             "task_id": task_id,
-            "title": str(enriched.get("title", task.get("title", ""))),
-            "goal": str(enriched.get("goal", task.get("goal", ""))),
+            "title": str(task.get("title", "")),
+            "goal": str(task.get("goal", "")),
             "status": status,
-            "task_type": str(enriched.get("task_type", task.get("task_type", ""))),
-            "source": str(enriched.get("source", task.get("source", ""))),
-            "requires_approval": bool(enriched.get("requires_approval", task.get("requires_approval", False))),
-            "l5_trigger": copy.deepcopy(enriched.get("l5_trigger", task.get("l5_trigger", {})))
-            if isinstance(enriched.get("l5_trigger", task.get("l5_trigger", {})), dict)
-            else {},
-            "priority": int(enriched.get("priority", task.get("priority", 0))),
+            "task_type": str(task.get("task_type", "")),
+            "source": str(task.get("source", "")),
+            "requires_approval": bool(task.get("requires_approval", False)),
+            "l5_trigger": l5_trigger,
+            "priority": priority,
             "depends_on": copy.deepcopy(depends_on),
             "history": copy.deepcopy(history),
-            "workspace_dir": str(enriched.get("workspace_dir", "")),
-            "task_dir": str(enriched.get("task_dir", "")),
+            "workspace_dir": str(self.path_manager.tasks_root),
+            "task_dir": str(paths.get("task_dir", "")),
         }
+
+        for key, value in task.items():
+            if key not in normalized:
+                normalized[key] = copy.deepcopy(value)
 
         return normalized
 

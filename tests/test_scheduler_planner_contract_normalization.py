@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
+
+
 
 
 def _gateway_payload(**overrides):

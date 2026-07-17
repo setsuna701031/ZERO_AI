@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import heapq
 import itertools
+import copy
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+from core.runtime.runtime_authority_seal import is_task_completion_authority
+from core.runtime.persistent_queue_contract import (
+    QUEUE_LINEAGE_FIELDS,
+    duplicate_identity,
+    extract_queue_lineage,
+    merge_queue_lineage,
+    queue_identity,
+    queue_session_id,
+)
 
 
 STATUS_QUEUED = "queued"
@@ -76,6 +86,7 @@ class TaskSchedulerQueue:
 
         self._tasks: Dict[str, ScheduledTask] = {}
         self._queued_ids: set[str] = set()
+        self.last_admission_result: Dict[str, Any] = {}
 
     def __len__(self) -> int:
         with self._lock:
@@ -91,22 +102,37 @@ class TaskSchedulerQueue:
 
     def has_task(self, task_id: str) -> bool:
         with self._lock:
-            return task_id in self._tasks
+            return self._resolve_key(task_id) is not None
 
     def contains(self, task_id: str) -> bool:
         with self._lock:
-            return task_id in self._queued_ids
+            key = self._resolve_key(task_id)
+            return key in self._queued_ids if key is not None else False
 
-    def get_task(self, task_id: str) -> Optional[ScheduledTask]:
+    def get_task(
+        self,
+        task_id: str,
+        *,
+        session_id: str | None = None,
+        goal_lineage_id: str | None = None,
+        branch_id: str | None = None,
+    ) -> Optional[ScheduledTask]:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(
+                task_id,
+                session_id=session_id,
+                goal_lineage_id=goal_lineage_id,
+                branch_id=branch_id,
+            )
+            task = self._tasks.get(key) if key is not None else None
             return None if task is None else self._clone_task(task)
 
     def upsert_task(self, task: ScheduledTask) -> ScheduledTask:
         with self._lock:
-            existing = self._tasks.get(task.task_id)
+            key = self._storage_key(task)
+            existing = self._tasks.get(key)
             if existing is None:
-                self._tasks[task.task_id] = self._clone_task(task)
+                self._tasks[key] = self._clone_task(task)
             else:
                 existing.title = task.title
                 existing.priority = task.priority
@@ -119,22 +145,54 @@ class TaskSchedulerQueue:
                 existing.result = task.result
                 existing.started_at = task.started_at
                 existing.finished_at = task.finished_at
-            return self._clone_task(self._tasks[task.task_id])
+            return self._clone_task(self._tasks[key])
 
     def enqueue(self, task: ScheduledTask, overwrite: bool = False) -> bool:
         with self._lock:
-            existing = self._tasks.get(task.task_id)
+            storage_key = self._storage_key(task)
+            existing = self._tasks.get(storage_key)
+
+            semantic_duplicate, matched_identity = duplicate_identity(
+                task.payload,
+                [item.payload for key, item in self._tasks.items() if key != storage_key],
+            )
+            if semantic_duplicate is not None:
+                self.last_admission_result = {
+                    "result": "duplicate_idempotent",
+                    "task_id": task.task_id,
+                    "matched_identity": matched_identity,
+                }
+                return False
 
             if existing is not None:
-                if existing.task_id in self._queued_ids:
+                if storage_key in self._queued_ids:
                     if not overwrite:
+                        self.last_admission_result = {
+                            "result": "duplicate_idempotent",
+                            "task_id": task.task_id,
+                            "matched_identity": queue_identity(existing.payload) or {"task_id": task.task_id},
+                        }
                         return False
-                    self._remove_from_queue_marker(existing.task_id)
+                    self._remove_from_queue_marker(storage_key)
 
                 if not overwrite:
+                    self.last_admission_result = {
+                        "result": "duplicate_idempotent",
+                        "task_id": task.task_id,
+                        "matched_identity": queue_identity(existing.payload) or {"task_id": task.task_id},
+                    }
                     return False
 
             stored = self._clone_task(task)
+            lineage_conflicts: List[Dict[str, Any]] = []
+            if existing is not None:
+                sealed_payload, lineage_conflicts = merge_queue_lineage(
+                    existing.payload, task.payload, preserve_existing_evidence=True
+                )
+                for key, value in task.payload.items():
+                    if key not in QUEUE_LINEAGE_FIELDS:
+                        sealed_payload[key] = copy.deepcopy(value)
+                stored.payload = sealed_payload
 
             # 關鍵修正：
             # 不要在 queue 層強制覆蓋 status = queued
@@ -148,14 +206,20 @@ class TaskSchedulerQueue:
             stored.result = None
             stored.last_error = None
 
-            self._tasks[stored.task_id] = stored
+            self._tasks[storage_key] = stored
 
             seq = next(self._sequence)
             heapq.heappush(
                 self._heap,
-                (-stored.priority, stored.created_at, seq, stored.task_id),
+                (-stored.priority, stored.created_at, seq, storage_key),
             )
-            self._queued_ids.add(stored.task_id)
+            self._queued_ids.add(storage_key)
+            self.last_admission_result = {
+                "result": "requeued" if existing is not None else "enqueued",
+                "task_id": stored.task_id,
+                "identity": queue_identity(stored.payload),
+                "lineage_conflicts": lineage_conflicts,
+            }
             return True
 
     def enqueue_from_dict(self, data: Dict[str, Any], overwrite: bool = False) -> bool:
@@ -227,13 +291,16 @@ class TaskSchedulerQueue:
         task_id: str,
         priority: Optional[int] = None,
         error: Optional[str] = None,
+        *,
+        session_id: str | None = None,
     ) -> bool:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(task_id, session_id=session_id)
+            task = self._tasks.get(key) if key is not None else None
             if task is None:
                 return False
 
-            if task_id in self._queued_ids:
+            if key in self._queued_ids:
                 return False
 
             task.status = STATUS_QUEUED
@@ -248,75 +315,89 @@ class TaskSchedulerQueue:
             seq = next(self._sequence)
             heapq.heappush(
                 self._heap,
-                (-task.priority, task.created_at, seq, task.task_id),
+                (-task.priority, task.created_at, seq, key),
             )
-            self._queued_ids.add(task.task_id)
+            self._queued_ids.add(key)
             return True
 
-    def cancel(self, task_id: str) -> bool:
+    def cancel(self, task_id: str, *, session_id: str | None = None) -> bool:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(task_id, session_id=session_id)
+            task = self._tasks.get(key) if key is not None else None
             if task is None:
                 return False
 
-            self._queued_ids.discard(task_id)
+            self._queued_ids.discard(key)
             task.status = STATUS_CANCELLED
             task.finished_at = time.time()
             return True
 
-    def mark_finished(self, task_id: str, result: Any = None) -> bool:
+    def mark_finished(self, task_id: str, result: Any = None, *, completion_authority: Any = None, session_id: str | None = None) -> bool:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(task_id, session_id=session_id)
+            task = self._tasks.get(key) if key is not None else None
             if task is None:
                 return False
+            task_session_id = queue_session_id(task.payload) or queue_session_id(task.metadata)
+            if not is_task_completion_authority(
+                completion_authority,
+                task_id=task_id,
+                session_id=task_session_id or None,
+            ):
+                raise PermissionError("task_completion_authority_required")
 
-            self._queued_ids.discard(task_id)
+            self._queued_ids.discard(key)
             task.status = STATUS_FINISHED
             task.result = result
             task.finished_at = time.time()
             return True
 
-    def mark_failed(self, task_id: str, error: str) -> bool:
+    def mark_failed(self, task_id: str, error: str, *, session_id: str | None = None) -> bool:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(task_id, session_id=session_id)
+            task = self._tasks.get(key) if key is not None else None
             if task is None:
                 return False
 
-            self._queued_ids.discard(task_id)
+            self._queued_ids.discard(key)
             task.status = STATUS_FAILED
             task.last_error = error
             task.finished_at = time.time()
             return True
 
-    def increment_retry(self, task_id: str) -> bool:
+    def increment_retry(self, task_id: str, *, session_id: str | None = None) -> bool:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(task_id, session_id=session_id)
+            task = self._tasks.get(key) if key is not None else None
             if task is None:
                 return False
             task.retry_count += 1
             return True
 
-    def update_priority(self, task_id: str, priority: int) -> bool:
+    def update_priority(self, task_id: str, priority: int, *, session_id: str | None = None) -> bool:
         with self._lock:
-            task = self._tasks.get(task_id)
+            key = self._resolve_key(task_id, session_id=session_id)
+            task = self._tasks.get(key) if key is not None else None
             if task is None:
                 return False
 
             task.priority = int(priority)
 
-            if task_id in self._queued_ids:
+            if key in self._queued_ids:
                 seq = next(self._sequence)
                 heapq.heappush(
                     self._heap,
-                    (-task.priority, task.created_at, seq, task.task_id),
+                    (-task.priority, task.created_at, seq, key),
                 )
             return True
 
-    def remove(self, task_id: str) -> bool:
+    def remove(self, task_id: str, *, session_id: str | None = None) -> bool:
         with self._lock:
-            existed = task_id in self._tasks
-            self._queued_ids.discard(task_id)
-            self._tasks.pop(task_id, None)
+            key = self._resolve_key(task_id, session_id=session_id)
+            existed = key in self._tasks if key is not None else False
+            if key is not None:
+                self._queued_ids.discard(key)
+                self._tasks.pop(key, None)
             return existed
 
     def list_queued(self) -> List[ScheduledTask]:
@@ -371,6 +452,46 @@ class TaskSchedulerQueue:
 
     def _remove_from_queue_marker(self, task_id: str) -> None:
         self._queued_ids.discard(task_id)
+
+    @staticmethod
+    def _storage_key(task: ScheduledTask) -> str:
+        session_id = queue_session_id(task.payload) or queue_session_id(task.metadata)
+        lineage = extract_queue_lineage(task.payload)
+        lineage_id = str(lineage.get("goal_lineage_id") or "").strip()
+        branch_id = str(lineage.get("branch_id") or "").strip()
+        if lineage_id and branch_id:
+            return "::".join((session_id, lineage_id, branch_id, task.task_id))
+        return f"{session_id}::{task.task_id}" if session_id else task.task_id
+
+    def _resolve_key(
+        self,
+        task_id: str,
+        *,
+        session_id: str | None = None,
+        goal_lineage_id: str | None = None,
+        branch_id: str | None = None,
+    ) -> str | None:
+        clean_task_id = str(task_id or "").strip()
+        clean_session_id = str(session_id or "").strip()
+        if clean_session_id:
+            key = f"{clean_session_id}::{clean_task_id}"
+            if key in self._tasks and not goal_lineage_id and not branch_id:
+                return key
+        if clean_task_id in self._tasks:
+            return clean_task_id
+        matches = []
+        for key, task in self._tasks.items():
+            lineage = extract_queue_lineage(task.payload)
+            if task.task_id != clean_task_id:
+                continue
+            if clean_session_id and queue_session_id(task.payload) != clean_session_id:
+                continue
+            if goal_lineage_id and lineage.get("goal_lineage_id") != str(goal_lineage_id):
+                continue
+            if branch_id and lineage.get("branch_id") != str(branch_id):
+                continue
+            matches.append(key)
+        return matches[0] if len(matches) == 1 else None
 
     @staticmethod
     def _clone_task(task: ScheduledTask) -> ScheduledTask:

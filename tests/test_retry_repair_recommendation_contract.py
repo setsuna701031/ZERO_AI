@@ -3,9 +3,12 @@ from __future__ import annotations
 import pytest
 
 from core.engineering.retry_repair_recommendation import (
+
     build_retry_repair_recommendation,
     validate_retry_repair_recommendation_contract,
 )
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 def test_retry_repair_recommendation_no_action_for_passed_verification() -> None:

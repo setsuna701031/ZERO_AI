@@ -1,0 +1,594 @@
+# Scheduler Native Ownership Closure Inventory — Stage13A
+
+Inventory, dependency analysis, and closure ordering only. No blocker was removed and no production runtime file was modified.
+
+## Summary
+
+- Total scheduler items: 52
+- Confirmed scheduler blockers: 45
+- Compatibility bridge scheduler items: 0
+- False-positive scheduler items: 2
+- Non-mainline scheduler items: 5
+- Unresolved ambiguities: 0
+- Production runtime touched: false
+
+## Bucket counts
+
+- `scheduler_state_ownership`: 8
+- `scheduler_queue_ownership`: 5
+- `scheduler_dispatch_ownership`: 30
+- `scheduler_retry_or_recovery_boundary`: 2
+- `scheduler_runtime_gate_dependency`: 0
+- `scheduler_legacy_metadata_dependency`: 2
+- `scheduler_test_or_validation_only`: 0
+- `scheduler_non_mainline_issue`: 5
+
+## Closure order and dependency graph
+
+1. `scheduler_legacy_metadata_dependency` — blocked by: none; unlocks: `scheduler_state_ownership`
+2. `scheduler_state_ownership` — blocked by: `scheduler_legacy_metadata_dependency`; unlocks: `scheduler_queue_ownership`
+3. `scheduler_queue_ownership` — blocked by: `scheduler_state_ownership`; unlocks: `scheduler_runtime_gate_dependency`, `scheduler_dispatch_ownership`
+4. `scheduler_runtime_gate_dependency` — blocked by: `scheduler_queue_ownership`, `runtime_gate_compatibility_bridge`; unlocks: `scheduler_dispatch_ownership`
+5. `scheduler_dispatch_ownership` — blocked by: `scheduler_queue_ownership`, `scheduler_runtime_gate_dependency`; unlocks: `scheduler_retry_or_recovery_boundary`
+6. `scheduler_retry_or_recovery_boundary` — blocked by: `scheduler_dispatch_ownership`, `repair_chain`; unlocks: `scheduler_test_or_validation_only`, `scheduler_non_mainline_issue`
+7. `scheduler_test_or_validation_only` — blocked by: `scheduler_state_ownership`, `scheduler_queue_ownership`, `scheduler_dispatch_ownership`, `scheduler_retry_or_recovery_boundary`; unlocks: `scheduler_non_mainline_issue`
+8. `scheduler_non_mainline_issue` — blocked by: `scheduler_test_or_validation_only`; unlocks: none
+
+## Cross-domain dependencies
+
+- `planner_contract`: 3
+- `repair_chain`: 2
+- `step_executor_contract`: 30
+- `taskrunner_contract`: 31
+
+## Scheduler closure buckets
+
+### scheduler_state_ownership (8)
+
+- `S13A-SCHED-005` — `core/tasks/scheduler.py:7787` — `Scheduler._mark_repo_task_finished`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._mark_repo_task_finished`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7787
+  - Expected native owner: `core.tasks.scheduler.Scheduler._mark_repo_task_finished (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: none
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-006` — `core/tasks/scheduler.py:7788` — `Scheduler._mark_repo_task_failed`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._mark_repo_task_failed`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7788
+  - Expected native owner: `core.tasks.scheduler.Scheduler._mark_repo_task_failed (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: none
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-007` — `core/tasks/scheduler.py:7789` — `Scheduler._mark_repo_task_queued`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._mark_repo_task_queued`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7789
+  - Expected native owner: `core.tasks.scheduler.Scheduler._mark_repo_task_queued (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: none
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-016` — `core/tasks/scheduler.py:8516` — `Scheduler.create_task`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.create_task`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8516
+  - Expected native owner: `core.tasks.scheduler.Scheduler.create_task (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: `planner_contract`
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-018` — `core/tasks/scheduler.py:8604` — `Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8604
+  - Expected native owner: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: none
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-020` — `core/tasks/scheduler.py:8640` — `Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8640
+  - Expected native owner: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: class-level routing allowlist changes scheduler/task_runner/step_executor execution selection
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: none
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-033` — `core/tasks/scheduler.py:10406` — `Scheduler._try_force_repo_edit_at_create_task`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._try_force_repo_edit_at_create_task`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10406
+  - Expected native owner: `core.tasks.scheduler.Scheduler._try_force_repo_edit_at_create_task (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: `planner_contract`
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+- `S13A-SCHED-034` — `core/tasks/scheduler.py:10407` — `Scheduler._create_task_record`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._create_task_record`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10407
+  - Expected native owner: `core.tasks.scheduler.Scheduler._create_task_record (native definition)`
+  - Responsibility: Own scheduler task creation and durable repository-task state transitions.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+  - Cross-domain dependencies: `planner_contract`
+  - Recommended action: Plan native state-method promotion, then retire class-level replacement only after state contract parity.
+
+### scheduler_queue_ownership (5)
+
+- `S13A-SCHED-011` — `core/tasks/scheduler.py:8323` — `Scheduler.cleanup_task_queue_hygiene`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8323
+  - Expected native owner: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene (native definition)`
+  - Responsibility: Own queue hygiene, tick advancement, requeue decisions, and queue-facing state.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+  - Cross-domain dependencies: none
+  - Recommended action: Consolidate queue transitions under native Scheduler ownership and close duplicate tick/cleanup assignments in order.
+- `S13A-SCHED-012` — `core/tasks/scheduler.py:8324` — `Scheduler.tick`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.tick`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8324
+  - Expected native owner: `core.tasks.scheduler.Scheduler.tick (native definition)`
+  - Responsibility: Own queue hygiene, tick advancement, requeue decisions, and queue-facing state.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+  - Cross-domain dependencies: none
+  - Recommended action: Consolidate queue transitions under native Scheduler ownership and close duplicate tick/cleanup assignments in order.
+- `S13A-SCHED-015` — `core/tasks/scheduler.py:8515` — `Scheduler.cleanup_task_queue_hygiene`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8515
+  - Expected native owner: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene (native definition)`
+  - Responsibility: Own queue hygiene, tick advancement, requeue decisions, and queue-facing state.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+  - Cross-domain dependencies: none
+  - Recommended action: Consolidate queue transitions under native Scheduler ownership and close duplicate tick/cleanup assignments in order.
+- `S13A-SCHED-017` — `core/tasks/scheduler.py:8517` — `Scheduler.tick`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.tick`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8517
+  - Expected native owner: `core.tasks.scheduler.Scheduler.tick (native definition)`
+  - Responsibility: Own queue hygiene, tick advancement, requeue decisions, and queue-facing state.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+  - Cross-domain dependencies: none
+  - Recommended action: Consolidate queue transitions under native Scheduler ownership and close duplicate tick/cleanup assignments in order.
+- `S13A-SCHED-023` — `core/tasks/scheduler.py:9024` — `Scheduler._sync_runner_result_and_requeue_if_ready`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._sync_runner_result_and_requeue_if_ready`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9024
+  - Expected native owner: `core.tasks.scheduler.Scheduler._sync_runner_result_and_requeue_if_ready (native definition)`
+  - Responsibility: Own queue hygiene, tick advancement, requeue decisions, and queue-facing state.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+  - Cross-domain dependencies: `taskrunner_contract`
+  - Recommended action: Consolidate queue transitions under native Scheduler ownership and close duplicate tick/cleanup assignments in order.
+
+### scheduler_dispatch_ownership (30)
+
+- `S13A-SCHED-001` — `core/tasks/scheduler.py:7782` — `Scheduler._handle_dispatch_result`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._handle_dispatch_result`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7782
+  - Expected native owner: `core.tasks.scheduler.Scheduler._handle_dispatch_result (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-004` — `core/tasks/scheduler.py:7785` — `Scheduler._finalize_dispatched_task`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._finalize_dispatched_task`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7785
+  - Expected native owner: `core.tasks.scheduler.Scheduler._finalize_dispatched_task (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-008` — `core/tasks/scheduler.py:7910` — `Scheduler._execute_simple_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._execute_simple_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7910
+  - Expected native owner: `core.tasks.scheduler.Scheduler._execute_simple_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-009` — `core/tasks/scheduler.py:7944` — `Scheduler._execute_simple_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._execute_simple_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7944
+  - Expected native owner: `core.tasks.scheduler.Scheduler._execute_simple_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-019` — `core/tasks/scheduler.py:8639` — `Scheduler._run_simple_task_tick`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._run_simple_task_tick`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8639
+  - Expected native owner: `core.tasks.scheduler.Scheduler._run_simple_task_tick (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-022` — `core/tasks/scheduler.py:9023` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9023
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-027` — `core/tasks/scheduler.py:9414` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9414
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-028` — `core/tasks/scheduler.py:9579` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9579
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-029` — `core/tasks/scheduler.py:9784` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9784
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-030` — `core/tasks/scheduler.py:9950` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9950
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-031` — `core/tasks/scheduler.py:10166` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10166
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-032` — `core/tasks/scheduler.py:10352` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10352
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-035` — `core/tasks/scheduler.py:10493` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10493
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-036` — `core/tasks/scheduler.py:10570` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10570
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-037` — `core/tasks/scheduler.py:10641` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10641
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-038` — `core/tasks/scheduler.py:10707` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10707
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-039` — `core/tasks/scheduler.py:10793` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10793
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-040` — `core/tasks/scheduler.py:10820` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10820
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-041` — `core/tasks/scheduler.py:10891` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10891
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-042` — `core/tasks/scheduler.py:10978` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:10978
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-043` — `core/tasks/scheduler.py:11049` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11049
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-044` — `core/tasks/scheduler.py:11155` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11155
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-045` — `core/tasks/scheduler.py:11244` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11244
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-046` — `core/tasks/scheduler.py:11308` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11308
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-047` — `core/tasks/scheduler.py:11332` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11332
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-048` — `core/tasks/scheduler.py:11364` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11364
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-049` — `core/tasks/scheduler.py:11398` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11398
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-050` — `core/tasks/scheduler.py:11432` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:11432
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-051` — `core/tasks/scheduler_core/runtime_overlay_helpers.py:226` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:226
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+- `S13A-SCHED-052` — `core/tasks/scheduler_core/runtime_overlay_helpers.py:245` — `Scheduler.run_one_step`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler.run_one_step`
+  - Current owner: class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:245
+  - Expected native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Responsibility: Own run-one-step dispatch, dispatch result handling, and scheduler execution orchestration.
+  - Why blocker/disposition: replacement directly intercepts a named runtime execution or authority chain
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+  - Cross-domain dependencies: `step_executor_contract`, `taskrunner_contract`
+  - Recommended action: Order run_one_step overlays chronologically, identify the final contract, and plan one native dispatch implementation.
+
+### scheduler_retry_or_recovery_boundary (2)
+
+- `S13A-SCHED-002` — `core/tasks/scheduler.py:7783` — `Scheduler._handle_missing_repo_task`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._handle_missing_repo_task`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7783
+  - Expected native owner: `core.tasks.scheduler.Scheduler._handle_missing_repo_task (native definition)`
+  - Responsibility: Own the scheduler side of retry/recovery handoff without absorbing repair-chain ownership.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Retry and recovery ownership is explicit at the scheduler/repair-chain boundary, including failure and resumability contracts.
+  - Cross-domain dependencies: `repair_chain`
+  - Recommended action: Document the scheduler-to-repair handoff and close only the scheduler side after repair-chain prerequisites land.
+- `S13A-SCHED-003` — `core/tasks/scheduler.py:7784` — `Scheduler._handle_run_one_step_exception`
+  - Classification: `confirmed_blocker`; replacement: `core.tasks.scheduler.Scheduler._handle_run_one_step_exception`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:7784
+  - Expected native owner: `core.tasks.scheduler.Scheduler._handle_run_one_step_exception (native definition)`
+  - Responsibility: Own the scheduler side of retry/recovery handoff without absorbing repair-chain ownership.
+  - Why blocker/disposition: class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Retry and recovery ownership is explicit at the scheduler/repair-chain boundary, including failure and resumability contracts.
+  - Cross-domain dependencies: `repair_chain`
+  - Recommended action: Document the scheduler-to-repair handoff and close only the scheduler side after repair-chain prerequisites land.
+
+### scheduler_runtime_gate_dependency (0)
+
+- None.
+
+### scheduler_legacy_metadata_dependency (2)
+
+- `S13A-SCHED-010` — `core/tasks/scheduler.py:8041` — `Scheduler.SCHEDULER_BUILD`
+  - Classification: `false_positive`; replacement: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8041
+  - Expected native owner: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (native definition)`
+  - Responsibility: Retire or retain legacy scheduler metadata only after proving it is non-behavioral.
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Metadata is proven non-executable and no runtime/test consumer relies on the legacy build marker for behavior.
+  - Cross-domain dependencies: none
+  - Recommended action: Keep as false positive metadata unless consumer evidence proves behavioral coupling.
+- `S13A-SCHED-021` — `core/tasks/scheduler.py:8641` — `Scheduler.SCHEDULER_BUILD`
+  - Classification: `false_positive`; replacement: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8641
+  - Expected native owner: `core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (native definition)`
+  - Responsibility: Retire or retain legacy scheduler metadata only after proving it is non-behavioral.
+  - Why blocker/disposition: Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Metadata is proven non-executable and no runtime/test consumer relies on the legacy build marker for behavior.
+  - Cross-domain dependencies: none
+  - Recommended action: Keep as false positive metadata unless consumer evidence proves behavioral coupling.
+
+### scheduler_test_or_validation_only (0)
+
+- None.
+
+### scheduler_non_mainline_issue (5)
+
+- `S13A-SCHED-013` — `core/tasks/scheduler.py:8325` — `Scheduler.get_queue_snapshot`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_queue_snapshot`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8325
+  - Expected native owner: `core.tasks.scheduler.Scheduler.get_queue_snapshot (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-014` — `core/tasks/scheduler.py:8326` — `Scheduler.get_queue_rows`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_queue_rows`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8326
+  - Expected native owner: `core.tasks.scheduler.Scheduler.get_queue_rows (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-024` — `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.approve_review_item`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9343
+  - Expected native owner: `core.tasks.scheduler.Scheduler.approve_review_item (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-025` — `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.reject_review_item`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9344
+  - Expected native owner: `core.tasks.scheduler.Scheduler.reject_review_item (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-026` — `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_review_queue`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9381
+  - Expected native owner: `core.tasks.scheduler.Scheduler.get_review_queue (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+
+## Non-Mainline Issue Report
+
+Scheduler-domain non-mainline issues are preserved below. No additional outside-scheduler issue was discovered during Stage13A inventory generation.
+
+- `S13A-SCHED-013` — `core/tasks/scheduler.py:8325` — `Scheduler.get_queue_snapshot`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_queue_snapshot`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8325
+  - Expected native owner: `core.tasks.scheduler.Scheduler.get_queue_snapshot (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-014` — `core/tasks/scheduler.py:8326` — `Scheduler.get_queue_rows`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_queue_rows`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:8326
+  - Expected native owner: `core.tasks.scheduler.Scheduler.get_queue_rows (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-024` — `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.approve_review_item`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9343
+  - Expected native owner: `core.tasks.scheduler.Scheduler.approve_review_item (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-025` — `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.reject_review_item`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9344
+  - Expected native owner: `core.tasks.scheduler.Scheduler.reject_review_item (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+- `S13A-SCHED-026` — `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+  - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_review_queue`
+  - Current owner: class-level assignment in core/tasks/scheduler.py:9381
+  - Expected native owner: `core.tasks.scheduler.Scheduler.get_review_queue (native definition)`
+  - Responsibility: Track scheduler review and observability surfaces outside the execution mainline.
+  - Why blocker/disposition: Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+  - Safe removal precondition: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Review/observability APIs have a named native owner and remain covered independently of mainline scheduler closure.
+  - Cross-domain dependencies: none
+  - Recommended action: Preserve in the Non-Mainline Issue Report and assign a separate native ownership follow-up.
+
+## Outputs
+
+- `docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json`
+- `docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_summary.json`
+- `docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md`

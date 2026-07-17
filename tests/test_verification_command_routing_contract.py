@@ -3,11 +3,14 @@ from __future__ import annotations
 import pytest
 
 from core.engineering.verification_routing import (
+
     build_verification_evidence,
     build_verification_route,
     classify_verification_command,
     validate_verification_route_contract,
 )
+pytestmark = [pytest.mark.contract, pytest.mark.contract_fast]
+
 
 
 def test_verification_route_is_verification_only_and_requires_runtime_authority() -> None:

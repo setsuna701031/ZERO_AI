@@ -1,0 +1,360 @@
+Scheduler Review API Inventory
+
+scheduler_path: E:\zero_ai\core\tasks\scheduler.py
+output_path: E:\zero_ai\scheduler_review_inventory.txt
+scope: inventory only; scheduler.py not modified
+
+approve_review_item
+-------------------
+status: ACTIVE
+
+definitions in scheduler.py:
+- none
+
+calls in scheduler.py AST:
+- none
+
+repo text hits:
+- scheduler_mainline_callgraph.txt:311: [source] - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:317: [source] - line 7950: _zero_scheduler_approve_review_item (active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:323: [source] - line 7950: def _zero_scheduler_approve_review_item(...)
+- scheduler_mainline_callgraph.txt:325: [source] - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- scheduler_mainline_callgraph.txt:329: [source] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- scheduler_mainline_callgraph.txt:331: [source] - Scheduler.approve_review_item: active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:336: [source] - _zero_scheduler_approve_review_item: active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:384: [source] - review: risk=medium; recommendation=audit further; final=Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- scheduler_mainline_inventory.txt:82: [inventory only] - Scheduler.approve_review_item (line 8000; active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:83: [inventory only] assigned_value: _zero_scheduler_approve_review_item
+- scheduler_mainline_inventory.txt:267: [inventory only] - Scheduler.approve_review_item (line 8000; active_refs=0; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:453: [inventory only] - Scheduler.approve_review_item (line 8000; active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:454: [inventory only] assigned_value: _zero_scheduler_approve_review_item
+- scheduler_mainline_inventory.txt:679: [inventory only] - _zero_scheduler_approve_review_item (line 7950; active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:758: [inventory only] - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- scheduler_mainline_inventory.txt:835: [inventory only] - line 7950: _zero_scheduler_approve_review_item (top_level_helper; active_refs=1; archived_refs=0; report_refs=17; class=C)
+- scheduler_mainline_inventory.txt:837: [inventory only] - line 8000: Scheduler.approve_review_item (assignment/wrapper; active_refs=0; archived_refs=0; report_refs=47; class=B)
+- scheduler_mainline_inventory.txt:1104: [inventory only] - line 7950: _zero_scheduler_approve_review_item
+- scheduler_mainline_inventory.txt:5247: [inventory only] - _zero_scheduler_approve_review_item (top_level_helper, line 7950, category=top_level_helper, family=zero_other)
+- scheduler_mainline_inventory.txt:5254: [inventory only] - core/tasks/scheduler.py:8000 [target] Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- scheduler_mainline_inventory.txt:5258: [inventory only] - scheduler_mainline_callgraph.txt:311 [report_or_text] - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (active_refs=0; archived_refs=0; report_refs=42; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:5259: [inventory only] - scheduler_mainline_callgraph.txt:317 [report_or_text] - line 7950: _zero_scheduler_approve_review_item (active_refs=1; archived_refs=0; report_refs=10; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:5260: [inventory only] - scheduler_mainline_callgraph.txt:323 [report_or_text] - line 7950: def _zero_scheduler_approve_review_item(...)
+- scheduler_mainline_inventory.txt:5261: [inventory only] - scheduler_mainline_callgraph.txt:325 [report_or_text] - line 8000: Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- scheduler_mainline_inventory.txt:5262: [inventory only] - scheduler_mainline_callgraph.txt:329 [report_or_text] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_i
+- scheduler_mainline_inventory.txt:5280: [inventory only] - scheduler_mainline_callgraph.txt:329 [report_or_text] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_i
+- core/audit/review_audit.py:102: [source] action="approve_review_item",
+- core/control/control_api.py:449: [source] def approve_review_item(
+- core/control/control_api.py:465: [source] "mode": "control_api_approve_review_item",
+- core/control/control_api.py:468: [source] fn = getattr(scheduler, "approve_review_item", None)
+- core/control/control_api.py:473: [source] "error": "scheduler.approve_review_item unavailable",
+- core/control/control_api.py:474: [source] "mode": "control_api_approve_review_item",
+- core/control/control_api.py:487: [source] result.setdefault("mode", "control_api_approve_review_item")
+- core/control/control_api.py:493: [source] "mode": "control_api_approve_review_item",
+- core/control/control_api.py:499: [source] "error": f"approve_review_item failed: {e}",
+- core/control/control_api.py:501: [source] "mode": "control_api_approve_review_item",
+- core/system/command_dispatch.py:131: [source] if action == "approve_review_item":
+- core/system/command_dispatch.py:132: [source] result = self.control_api.approve_review_item(item_id)
+- core/system/command_dispatch.py:295: [source] "action": "approve_review_item",
+- core/system/command_dispatch.py:315: [source] "action": "approve_review_item",
+- core/tasks/scheduler.py:7950: [source] def _zero_scheduler_approve_review_item(
+- core/tasks/scheduler.py:8000: [source] Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- docs/architecture/mainline_audit/zero_mainline_audit_report.json:5603: [source] "text": "\"error\": \"scheduler.approve_review_item unavailable\",",
+- docs/architecture/mainline_audit/zero_mainline_audit_report.json:5623: [source] "text": "\"error\": f\"approve_review_item failed: {e}\",",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:20483: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:20485: [runtime/operator/dispatcher adjacent] "native_owner": "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_report.md:729: [runtime/operator/dispatcher adjacent] - `S14-NM-003` — `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json:216: [inventory only] "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/authority_context_migration_stage17a_inventory.json:213: [inventory only] "symbol": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/authority_context_migration_stage17a_inventory.json:215: [inventory only] "native_owner": "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json:203: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json:205: [runtime/operator/dispatcher adjacent] "native_owner": "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json:271: [runtime/operator/dispatcher adjacent] "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_report.md:44: [runtime/operator/dispatcher adjacent] - Affected symbols: `Scheduler.get_queue_snapshot`, `Scheduler.get_queue_rows`, `Scheduler.approve_review_item`, `Scheduler.reject_review_item`, `Scheduler.get_review_queue`, `Scheduler._attach_autonomous_repair_chain_summary`, `EXPECTED_HIGH_RISK_FILES`, `high_risk status assignment scan`
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2984: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2986: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2997: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.approve_review_item = _zero_scheduler_approve_review_item"
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md:762: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md:764: [runtime/operator/dispatcher adjacent] - Replacement target: `core.tasks.scheduler.Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1828: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.approve_review_item = _zero_scheduler_approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1835: [runtime/operator/dispatcher adjacent] "chain_target": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1854: [runtime/operator/dispatcher adjacent] "context_before": "9342: \n9343: Scheduler.approve_review_item = _zero_scheduler_approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3261: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.approve_review_item = _zero_scheduler_approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3268: [runtime/operator/dispatcher adjacent] "chain_target": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3287: [runtime/operator/dispatcher adjacent] "context_before": "9342: \n9343: Scheduler.approve_review_item = _zero_scheduler_approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md:80: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9343` `scheduler` `Scheduler.approve_review_item` — replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md:345: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9343` `scheduler` `Scheduler.approve_review_item` — replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+- docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:173: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9343` `BLOCKER` `scheduler` — Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:25083: [inventory only] "text": "def _zero_scheduler_approve_review_item("
+- docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:25101: [inventory only] "text": "Scheduler.approve_review_item = _zero_scheduler_approve_review_item"
+- docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:4885: [inventory only] "expression": "Scheduler.approve_review_item = _zero_scheduler_approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:4891: [inventory only] "chain_target": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/runtime_replacement_report.md:259: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9343` `scheduler` `Scheduler.approve_review_item` — class-level function replacement changes authority/ownership/execution mainline behavior
+- docs/architecture/runtime_native_ownership/runtime_replacement_report.md:443: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9343` `BLOCKER` `scheduler` `Scheduler.approve_review_item` — Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1057: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1060: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1062: [runtime/operator/dispatcher adjacent] "expected_native_owner": "core.tasks.scheduler.Scheduler.approve_review_item (native definition)",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5064: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5067: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.approve_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5069: [runtime/operator/dispatcher adjacent] "expected_native_owner": "core.tasks.scheduler.Scheduler.approve_review_item (native definition)",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:512: [runtime/operator/dispatcher adjacent] - `S13A-SCHED-024` — `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:513: [runtime/operator/dispatcher adjacent] - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:515: [runtime/operator/dispatcher adjacent] - Expected native owner: `core.tasks.scheduler.Scheduler.approve_review_item (native definition)`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:562: [runtime/operator/dispatcher adjacent] - `S13A-SCHED-024` — `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:563: [runtime/operator/dispatcher adjacent] - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.approve_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:565: [runtime/operator/dispatcher adjacent] - Expected native owner: `core.tasks.scheduler.Scheduler.approve_review_item (native definition)`
+- docs/showcase/runtime-aggregate-convergence-v1/devlog.md:44: [runtime/operator/dispatcher adjacent] approve_review_item()
+- docs/showcase/runtime-aggregate-convergence-v1/devlog.md:62: [runtime/operator/dispatcher adjacent] approve_review_item()
+- tools/scheduler_mainline_callgraph.py:48: [source] "review": {"approve_review_item", "reject_review_item", "get_review_queue"},
+- tools/scheduler_review_inventory.py:13: [inventory only] "approve_review_item",
+- tools/scheduler_review_inventory.py:118: [inventory only] "approve_review_item": [],
+- tools/scheduler_review_inventory.py:123: [inventory only] "approve_review_item": [],
+- tools/scheduler_review_inventory.py:182: [inventory only] for api in ["approve_review_item", "reject_review_item", "get_review_queue"]:
+- tools/scheduler_review_inventory.py:226: [inventory only] for api in ["approve_review_item", "reject_review_item", "get_review_queue"]:
+- tools/archive/runtime_governance_closure/runtime_replacement_blocker_validation_stage11b.py:65: [runtime/operator/dispatcher adjacent] "approve_review_item",
+
+reject_review_item
+------------------
+status: ACTIVE
+
+definitions in scheduler.py:
+- none
+
+calls in scheduler.py AST:
+- none
+
+repo text hits:
+- scheduler_mainline_callgraph.txt:312: [source] - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item (active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:318: [source] - line 7975: _zero_scheduler_reject_review_item (active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:324: [source] - line 7975: def _zero_scheduler_reject_review_item(...)
+- scheduler_mainline_callgraph.txt:326: [source] - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- scheduler_mainline_callgraph.txt:329: [source] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- scheduler_mainline_callgraph.txt:332: [source] - Scheduler.reject_review_item: active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:337: [source] - _zero_scheduler_reject_review_item: active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:384: [source] - review: risk=medium; recommendation=audit further; final=Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- scheduler_mainline_inventory.txt:85: [inventory only] - Scheduler.reject_review_item (line 8001; active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:86: [inventory only] assigned_value: _zero_scheduler_reject_review_item
+- scheduler_mainline_inventory.txt:268: [inventory only] - Scheduler.reject_review_item (line 8001; active_refs=0; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:456: [inventory only] - Scheduler.reject_review_item (line 8001; active_refs=0; archived_refs=0; report_refs=47; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:457: [inventory only] assigned_value: _zero_scheduler_reject_review_item
+- scheduler_mainline_inventory.txt:681: [inventory only] - _zero_scheduler_reject_review_item (line 7975; active_refs=1; archived_refs=0; report_refs=17; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:759: [inventory only] - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- scheduler_mainline_inventory.txt:836: [inventory only] - line 7975: _zero_scheduler_reject_review_item (top_level_helper; active_refs=1; archived_refs=0; report_refs=17; class=C)
+- scheduler_mainline_inventory.txt:838: [inventory only] - line 8001: Scheduler.reject_review_item (assignment/wrapper; active_refs=0; archived_refs=0; report_refs=47; class=B)
+- scheduler_mainline_inventory.txt:1105: [inventory only] - line 7975: _zero_scheduler_reject_review_item
+- scheduler_mainline_inventory.txt:5262: [inventory only] - scheduler_mainline_callgraph.txt:329 [report_or_text] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_i
+- scheduler_mainline_inventory.txt:5265: [inventory only] - _zero_scheduler_reject_review_item (top_level_helper, line 7975, category=top_level_helper, family=zero_other)
+- scheduler_mainline_inventory.txt:5272: [inventory only] - core/tasks/scheduler.py:8001 [target] Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- scheduler_mainline_inventory.txt:5276: [inventory only] - scheduler_mainline_callgraph.txt:312 [report_or_text] - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item (active_refs=0; archived_refs=0; report_refs=42; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:5277: [inventory only] - scheduler_mainline_callgraph.txt:318 [report_or_text] - line 7975: _zero_scheduler_reject_review_item (active_refs=1; archived_refs=0; report_refs=10; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:5278: [inventory only] - scheduler_mainline_callgraph.txt:324 [report_or_text] - line 7975: def _zero_scheduler_reject_review_item(...)
+- scheduler_mainline_inventory.txt:5279: [inventory only] - scheduler_mainline_callgraph.txt:326 [report_or_text] - line 8001: Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- scheduler_mainline_inventory.txt:5280: [inventory only] - scheduler_mainline_callgraph.txt:329 [report_or_text] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_i
+- core/audit/review_audit.py:125: [source] action="reject_review_item",
+- core/control/control_api.py:505: [source] def reject_review_item(
+- core/control/control_api.py:521: [source] "mode": "control_api_reject_review_item",
+- core/control/control_api.py:524: [source] fn = getattr(scheduler, "reject_review_item", None)
+- core/control/control_api.py:529: [source] "error": "scheduler.reject_review_item unavailable",
+- core/control/control_api.py:530: [source] "mode": "control_api_reject_review_item",
+- core/control/control_api.py:543: [source] result.setdefault("mode", "control_api_reject_review_item")
+- core/control/control_api.py:549: [source] "mode": "control_api_reject_review_item",
+- core/control/control_api.py:555: [source] "error": f"reject_review_item failed: {e}",
+- core/control/control_api.py:557: [source] "mode": "control_api_reject_review_item",
+- core/system/command_dispatch.py:178: [source] if action == "reject_review_item":
+- core/system/command_dispatch.py:179: [source] result = self.control_api.reject_review_item(item_id)
+- core/system/command_dispatch.py:305: [source] "action": "reject_review_item",
+- core/system/command_dispatch.py:325: [source] "action": "reject_review_item",
+- core/tasks/scheduler.py:7975: [source] def _zero_scheduler_reject_review_item(
+- core/tasks/scheduler.py:8001: [source] Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- docs/architecture/mainline_audit/zero_mainline_audit_report.json:5643: [source] "text": "\"error\": \"scheduler.reject_review_item unavailable\",",
+- docs/architecture/mainline_audit/zero_mainline_audit_report.json:5663: [source] "text": "\"error\": f\"reject_review_item failed: {e}\",",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:20508: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:20510: [runtime/operator/dispatcher adjacent] "native_owner": "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_report.md:730: [runtime/operator/dispatcher adjacent] - `S14-NM-004` — `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json:217: [inventory only] "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/authority_context_migration_stage17a_inventory.json:238: [inventory only] "symbol": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/authority_context_migration_stage17a_inventory.json:240: [inventory only] "native_owner": "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json:228: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json:230: [runtime/operator/dispatcher adjacent] "native_owner": "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json:272: [runtime/operator/dispatcher adjacent] "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_report.md:44: [runtime/operator/dispatcher adjacent] - Affected symbols: `Scheduler.get_queue_snapshot`, `Scheduler.get_queue_rows`, `Scheduler.approve_review_item`, `Scheduler.reject_review_item`, `Scheduler.get_review_queue`, `Scheduler._attach_autonomous_repair_chain_summary`, `EXPECTED_HIGH_RISK_FILES`, `high_risk status assignment scan`
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:3004: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:3006: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:3017: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.reject_review_item = _zero_scheduler_reject_review_item"
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md:767: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md:769: [runtime/operator/dispatcher adjacent] - Replacement target: `core.tasks.scheduler.Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1838: [runtime/operator/dispatcher adjacent] "context_after": "9344: Scheduler.reject_review_item = _zero_scheduler_reject_review_item\n9345: ",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1845: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.reject_review_item = _zero_scheduler_reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1852: [runtime/operator/dispatcher adjacent] "chain_target": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3271: [runtime/operator/dispatcher adjacent] "context_after": "9344: Scheduler.reject_review_item = _zero_scheduler_reject_review_item\n9345: ",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3278: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.reject_review_item = _zero_scheduler_reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3285: [runtime/operator/dispatcher adjacent] "chain_target": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md:81: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9344` `scheduler` `Scheduler.reject_review_item` — replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md:346: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9344` `scheduler` `Scheduler.reject_review_item` — replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+- docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:174: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9344` `BLOCKER` `scheduler` — Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:25092: [inventory only] "text": "def _zero_scheduler_reject_review_item("
+- docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:25110: [inventory only] "text": "Scheduler.reject_review_item = _zero_scheduler_reject_review_item"
+- docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:4899: [inventory only] "expression": "Scheduler.reject_review_item = _zero_scheduler_reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:4905: [inventory only] "chain_target": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/runtime_replacement_report.md:260: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9344` `scheduler` `Scheduler.reject_review_item` — class-level function replacement changes authority/ownership/execution mainline behavior
+- docs/architecture/runtime_native_ownership/runtime_replacement_report.md:444: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9344` `BLOCKER` `scheduler` `Scheduler.reject_review_item` — Scheduler.reject_review_item = _zero_scheduler_reject_review_item
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1090: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1093: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1095: [runtime/operator/dispatcher adjacent] "expected_native_owner": "core.tasks.scheduler.Scheduler.reject_review_item (native definition)",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5097: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5100: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.reject_review_item",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5102: [runtime/operator/dispatcher adjacent] "expected_native_owner": "core.tasks.scheduler.Scheduler.reject_review_item (native definition)",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:521: [runtime/operator/dispatcher adjacent] - `S13A-SCHED-025` — `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:522: [runtime/operator/dispatcher adjacent] - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:524: [runtime/operator/dispatcher adjacent] - Expected native owner: `core.tasks.scheduler.Scheduler.reject_review_item (native definition)`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:571: [runtime/operator/dispatcher adjacent] - `S13A-SCHED-025` — `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:572: [runtime/operator/dispatcher adjacent] - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.reject_review_item`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:574: [runtime/operator/dispatcher adjacent] - Expected native owner: `core.tasks.scheduler.Scheduler.reject_review_item (native definition)`
+- docs/showcase/runtime-aggregate-convergence-v1/devlog.md:45: [runtime/operator/dispatcher adjacent] reject_review_item()
+- docs/showcase/runtime-aggregate-convergence-v1/devlog.md:63: [runtime/operator/dispatcher adjacent] reject_review_item()
+- tools/scheduler_mainline_callgraph.py:48: [source] "review": {"approve_review_item", "reject_review_item", "get_review_queue"},
+- tools/scheduler_review_inventory.py:14: [inventory only] "reject_review_item",
+- tools/scheduler_review_inventory.py:119: [inventory only] "reject_review_item": [],
+- tools/scheduler_review_inventory.py:124: [inventory only] "reject_review_item": [],
+- tools/scheduler_review_inventory.py:182: [inventory only] for api in ["approve_review_item", "reject_review_item", "get_review_queue"]:
+- tools/scheduler_review_inventory.py:226: [inventory only] for api in ["approve_review_item", "reject_review_item", "get_review_queue"]:
+- tools/archive/runtime_governance_closure/runtime_replacement_blocker_validation_stage11b.py:66: [runtime/operator/dispatcher adjacent] "reject_review_item",
+
+get_review_queue
+----------------
+status: ACTIVE
+
+definitions in scheduler.py:
+- none
+
+calls in scheduler.py AST:
+- none
+
+repo text hits:
+- scheduler_mainline_callgraph.txt:149: [source] - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:162: [source] - line 8004: def _zero_scheduler_get_review_queue(...)
+- scheduler_mainline_callgraph.txt:176: [source] - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:313: [source] - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue (active_refs=0; archived_refs=0; report_refs=45; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:319: [source] - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding)
+- scheduler_mainline_callgraph.txt:327: [source] - line 8004: def _zero_scheduler_get_review_queue(...)
+- scheduler_mainline_callgraph.txt:328: [source] - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+- scheduler_mainline_callgraph.txt:329: [source] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- scheduler_mainline_callgraph.txt:333: [source] - Scheduler.get_review_queue: active_refs=0; archived_refs=0; report_refs=45; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:338: [source] - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding
+- scheduler_mainline_callgraph.txt:384: [source] - review: risk=medium; recommendation=audit further; final=Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_item (line 8001)
+- scheduler_mainline_inventory.txt:88: [inventory only] - Scheduler.get_review_queue (line 8038; active_refs=0; archived_refs=0; report_refs=45; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:89: [inventory only] assigned_value: _zero_scheduler_get_review_queue
+- scheduler_mainline_inventory.txt:269: [inventory only] - Scheduler.get_review_queue (line 8038; active_refs=0; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:459: [inventory only] - Scheduler.get_review_queue (line 8038; active_refs=0; archived_refs=0; report_refs=45; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:460: [inventory only] assigned_value: _zero_scheduler_get_review_queue
+- scheduler_mainline_inventory.txt:683: [inventory only] - _zero_scheduler_get_review_queue (line 8004; active_refs=1; archived_refs=0; report_refs=18; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:760: [inventory only] - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+- scheduler_mainline_inventory.txt:839: [inventory only] - line 8004: _zero_scheduler_get_review_queue (top_level_helper; active_refs=1; archived_refs=0; report_refs=18; class=C)
+- scheduler_mainline_inventory.txt:840: [inventory only] - line 8038: Scheduler.get_review_queue (assignment/wrapper; active_refs=0; archived_refs=0; report_refs=45; class=B)
+- scheduler_mainline_inventory.txt:1106: [inventory only] - line 8004: _zero_scheduler_get_review_queue
+- scheduler_mainline_inventory.txt:5262: [inventory only] - scheduler_mainline_callgraph.txt:329 [report_or_text] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_i
+- scheduler_mainline_inventory.txt:5280: [inventory only] - scheduler_mainline_callgraph.txt:329 [report_or_text] final active binding: Scheduler.approve_review_item = _zero_scheduler_approve_review_item (line 8000); Scheduler.get_review_queue = _zero_scheduler_get_review_queue (line 8038); Scheduler.reject_review_item = _zero_scheduler_reject_review_i
+- scheduler_mainline_inventory.txt:5283: [inventory only] - _zero_scheduler_get_review_queue (top_level_helper, line 8004, category=top_level_helper, family=zero_other)
+- scheduler_mainline_inventory.txt:5290: [inventory only] - core/tasks/scheduler.py:8038 [target] Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+- scheduler_mainline_inventory.txt:5294: [inventory only] - scheduler_mainline_callgraph.txt:149 [report_or_text] - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=8; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:5295: [inventory only] - scheduler_mainline_callgraph.txt:162 [report_or_text] - line 8004: def _zero_scheduler_get_review_queue(...)
+- scheduler_mainline_inventory.txt:5296: [inventory only] - scheduler_mainline_callgraph.txt:176 [report_or_text] - _zero_scheduler_get_review_queue: active_refs=1; archived_refs=0; report_refs=8; binding_class=runtime_binding
+- scheduler_mainline_inventory.txt:5297: [inventory only] - scheduler_mainline_callgraph.txt:313 [report_or_text] - line 8038: Scheduler.get_review_queue = _zero_scheduler_get_review_queue (active_refs=0; archived_refs=0; report_refs=40; binding_class=runtime_binding)
+- scheduler_mainline_inventory.txt:5298: [inventory only] - scheduler_mainline_callgraph.txt:319 [report_or_text] - line 8004: _zero_scheduler_get_review_queue (active_refs=1; archived_refs=0; report_refs=8; binding_class=runtime_binding)
+- core/audit/review_audit.py:79: [source] action="get_review_queue",
+- core/control/control_api.py:407: [source] def get_review_queue(self) -> Dict[str, Any]:
+- core/control/control_api.py:415: [source] "mode": "control_api_get_review_queue",
+- core/control/control_api.py:418: [source] fn = getattr(scheduler, "get_review_queue", None)
+- core/control/control_api.py:423: [source] "error": "scheduler.get_review_queue unavailable",
+- core/control/control_api.py:424: [source] "mode": "control_api_get_review_queue",
+- core/control/control_api.py:431: [source] result.setdefault("mode", "control_api_get_review_queue")
+- core/control/control_api.py:437: [source] "mode": "control_api_get_review_queue",
+- core/control/control_api.py:443: [source] "error": f"get_review_queue failed: {e}",
+- core/control/control_api.py:445: [source] "mode": "control_api_get_review_queue",
+- core/system/command_dispatch.py:108: [source] if action == "get_review_queue":
+- core/system/command_dispatch.py:109: [source] result = self.control_api.get_review_queue()
+- core/system/command_dispatch.py:285: [source] "action": "get_review_queue",
+- core/tasks/scheduler.py:8004: [source] def _zero_scheduler_get_review_queue(self) -> Dict[str, Any]:
+- core/tasks/scheduler.py:8038: [source] Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+- docs/architecture/mainline_audit/zero_mainline_audit_report.json:5563: [source] "text": "\"error\": \"scheduler.get_review_queue unavailable\",",
+- docs/architecture/mainline_audit/zero_mainline_audit_report.json:5583: [source] "text": "\"error\": f\"get_review_queue failed: {e}\",",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:20533: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:20535: [runtime/operator/dispatcher adjacent] "native_owner": "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_report.md:731: [runtime/operator/dispatcher adjacent] - `S14-NM-005` — `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json:218: [inventory only] "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/authority_context_migration_stage17a_inventory.json:263: [inventory only] "symbol": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/authority_context_migration_stage17a_inventory.json:265: [inventory only] "native_owner": "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json:253: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json:255: [runtime/operator/dispatcher adjacent] "native_owner": "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json:273: [runtime/operator/dispatcher adjacent] "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_report.md:44: [runtime/operator/dispatcher adjacent] - Affected symbols: `Scheduler.get_queue_snapshot`, `Scheduler.get_queue_rows`, `Scheduler.approve_review_item`, `Scheduler.reject_review_item`, `Scheduler.get_review_queue`, `Scheduler._attach_autonomous_repair_chain_summary`, `EXPECTED_HIGH_RISK_FILES`, `high_risk status assignment scan`
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:3024: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:3026: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:3037: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.get_review_queue = _zero_scheduler_get_review_queue"
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md:772: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md:774: [runtime/operator/dispatcher adjacent] - Replacement target: `core.tasks.scheduler.Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1862: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.get_review_queue = _zero_scheduler_get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1869: [runtime/operator/dispatcher adjacent] "chain_target": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3295: [runtime/operator/dispatcher adjacent] "expression": "Scheduler.get_review_queue = _zero_scheduler_get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:3302: [runtime/operator/dispatcher adjacent] "chain_target": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md:82: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9381` `scheduler` `Scheduler.get_review_queue` — replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+- docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md:347: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9381` `scheduler` `Scheduler.get_review_queue` — replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability
+- docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:175: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9381` `BLOCKER` `scheduler` — Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+- docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:25119: [inventory only] "text": "def _zero_scheduler_get_review_queue(self) -> Dict[str, Any]:"
+- docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:25137: [inventory only] "text": "Scheduler.get_review_queue = _zero_scheduler_get_review_queue"
+- docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:4913: [inventory only] "expression": "Scheduler.get_review_queue = _zero_scheduler_get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:4919: [inventory only] "chain_target": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/runtime_replacement_report.md:261: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9381` `scheduler` `Scheduler.get_review_queue` — class-level function replacement changes authority/ownership/execution mainline behavior
+- docs/architecture/runtime_native_ownership/runtime_replacement_report.md:445: [runtime/operator/dispatcher adjacent] - `core/tasks/scheduler.py:9381` `BLOCKER` `scheduler` `Scheduler.get_review_queue` — Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1123: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1126: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:1128: [runtime/operator/dispatcher adjacent] "expected_native_owner": "core.tasks.scheduler.Scheduler.get_review_queue (native definition)",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5130: [runtime/operator/dispatcher adjacent] "symbol": "Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5133: [runtime/operator/dispatcher adjacent] "replacement_target": "core.tasks.scheduler.Scheduler.get_review_queue",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json:5135: [runtime/operator/dispatcher adjacent] "expected_native_owner": "core.tasks.scheduler.Scheduler.get_review_queue (native definition)",
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:530: [runtime/operator/dispatcher adjacent] - `S13A-SCHED-026` — `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:531: [runtime/operator/dispatcher adjacent] - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:533: [runtime/operator/dispatcher adjacent] - Expected native owner: `core.tasks.scheduler.Scheduler.get_review_queue (native definition)`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:580: [runtime/operator/dispatcher adjacent] - `S13A-SCHED-026` — `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:581: [runtime/operator/dispatcher adjacent] - Classification: `non_mainline_issue`; replacement: `core.tasks.scheduler.Scheduler.get_review_queue`
+- docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md:583: [runtime/operator/dispatcher adjacent] - Expected native owner: `core.tasks.scheduler.Scheduler.get_review_queue (native definition)`
+- docs/showcase/runtime-aggregate-convergence-v1/devlog.md:43: [runtime/operator/dispatcher adjacent] get_review_queue()
+- docs/showcase/runtime-aggregate-convergence-v1/devlog.md:61: [runtime/operator/dispatcher adjacent] get_review_queue()
+- tools/scheduler_mainline_callgraph.py:48: [source] "review": {"approve_review_item", "reject_review_item", "get_review_queue"},
+- tools/scheduler_review_inventory.py:15: [inventory only] "get_review_queue",
+- tools/scheduler_review_inventory.py:120: [inventory only] "get_review_queue": [],
+- tools/scheduler_review_inventory.py:125: [inventory only] "get_review_queue": [],
+- tools/scheduler_review_inventory.py:182: [inventory only] for api in ["approve_review_item", "reject_review_item", "get_review_queue"]:
+- tools/scheduler_review_inventory.py:226: [inventory only] for api in ["approve_review_item", "reject_review_item", "get_review_queue"]:
+- tools/archive/runtime_governance_closure/runtime_replacement_blocker_validation_stage11b.py:64: [runtime/operator/dispatcher adjacent] "get_review_queue",
+
+Review keyword sweep
+--------------------
+approve_review_item: 95 hit(s)
+reject_review_item: 95 hit(s)
+get_review_queue: 96 hit(s)
+review_queue: 119 hit(s)
+review_item: 194 hit(s)
+review_status: 24680 hit(s)
+review: 329896 hit(s)
+
+Dependency summary
+------------------
+approve_review_item:
+  test_dependency: False (0)
+  runtime_dependency: True (45)
+  operator_dependency: False (0)
+  dispatcher_dependency: False (0)
+reject_review_item:
+  test_dependency: False (0)
+  runtime_dependency: True (45)
+  operator_dependency: False (0)
+  dispatcher_dependency: False (0)
+get_review_queue:
+  test_dependency: False (0)
+  runtime_dependency: True (43)
+  operator_dependency: False (0)
+  dispatcher_dependency: False (0)
+
+Non-Mainline Issues Found
+-------------------------
+inventory only; inspect hits above before scheduling any code changes
+

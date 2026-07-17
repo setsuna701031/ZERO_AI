@@ -1,0 +1,59 @@
+{
+  "stage": "Stage15A — AER Wave 0 Execution Gate Lock",
+  "wave0_gate_status": "fail",
+  "wave1_ready": false,
+  "confirmed_blocker_coverage": "113 / 113",
+  "freeze_blocker_coverage": "113 / 113",
+  "seal_blocker_coverage": "134 / 134",
+  "compatibility_bridge_coverage": "15 / 15 retirement-only",
+  "non_mainline_issue_coverage": "6 / 6 observability-only",
+  "direct_stepexecutor_call_seal_status": "blocked_pending_wave_3",
+  "blocking_reasons": [
+    "stage15a_validation",
+    "validation::tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+    "validation::tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler",
+    "validation::tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit"
+  ],
+  "freeze_evidence_count": 3,
+  "seal_evidence_count": 1,
+  "first_executable_wave": "none; Wave 1 remains gated by Wave 0",
+  "validation_results": {
+    "status": "failed_with_recorded_freeze_and_seal_evidence",
+    "generator": "pass",
+    "compileall": "pass",
+    "pytest": {
+      "status": "fail",
+      "command": "python -m pytest tests/test_runtime_ownership_gate_contract.py tests/test_runtime_execution_ownership_seal.py tests/test_runtime_execution_ownership_migration_contract.py tests/test_scheduler_runtime_ownership_closure.py tests/test_runtime_ownership_execution_path_seal.py tests/test_runtime_ownership_contract.py tests/test_runtime_ownership_enforcement.py tests/test_runtime_native_autonomous_repair_chain_v1.py tests/test_runtime_native_autonomous_repair_chain_v2_integration.py tests/test_runtime_native_autonomous_repair_chain_seal_v1.py tests/test_runtime_blockers.py tests/test_runtime_ownership_isolation_fabric_seal_v1.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_ownership_enforcement_phase3.py tests/test_runtime_audit_artifact.py",
+      "passed": 64,
+      "failed": 3,
+      "errors": 0,
+      "duration_seconds": 18.06,
+      "failures": [
+        {
+          "test": "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+          "gate": "freeze",
+          "evidence": "Scheduler still has six direct execute_step calls; the assigned Wave 3 direct-call seal remains blocked."
+        },
+        {
+          "test": "tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler",
+          "gate": "freeze",
+          "evidence": "The autonomous repair-chain handler returned ok=false; the assigned Wave 7 behavior gate remains blocked."
+        },
+        {
+          "test": "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+          "gate": "seal",
+          "evidence": "The expected high-risk status-writer inventory differs from the source scan; inventory drift remains seal evidence."
+        }
+      ]
+    }
+  },
+  "production_runtime_touched": false,
+  "tests_touched": false,
+  "blockers_fixed": false,
+  "deterministic_output": true,
+  "outputs": {
+    "gate": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+    "summary": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a_report.md"
+  }
+}

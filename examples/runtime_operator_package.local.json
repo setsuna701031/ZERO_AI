@@ -1,0 +1,22 @@
+{
+    "package_id":  "operator-console-local-20260706130702",
+    "task_id":  "operator-console-task-20260706130702",
+    "goal":  "Run the closed autonomous runtime loop through the operator console",
+    "requested_mode":  "controlled",
+    "authority_context":  {
+                              "operator":  "RuntimeOperatorService",
+                              "approval_required":  true,
+                              "executor_required":  true,
+                              "governed_mutation_adapter_required":  true,
+                              "validation_required":  true,
+                              "rollback_required":  true
+                          },
+    "requested_changes":  [
+                              {
+                                  "change_id":  "example-change-1",
+                                  "path":  "core/runtime/example_target.py",
+                                  "operation":  "governed_repo_edit",
+                                  "description":  "Example governed mutation request routed through sandbox and rollback boundaries"
+                              }
+                          ]
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 from typing import Any, Dict, List, Set, Tuple
 
 
@@ -203,7 +204,7 @@ def unblock_tasks_if_dependencies_done(
             scheduler._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
             continue
 
-        task["status"] = "queued"
+        project_runtime_status(task, "queued", owner="core/tasks/scheduler_core/queue_sync_helpers.py")
         task["blocked_reason"] = ""
         task["history"] = scheduler._append_history(task.get("history"), "queued")
         task["scheduler_build"] = scheduler_build

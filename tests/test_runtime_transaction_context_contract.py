@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_transaction_context import (
+
     RuntimeTransactionBinder,
     RuntimeTransactionContext,
     attach_current_transaction_to_mapping,
@@ -16,6 +17,10 @@ from core.runtime.runtime_transaction_context import (
     transaction_scope,
 )
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.contract_heavy]
+
 
 
 class RuntimeTransactionContextContractTest(unittest.TestCase):

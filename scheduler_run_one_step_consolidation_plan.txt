@@ -1,0 +1,37 @@
+Package 62 - Scheduler run_one_step Wrapper Consolidation Plan
+
+Scope
+- Target family: run_one_step only.
+- Scheduler implementation changes: none in this package.
+- Reason: every run_one_step wrapper either contains behavior or is the final active binding.
+
+Final Binding Confirmation
+- scheduler_mainline_callgraph.txt reports:
+  final Scheduler.run_one_step binding: _zero_scheduler_run_one_step_v16 (line 8229)
+
+run_one_step Wrapper Table
+| Wrapper | Line | active_refs | Final binding | Only forwards | Contains behavior | Safe to consolidate |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| Scheduler.run_one_step original method | 768 | unknown | no | no | yes - delegates through runtime native mainline when inactive, otherwise calls scheduler execution pipeline | no - retained behavior |
+| _zero_v352_scheduler_run_one_step | 8045 | 5 | no | no | yes - calls previous implementation, attaches orchestration summary, attaches scheduler adapter payload | no - retained behavior |
+| _zero_scheduler_run_one_step_v8 | 8133 | 6 | no | no | yes - updates step progress, preserves operator_session_id, completes operator on ok result | no - retained behavior |
+| _zero_scheduler_run_one_step_v16 | 8219 | 9 | yes | yes | no direct local behavior; delegates to completion pipeline with the v8 base and helper callbacks | no - final binding retained |
+
+Consolidation Decision
+- Removed wrappers: none.
+- Retained wrappers:
+  - Scheduler.run_one_step original method: contains runtime native mainline admission behavior and execution pipeline delegation.
+  - _zero_v352_scheduler_run_one_step: contains orchestration summary and adapter payload behavior.
+  - _zero_scheduler_run_one_step_v8: contains step progress and operator completion behavior.
+  - _zero_scheduler_run_one_step_v16: final Scheduler.run_one_step binding.
+
+Safety Gate
+- No wrapper satisfies all removal requirements:
+  - not final binding
+  - not referenced by active code except overlay chain
+  - purely forwarding
+  - fast regression remains green
+- Because no scheduler.py wrapper is removed, behavior is unchanged in this package.
+
+Next Eligible Work
+- A future package may consolidate by moving retained behavior into a canonical implementation first, then re-running inventory, callgraph, and fast regression before removing any obsolete forwarding wrapper.

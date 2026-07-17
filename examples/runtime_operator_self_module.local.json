@@ -1,0 +1,19 @@
+﻿{
+  "package_id": "zero-self-module-20260706143447",
+  "task_id": "zero-self-module-task-20260706143447",
+  "goal": "Create a safe ZERO runtime self-execution marker module through controlled runtime mutation.",
+  "requested_mode": "controlled",
+  "authority_context": {
+    "operator_approved": true,
+    "controlled_mutation": true,
+    "validation_required": true,
+    "commit_allowed": true
+  },
+  "requested_changes": [
+    {
+      "action": "write_file",
+      "path": "core/runtime/runtime_self_execution_marker.py",
+      "content": "from __future__ import annotations\n\nSELF_EXECUTION_MARKER_SCHEMA = \"zero.runtime.self_execution_marker.v1\"\n\n\ndef build_self_execution_marker() -> dict[str, object]:\n    return {\n        \"schema\": SELF_EXECUTION_MARKER_SCHEMA,\n        \"self_execution_available\": True,\n        \"controlled_mutation_required\": True,\n        \"validation_required\": True,\n        \"governed_commit_required\": True,\n    }\n\n\n__all__ = [\n    \"SELF_EXECUTION_MARKER_SCHEMA\",\n    \"build_self_execution_marker\",\n]\n"
+    }
+  ]
+}

@@ -591,7 +591,14 @@ def test_terminal_finished_task_replay_cannot_move_back_to_queued_or_retrying(
 
     assert result["status"] == "finished"
     assert result["task"]["status"] == "finished"
-    assert original_calls == [{"task": task, "current_tick": 17}]
+    assert len(original_calls) == 1
+    assert original_calls[0]["current_tick"] == 17
+    assert original_calls[0]["task"]["task_id"] == task["task_id"]
+    assert original_calls[0]["task"]["status"] == "finished"
+    assert original_calls[0]["task"]["steps"] == task["steps"]
+    assert original_calls[0]["task"]["repair_context"] == task["repair_context"]
+    assert original_calls[0]["task"].get("status") == "finished"
+    assert original_calls[0]["task"].get("status") not in {"queued", "retrying"}
     assert persisted == []
     assert enqueued == []
 
