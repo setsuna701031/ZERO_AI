@@ -17,6 +17,12 @@ CONTRACT = "zero.runtime.transactional_active_execution.v1"
 REQUEST_CONTRACT = "zero.runtime.active_executor_invocation_request.v1"
 BUNDLE_CONTRACT = "zero.runtime.candidate_mutation_bundle.v1"
 AUTHORIZATION_CONTRACT = "zero.runtime.active_execution_authorization.v1"
+PREPARATION_CONTRACT = "zero.runtime.transactional_active_execution_preparation.v1"
+_PREPARATION_PERMISSIONS = ("filesystem_read", "filesystem_write", "filesystem_mutation",
+    "external_process", "network", "model_invocation", "transaction_commit")
+_PROHIBITED_EFFECTS = ("filesystem_mutation", "process_creation", "network_access",
+    "model_invocation", "transaction_commit", "external_side_effect")
+_SAFE_OPERATIONS = frozenset({"inspect", "validate", "review", "prepare"})
 _PROFILES = {"none", "python_compile", "focused_pytest", "python_compile_then_focused_pytest"}
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *{f"COM{i}" for i in range(1, 10)}, *{f"LPT{i}" for i in range(1, 10)}}
 
@@ -31,6 +37,77 @@ def _canonical(value: Any) -> str:
 
 def _fingerprint(value: Any) -> str:
     return sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _active_authorization_reasons(auth: Mapping[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    if (auth.get("contract") != AUTHORIZATION_CONTRACT or auth.get("authorization_status") != "authorized"
+            or auth.get("authorization_valid") is not True or auth.get("active_execution_prepared") is not True):
+        reasons.append("active_authorization_not_prepared")
+    if any(auth.get(key) is not False for key in ("active_execution_ready", "execution_allowed",
+            "file_mutation_allowed", "patch_application_allowed", "validation_execution_allowed",
+            "rollback_execution_allowed", "commit_allowed")):
+        reasons.append("unsafe_authorization_state")
+    if auth.get("required_next_boundary") != "active_executor_invocation_gate":
+        reasons.append("invalid_next_boundary")
+    return reasons
+
+
+def prepare_transactional_active_plan(execution_plan: Mapping[str, Any],
+        execution_plan_review_result: Mapping[str, Any], executor_admission_token: Mapping[str, Any],
+        controlled_activation: Mapping[str, Any], active_authorization_result: Mapping[str, Any],
+        execution_intent: Mapping[str, Any], *, limitations: Any = None) -> dict[str, Any]:
+    plan, review, token, activation, auth, intent = map(_mapping, (execution_plan,
+        execution_plan_review_result, executor_admission_token, controlled_activation,
+        active_authorization_result, execution_intent))
+    limits = deepcopy(limitations) if isinstance(limitations, list) else []
+    reasons = _active_authorization_reasons(auth)
+    chain = (plan.get("plan_id") == review.get("plan_id") == token.get("plan_id")
+        == activation.get("plan_id") == auth.get("plan_id")
+        and review.get("result_id") == token.get("review_result_id") == activation.get("review_result_id")
+        == auth.get("review_result_id") and token.get("token_id") == auth.get("token_id")
+        and activation.get("activation_id") == auth.get("controlled_execution_result_id"))
+    if not chain: reasons.append("transaction_preparation_linkage_mismatch")
+    operations = intent.get("requested_operations")
+    safe_intent = (set(intent) == {"intent_id", "intent_type", "target_descriptor", "requested_operations",
+        "expected_effects", "prohibited_effects", "validation_requirements", "dry_run"}
+        and isinstance(intent.get("intent_id"), str) and bool(intent.get("intent_id"))
+        and intent.get("intent_type") == "control_plane_preparation" and intent.get("dry_run") is True
+        and intent.get("expected_effects") == [] and isinstance(operations, list)
+        and all(isinstance(x, str) and x in _SAFE_OPERATIONS for x in operations)
+        and isinstance(intent.get("prohibited_effects"), list)
+        and all(x in intent["prohibited_effects"] for x in _PROHIBITED_EFFECTS))
+    if not safe_intent: reasons.append("unsafe_or_malformed_execution_intent")
+    if token.get("token_status") != "issued" or activation.get("activation_status") != "completed":
+        reasons.append("upstream_preparation_not_ready")
+    scope = deepcopy(auth.get("authorized_scope", [])) if isinstance(auth.get("authorized_scope"), list) else []
+    permissions = {key: False for key in _PREPARATION_PERMISSIONS}
+    status = "prepared" if not reasons else "blocked"
+    body = {"contract": PREPARATION_CONTRACT, "schema_version": "1",
+        "execution_plan_id": plan.get("plan_id", ""), "execution_plan_fingerprint": _fingerprint(plan),
+        "execution_plan_review_id": review.get("result_id", ""), "execution_plan_review_fingerprint": _fingerprint(review),
+        "executor_admission_token_id": token.get("token_id", ""), "executor_admission_token_fingerprint": _fingerprint(token),
+        "controlled_activation_id": activation.get("activation_id", ""), "controlled_activation_fingerprint": _fingerprint(activation),
+        "active_authorization_id": auth.get("authorization_result_id", ""), "active_authorization_fingerprint": _fingerprint(auth),
+        "intent_id": intent.get("intent_id", ""), "intent_fingerprint": _fingerprint(intent),
+        "target_root_identity": token.get("target_root_identity", ""), "target_boundary": deepcopy(intent.get("target_descriptor", {})),
+        "authorized_scope": scope, "prepared_scope": deepcopy(scope),
+        "operation_descriptors": deepcopy(operations) if isinstance(operations, list) else [],
+        "validation_descriptors": deepcopy(intent.get("validation_requirements", [])),
+        "transaction_sequencing_metadata": {"stage": "control_plane_preparation", "execution_allowed": False},
+        "dry_run_only": True, "expected_effects": [], "prohibited_effects": list(_PROHIBITED_EFFECTS),
+        "permissions": permissions, "limitations": limits,
+        "workspace_creation_required": False, "snapshot_creation_required": False,
+        "mutation_required": False, "validation_process_required": False, "commit_required": False,
+        "rollback_capability_required": bool(plan.get("requires_rollback_capability")),
+        "preparation_status": status, "prepared": status == "prepared",
+        "execution_started_claim": False, "execution_completion_claim": False,
+        "mutation_authorization_claim": False, "mutation_performed_claim": False,
+        "transaction_committed_claim": False, "reasons": reasons,
+        "blocked_reasons": deepcopy(reasons), "failure_reasons": []}
+    fingerprint = _fingerprint(body)
+    return {**body, "preparation_id": f"transaction-preparation-{fingerprint[:24]}",
+        "preparation_fingerprint": fingerprint}
 
 
 def _parse_time(value: Any) -> datetime:
@@ -220,16 +297,7 @@ def execute_transactional_active_plan(
         workspace = Path(".")
         reasons.append("unsafe_workspace_root")
 
-    if (auth.get("contract") != AUTHORIZATION_CONTRACT or auth.get("authorization_status") != "authorized"
-            or auth.get("authorization_valid") is not True or auth.get("active_execution_prepared") is not True):
-        reasons.append("active_authorization_not_prepared")
-    if any(auth.get(key) is not False for key in (
-            "active_execution_ready", "execution_allowed", "file_mutation_allowed",
-            "patch_application_allowed", "validation_execution_allowed",
-            "rollback_execution_allowed", "commit_allowed")):
-        reasons.append("unsafe_authorization_state")
-    if auth.get("required_next_boundary") != "active_executor_invocation_gate":
-        reasons.append("invalid_next_boundary")
+    reasons.extend(_active_authorization_reasons(auth))
     if request.get("contract") != REQUEST_CONTRACT:
         reasons.append("invalid_invocation_contract")
     if request.get("requested_mode") != "transactional_active_execution":
@@ -562,4 +630,5 @@ def execute_transactional_active_plan(
 
 
 __all__ = ["AUTHORIZATION_CONTRACT", "BUNDLE_CONTRACT", "CONTRACT", "REQUEST_CONTRACT",
+           "PREPARATION_CONTRACT", "prepare_transactional_active_plan",
            "execute_transactional_active_plan"]
