@@ -16,4 +16,3 @@ def test_cli_single_json_and_malformed_fail_closed(tmp_path, capsys):
     assert cli.main([str(malformed)]) == 2
     failure = json.loads(capsys.readouterr().out)
     assert failure["audit_summary"]["status"] == "invalid"
-

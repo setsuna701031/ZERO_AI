@@ -33,4 +33,3 @@ def validate_governed_capability_runtime_closure(value: Any) -> GovernedCapabili
     if value.get("runtime_closure_fingerprint") != expected or value.get("runtime_closure_id") != "governed-capability-runtime-closure-" + expected[:24]:
         errors.append("closure_identity_mismatch")
     return GovernedCapabilityRuntimeClosureValidationResult(not errors, tuple(dict.fromkeys(errors)))
-
