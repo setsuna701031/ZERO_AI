@@ -41,4 +41,3 @@ def test_partial_is_not_accepted_without_explicit_policy():
     result = completed_result(); result["overall_status"] = "partial"; result["handoff_package"]["readiness"] = "partial"
     request = create_integration_request(execution_result=result, mode="accept_handoff")
     assert integrate_capability_bootstrap(request, container=RuntimeCapabilityContextContainer())["integration_status"] in {"invalid", "blocked"}
-

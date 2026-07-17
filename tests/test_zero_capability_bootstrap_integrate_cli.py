@@ -15,4 +15,3 @@ def test_integrate_validate_explain_json(tmp_path):
     record_path = tmp_path / "record.json"; record_path.write_text(json.dumps(record), encoding="utf-8")
     assert run(["validate", str(record_path)])[0]["valid"] is True
     assert run(["explain", str(record_path)])[0]["integration_status"] == "accepted"
-

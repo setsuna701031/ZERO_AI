@@ -30,4 +30,3 @@ def test_binding_observation_does_not_affect_identity():
     request = create_integration_request(execution_result=completed_result(), mode="prepare_context"); container = RuntimeCapabilityContextContainer()
     first = integrate_capability_bootstrap(request, container=container); second = integrate_capability_bootstrap(request, container=container)
     assert first["binding_metadata"] != second["binding_metadata"] and first["fingerprint"] == second["fingerprint"]
-
