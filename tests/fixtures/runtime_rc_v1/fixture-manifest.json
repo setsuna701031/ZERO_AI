@@ -1,8 +1,8 @@
 {
   "contract": "zero.runtime.compatibility_fixture.v1",
   "files": {
-    "goals/goal-index.json": "e4f8d59c7ab65d77f3b00cc0329eb9d7f1cf78588ec56d1426bdda896716c381",
-    "goals/long-goal-9fef6559a936832b38e4/goal.json": "e86ea0ea8bdcf7b5ac090c049d5f44656e2cf29ba61626daba144f6db565a8c1"
+    "goals/goal-index.json": "e4db6a43c9bbf826bdb80f549cc227ce144ae457eb9f66d54b5f90ecc16a0f51",
+    "goals/long-goal-9fef6559a936832b38e4/goal.json": "fd2feae2b90edf4cae14f5d6fc936822818d656c690d86e5dc8622110c2689a5"
   },
   "fixture_version": "runtime-rc-v1",
   "immutable": true,
