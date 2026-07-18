@@ -1427,3 +1427,34 @@ Engineering Goal Loop -> Controlled Repo Edit -> Verification -> Evidence ->
 Replan / Resume -> Completion.
 ```
 
+---
+
+## Governed Capability Runtime Mainline Closure (2026-07-18)
+
+Current status:
+
+```text
+Branch: main
+HEAD: 01bdfcef
+Capability Runtime merge commit: 16582340
+
+Full validation:
+10733 passed
+7 skipped
+0 failed
+
+Push: origin/main synchronized
+HEAD == origin/main == origin/HEAD
+Working tree: clean
+```
+
+This milestone completes the Governed Capability Runtime integration into the
+main branch. The Runtime Acceptance Gate, mainline merge, repository-wide
+validation, RC fixture manifest repair, and origin synchronization have all
+been completed successfully.
+
+Engineering verdict:
+
+```text
+Governed Capability Runtime: MAINLINE SEALED
+```

@@ -2050,3 +2050,43 @@ Final Decision:
 ```text
 GO for user-local long regression revalidation
 ```
+
+---
+
+## 2026-07-18 - Governed Capability Runtime Mainline Closure
+
+Completed:
+
+- Merged Governed Capability Runtime into `main`
+- Repaired RC fixture manifest
+- Executed full repository validation
+- Synchronized `origin/main`
+
+Validation:
+
+```text
+10733 passed
+7 skipped
+0 failed
+```
+
+Repository state:
+
+```text
+HEAD: 01bdfcef
+Capability Runtime merge: 16582340
+HEAD == origin/main == origin/HEAD
+working tree: clean
+```
+
+Decision:
+
+```text
+MAINLINE SEALED
+```
+
+Note:
+
+A previous `stash@{0}` containing unrelated untracked `shared/` files is
+intentionally preserved. It does not affect the validated mainline state and
+should not be popped or deleted as part of this milestone.
