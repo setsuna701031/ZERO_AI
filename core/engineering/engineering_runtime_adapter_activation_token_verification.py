@@ -1,0 +1,21 @@
+from __future__ import annotations
+from typing import Any,Mapping
+from core.engineering.engineering_runtime_adapter_activation_token_common import *
+from core.engineering.engineering_runtime_adapter_activation_token_issuance import validate_runtime_adapter_activation_token_issuance,deterministic_token_id
+SCHEMA='zero.engineering.runtime_adapter_activation_token_verification.v1';ID='token_verification_id';PREFIX='engineering-runtime-adapter-activation-token-verification-'
+FIELDS={'token_id','token_fingerprint','token_issuance_id','token_issuance_fingerprint','token_authorization_id','activation_authorization_handoff_id','adapter_id','adapter_version','execution_session_id','invocation_descriptor_id','verified_scope','max_uses','current_uses','verification_status','reason_codes','identity_valid','linkage_valid','scope_valid','usage_valid','authority_valid','passive_invariants_valid','credential_free','executable_free'}
+def verify_runtime_adapter_activation_token(token:Mapping[str,Any],authorization:Mapping[str,Any])->dict[str,Any]:
+ tv=validate_runtime_adapter_activation_token_issuance(token).valid; identity=token.get('token_id')==deterministic_token_id(authorization); linkage=token.get('token_authorization_id')==authorization.get('token_authorization_id') and token.get('token_authorization_fingerprint')==authorization.get('fingerprint')
+ scope_ok=scope_bounded(token.get('issued_scope'),authorization.get('authorized_token_scope')); usage=token.get('max_uses')==1 and token.get('current_uses')==0 and token.get('consumed') is False
+ auth_ok=authority_valid(token.get('authority_constraints'),authorization.get('authorized_token_scope')) and authorization.get('authority_consumed') is False
+ passive=token.get('passive_only') is True and token.get('token_state')=='issued_unconsumed' and not any(token.get(k) for k in ('adapter_loaded','adapter_activated','adapter_invoked','runtime_invoked','authority_consumed','mutation_performed'))
+ cred=not contains_prohibited(token) and token.get('token_is_secret') is False and token.get('bearer_credential') is False; exe=token.get('executable') is False
+ ok=tv and token.get('issuance_status')=='issued' and identity and linkage and scope_ok and usage and auth_ok and passive and cred and exe
+ reasons=[] if ok else ['token_not_verified']
+ return stable_artifact({'schema':SCHEMA,'token_id':token.get('token_id'),'token_fingerprint':token.get('fingerprint'),'token_issuance_id':token.get('token_issuance_id'),'token_issuance_fingerprint':token.get('fingerprint'),'token_authorization_id':token.get('token_authorization_id'),'activation_authorization_handoff_id':token.get('activation_authorization_handoff_id'),'adapter_id':token.get('adapter_id'),'adapter_version':token.get('adapter_version'),'execution_session_id':token.get('execution_session_id'),'invocation_descriptor_id':token.get('invocation_descriptor_id'),'verified_scope':token.get('issued_scope') if ok else {},'max_uses':token.get('max_uses'),'current_uses':token.get('current_uses'),'verification_status':'verified' if ok else ('invalid' if not tv else 'not_verified'),'reason_codes':normalize_reasons(reasons),'identity_valid':identity,'linkage_valid':linkage,'scope_valid':scope_ok,'usage_valid':usage,'authority_valid':auth_ok,'passive_invariants_valid':passive,'credential_free':cred,'executable_free':exe},ID,PREFIX)
+def validate_runtime_adapter_activation_token_verification(v:Any)->ValidationResult:
+ r=validate_artifact(v,schema=SCHEMA,id_key=ID,prefix=PREFIX,fields=FIELDS,status_key='verification_status',statuses={'verified','not_verified','invalid'}); e=list(r.errors)
+ if isinstance(v,Mapping) and v.get('verification_status')=='verified' and not all(v.get(k) is True for k in ('identity_valid','linkage_valid','scope_valid','usage_valid','authority_valid','passive_invariants_valid','credential_free','executable_free')): e.append('invalid_verified_invariants')
+ return ValidationResult(not e,tuple(dict.fromkeys(e)))
+def inspect_runtime_adapter_activation_token_verification(v:Any)->dict[str,Any]:
+ r=validate_runtime_adapter_activation_token_verification(v); return {'schema':SCHEMA,'valid':r.valid,'verification_status':v.get('verification_status') if isinstance(v,Mapping) else 'invalid','reason_codes':list(r.errors)}
