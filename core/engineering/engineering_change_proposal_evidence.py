@@ -1,0 +1,8 @@
+from __future__ import annotations
+from typing import Any
+from core.engineering.engineering_change_proposal_common import *
+
+def build_change_proposal_evidence(proposal:dict[str,Any], validation:dict[str,Any], safety_review:dict[str,Any], verification:dict[str,Any])->dict[str,Any]:
+ ops=proposal.get('operations',[]); contents=proposal.get('contents',[]); diffs=proposal.get('diffs',[])
+ body={'proposal_id':proposal.get('proposal_id'),'proposal_fingerprint':proposal.get('fingerprint'),'validation_id':validation.get('validation_id'),'validation_fingerprint':validation.get('fingerprint'),'safety_review_id':safety_review.get('safety_review_id'),'safety_review_fingerprint':safety_review.get('fingerprint'),'verification_id':verification.get('verification_id'),'verification_fingerprint':verification.get('fingerprint'),'workspace_id':proposal.get('workspace_id'),'relative_path_fingerprints':[sha256_text(o.get('target_relative_path','')) for o in ops],'operation_types':[o.get('operation_type') for o in ops],'file_count':len(ops),'content_byte_counts':[c.get('content_byte_count',0) for c in contents],'diff_entry_count':sum(len(d.get('change_blocks',[])) for d in diffs),'status_codes':[proposal.get('status'),validation.get('status'),safety_review.get('status'),verification.get('status')],'reason_codes':reasons(proposal.get('reason_codes',[])+validation.get('reason_codes',[])+safety_review.get('reason_codes',[])+verification.get('reason_codes',[])),'validation_codes':validation.get('validation_codes',[]),'safety_review_codes':safety_review.get('safety_review_codes',[]),'mutation_invariant_codes':['all_mutation_and_execution_flags_false']}
+ return artifact('cevd',SCHEMAS['evidence'],body,'proposal_evidence_id')
