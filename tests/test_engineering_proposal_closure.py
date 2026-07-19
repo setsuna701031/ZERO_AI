@@ -1,0 +1,14 @@
+from core.engineering.engineering_proposal_intake import build_engineering_proposal_intake
+from core.engineering.engineering_proposal_scope import build_engineering_proposal_scope
+from core.engineering.engineering_proposed_change_set import build_engineering_proposed_change_set
+from core.engineering.engineering_proposal_dependency_mapping import build_engineering_proposal_dependency_mapping
+from core.engineering.engineering_proposal_validation_plan import build_engineering_proposal_validation_plan
+from core.engineering.engineering_proposal_risk_review import build_engineering_proposal_risk_review
+from core.engineering.engineering_proposal import build_engineering_proposal
+from core.engineering.engineering_proposal_verification import verify_engineering_proposal
+from core.engineering.engineering_proposal_closure import build_engineering_proposal_closure
+from tests.test_engineering_proposal_intake import proposal_planning_closure
+def proposal_pipeline(tmp_path):
+ i=build_engineering_proposal_intake(proposal_planning_closure(tmp_path));s=build_engineering_proposal_scope(i);c=build_engineering_proposed_change_set(s);d=build_engineering_proposal_dependency_mapping(c);v=build_engineering_proposal_validation_plan(c);r=build_engineering_proposal_risk_review(c,i["evidence_references"]);p=build_engineering_proposal(i,s,c,d,v,r);q=verify_engineering_proposal(p);return p,q,build_engineering_proposal_closure(p,q)
+def test_closure_governance_and_next_boundary(tmp_path):
+ p,v,c=proposal_pipeline(tmp_path);assert c["status"]=="closed" and not c["governance_boundary_declaration"]["approved"] and c["next_boundary_declaration"]["executor"] is False
