@@ -1,0 +1,18 @@
+from core.engineering.engineering_runtime_adapter_invocation_intake import *
+from core.engineering.engineering_runtime_adapter_invocation_admission import *
+from core.engineering.engineering_runtime_adapter_invocation_preparation import *
+from core.engineering.engineering_runtime_adapter_invocation_review import *
+from core.engineering.engineering_runtime_adapter_invocation_authorization import *
+from core.engineering.engineering_runtime_adapter_controlled_invocation import *
+from core.engineering.engineering_runtime_adapter_invocation_observation import *
+from core.engineering.engineering_runtime_adapter_invocation_evidence import *
+from core.engineering.engineering_runtime_adapter_invocation_result import *
+from core.engineering.engineering_runtime_adapter_invocation_verification import *
+from core.engineering.engineering_runtime_adapter_invocation_handoff import *
+from core.engineering.engineering_runtime_adapter_invocation_closure import *
+def activation_handoff():
+ return {'activation_handoff_id':'handoff-identity','fingerprint':'handoff-fingerprint','activation_result_id':'activation-result','activation_result_fingerprint':'activation-result-fp','activation_verification_id':'activation-verification','activation_verification_fingerprint':'activation-verification-fp','controlled_activation_id':'controlled-activation','token_consumption_id':'token-consumption','token_id':'token-id','activation_authorization_id':'activation-auth','adapter_id':'adapter.identity','adapter_version':'1.0','execution_session_id':'session.identity','invocation_descriptor_id':'descriptor.identity','activated_scope':['scope.alpha'],'authority_reference':'authority.ref','authority_constraints':{'valid':True,'consumed':False,'passive':True,'scope':['scope.alpha']},'eligible_for_invocation_governance':True,'activation_governance_completed':True,'token_consumed':True,'adapter_loaded':False,'adapter_code_executed':False,'adapter_invoked':False,'runtime_invoked':False,'authority_consumed':False,'mutation_performed':False}
+def request(scope=None, operation=None, input_bindings=None, output=None, resources=None, timeout=None, environment=None):
+ h=activation_handoff(); return build_runtime_adapter_invocation_intake_request(h, scope or ['scope.alpha'], operation or {'operation_id':'operation.identity','declarative':True}, input_bindings if input_bindings is not None else {'binding':'value'}, output or {'contract_id':'output.contract','outputs':['result']}, {'passive_only':True}, resources or {'cpu':1,'memory':128}, timeout or {'seconds':30}, environment or {'passive':True}, {'context':'governance'})
+def pipeline():
+ h=activation_handoff(); q=request(); i=build_runtime_adapter_invocation_intake(q,h); ap=build_default_runtime_adapter_invocation_admission_policy(); a=build_runtime_adapter_invocation_admission(i,ap); pp=build_default_runtime_adapter_invocation_preparation_policy(); p=build_runtime_adapter_invocation_preparation(a,pp); rr=build_runtime_adapter_invocation_review_request(p,a,i); rv=evaluate_runtime_adapter_invocation_review(rr,p,a,i); zp=build_default_runtime_adapter_invocation_authorization_policy(); z=build_runtime_adapter_invocation_authorization(rv,zp); c=build_runtime_adapter_controlled_invocation(z,p); o=build_runtime_adapter_invocation_observation(c); e=build_runtime_adapter_invocation_evidence(o,c); r=build_runtime_adapter_invocation_result(c,o,e); v=verify_runtime_adapter_invocation_governance(i,a,p,rv,z,c,o,e,r); hd=build_runtime_adapter_invocation_handoff(r,v,c); cl=build_runtime_adapter_invocation_governance_closure(q,i,ap,a,pp,p,rr,rv,zp,z,c,o,e,r,v,hd); return locals()
