@@ -1,0 +1,10 @@
+from __future__ import annotations
+from typing import Any,Mapping
+from core.engineering.engineering_authorization_common import ValidationResult,authorization_artifact,validate_approval_closure,validate_authorization_artifact
+SCHEMA="zero.engineering.authorization_intake.v1";ID_KEY="authorization_intake_id";PREFIX="engineering-authorization-intake-";FIELDS={"approval_closure_id","approval_closure_fingerprint","approval_decision_id","proposal_review_closure_id","repository_identity","analyzed_revision","authorization_objective","requested_decision","evidence_references","constraints","authority_declarations"}
+AUTH={"approval_authority":"granted","authorization_authority":"not_granted","execution_authority":"not_granted","mutation_authority":"not_granted"}
+def build_engineering_authorization_intake(c:Mapping[str,Any],intent:Mapping[str,Any]|None=None)->dict[str,Any]:
+ i=dict(intent or {});requested=i.get("requested_decision","authorize");valid=validate_approval_closure(c).valid and requested in {"authorize","deny"} and not any(i.get(k) not in (None,AUTH[k]) for k in AUTH)
+ p={"approval_closure_id":c.get("approval_closure_id"),"approval_closure_fingerprint":c.get("fingerprint"),"approval_decision_id":c.get("approval_decision_id"),"proposal_review_closure_id":c.get("proposal_review_closure_id"),"repository_identity":c.get("repository_identity"),"analyzed_revision":c.get("analyzed_revision"),"authorization_objective":i.get("authorization_objective","evaluate governed engineering authorization"),"requested_decision":requested,"evidence_references":sorted(set(i.get("evidence_references",[]))),"constraints":sorted(set(i.get("constraints",[]))),"authority_declarations":dict(AUTH)};return authorization_artifact(SCHEMA,"accepted" if valid else "invalid",p,ID_KEY,PREFIX)
+def validate_engineering_authorization_intake(v:Any)->ValidationResult:return validate_authorization_artifact(v,schema=SCHEMA,statuses={"accepted","blocked","invalid","insufficient_evidence"},id_key=ID_KEY,prefix=PREFIX,fields=FIELDS)
+__all__=["AUTH","build_engineering_authorization_intake","validate_engineering_authorization_intake"]

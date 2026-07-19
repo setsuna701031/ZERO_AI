@@ -1,0 +1,9 @@
+from __future__ import annotations
+from typing import Any,Mapping
+from core.engineering.engineering_authorization_common import ValidationResult,authorization_artifact,validate_authorization_artifact
+from core.engineering.engineering_authorization_decision import validate_engineering_authorization_decision
+SCHEMA="zero.engineering.authorization_verification.v1";ID_KEY="authorization_verification_id";PREFIX="engineering-authorization-verification-";FIELDS={"authorization_decision_id","authorization_constraints_id","checks","errors","warnings","verified_decision"}
+def verify_engineering_authorization(d:Mapping[str,Any],c:Mapping[str,Any])->dict[str,Any]:
+ b=d.get("boundary",{});checks={"decision_contract":validate_engineering_authorization_decision(d).valid,"constraints_resolved":c.get("status")=="satisfied","approval_granted":b.get("approval_authority")=="granted","authorization_not_granted_before_closure":b.get("authorization_authority")=="not_granted","execution_not_granted":b.get("execution_authority")=="not_granted","mutation_not_granted":b.get("mutation_authority")=="not_granted"};errors=sorted(k for k,v in checks.items() if not v);status="verified" if not errors else "invalid";return authorization_artifact(SCHEMA,status,{"authorization_decision_id":d.get("authorization_decision_id"),"authorization_constraints_id":c.get("authorization_constraints_id"),"checks":[{"name":k,"passed":v} for k,v in sorted(checks.items())],"errors":errors,"warnings":[],"verified_decision":d.get("decision")},ID_KEY,PREFIX)
+def validate_engineering_authorization_verification(v:Any)->ValidationResult:return validate_authorization_artifact(v,schema=SCHEMA,statuses={"verified","blocked","invalid"},id_key=ID_KEY,prefix=PREFIX,fields=FIELDS)
+__all__=["verify_engineering_authorization","validate_engineering_authorization_verification"]

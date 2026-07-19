@@ -1,0 +1,8 @@
+from __future__ import annotations
+from typing import Any,Mapping
+from core.engineering.engineering_authorization_common import ValidationResult,authorization_artifact,stable_record,validate_authorization_artifact
+SCHEMA="zero.engineering.authorization_constraints.v1";ID_KEY="authorization_constraints_id";PREFIX="engineering-authorization-constraints-";FIELDS={"authorization_intake_id","constraints","unresolved_constraints","constraint_outcome"}
+def build_engineering_authorization_constraints(i:Mapping[str,Any],intent:Mapping[str,Any]|None=None)->dict[str,Any]:
+ x=dict(intent or {});raw=sorted(set(x.get("authorization_constraints",i.get("constraints",[]))));satisfied=set(x.get("satisfied_constraints",raw));items=[stable_record({"description":v,"bounded":True,"execution_authority":"not_granted","mutation_authority":"not_granted","status":"satisfied" if v in satisfied else "unresolved"},"authorization_constraint_id","engineering-authorization-constraint-") for v in raw];unresolved=[c["authorization_constraint_id"] for c in items if c["status"]=="unresolved"];outcome="satisfied" if not unresolved else "unresolved";return authorization_artifact(SCHEMA,outcome,{"authorization_intake_id":i.get("authorization_intake_id"),"constraints":items,"unresolved_constraints":unresolved,"constraint_outcome":outcome},ID_KEY,PREFIX)
+def validate_engineering_authorization_constraints(v:Any)->ValidationResult:return validate_authorization_artifact(v,schema=SCHEMA,statuses={"satisfied","unresolved","blocked","invalid"},id_key=ID_KEY,prefix=PREFIX,fields=FIELDS)
+__all__=["build_engineering_authorization_constraints","validate_engineering_authorization_constraints"]
