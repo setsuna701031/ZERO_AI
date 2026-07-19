@@ -1,0 +1,8 @@
+from __future__ import annotations
+from pathlib import Path
+from core.engineering.engineering_workspace_mutation_executor_common import sha_bytes, workspace_fingerprint
+
+def handoff(root:Path, ops=None):
+    if ops is None:
+        data='hello\n'; ops=[{'operation_id':'op-create','operation_type':'create_text_file','target_path':'out.txt','proposed_content':data,'expected_after_fingerprint':sha_bytes(data.encode()),'operation_fingerprint':'opfp-create'}]
+    return {'schema':'zero.engineering.mutation_executor_handoff.v1','status':'handed_off','handoff_id':'handoff-1','fingerprint':'handoff-fp','workspace_id':'ws1','workspace_root_fingerprint':workspace_fingerprint(root),'human_mutation_authorization_obtained':True,'transaction_planning_completed':True,'transaction_execution_authorized':False,'authorization_token':{'token_id':'atok','token_purpose':'workspace_mutation_transaction_admission','use_limit':1,'token_consumed':False},'preparation_token':{'token_id':'ptok','use_limit':1,'token_consumed':False},'transaction_package':{'schema':'zero.engineering.mutation_transaction_package.v1','status':'packaged','transaction_package_id':'txpkg1','fingerprint':'txpkg-fp','workspace_id':'ws1','workspace_root_fingerprint':workspace_fingerprint(root),'operations':ops},'operations':ops,'mutation_executor_invoked':False,'transaction_started':False,'backup_created':False,'commit_started':False,'commit_completed':False,'rollback_performed':False,'recovery_performed':False,'mutation_performed':False,'filesystem_write_performed':False,'patch_applied':False,'git_invoked':False,'shell_invoked':False,'runtime_kernel_invoked':False,'authorization_token_consumed':False,'preparation_token_consumed':False}
