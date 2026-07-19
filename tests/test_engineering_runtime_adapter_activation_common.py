@@ -1,0 +1,3 @@
+from core.engineering.engineering_runtime_adapter_activation_common import *
+def test_determinism_and_payload_safety():
+ a={'b':1,'a':[2]}; assert canonical_json(a)=='{"a":[2],"b":1}'; assert canonical_fingerprint(a)==canonical_fingerprint({'a':[2],'b':1}); assert contains_prohibited({'command':'x'}); assert contains_prohibited({'api_key':'x'}); assert contains_prohibited({'module_path':'x'}); assert not contains_prohibited({'token_id':'token-1','adapter_id':'adapter-1'}); assert not contains_wildcard({'x':['y']}); assert contains_wildcard('*'); assert scope_bounded({'x':['y']},{'x':['y','z']})
