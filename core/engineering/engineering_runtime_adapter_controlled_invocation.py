@@ -1,0 +1,16 @@
+from __future__ import annotations
+from typing import Any, Mapping
+from core.engineering.engineering_runtime_adapter_invocation_common import *
+
+SCHEMA='zero.engineering.runtime_adapter_controlled_invocation.v1'; ID_KEY='controlled_invocation_id'; PREFIX='rtci-'; STATUS_KEY='invocation_status'; STATUSES={'invoked','not_invoked','invalid'}
+FIELDS=set('invocation_authorization_id invocation_authorization_fingerprint invocation_review_id invocation_preparation_id invocation_admission_id invocation_intake_id activation_handoff_id activation_result_id adapter_id adapter_version execution_session_id invocation_descriptor_id invoked_scope operation input_bindings expected_output_contract invocation_configuration authority_reference authority_constraints invocation_status reason_codes governance_transition_committed invocation_authorized adapter_loaded adapter_code_executed adapter_invoked runtime_invoked executor_invoked scheduler_invoked external_effect_performed authority_consumed mutation_performed'.split())
+def build_runtime_adapter_controlled_invocation(authorization, preparation):
+ a=authorization if isinstance(authorization,Mapping) else {}; p=preparation if isinstance(preparation,Mapping) else {}; ok=a.get('authorization_status')=='authorized' and a.get('invocation_authorized') is True
+ st='invoked' if ok else ('invalid' if not isinstance(authorization,Mapping) else 'not_invoked')
+ return stable_artifact({'schema':SCHEMA,'invocation_authorization_id':a.get('invocation_authorization_id'),'invocation_authorization_fingerprint':a.get('fingerprint'),'invocation_review_id':a.get('invocation_review_id'),'invocation_preparation_id':a.get('invocation_preparation_id'),'invocation_admission_id':a.get('invocation_admission_id'),'invocation_intake_id':a.get('invocation_intake_id'),'activation_handoff_id':a.get('activation_handoff_id'),'activation_result_id':a.get('activation_result_id'),'adapter_id':a.get('adapter_id'),'adapter_version':a.get('adapter_version'),'execution_session_id':a.get('execution_session_id'),'invocation_descriptor_id':a.get('invocation_descriptor_id'),'invoked_scope':a.get('authorized_invocation_scope'),'operation':a.get('operation'),'input_bindings':p.get('input_bindings'),'expected_output_contract':p.get('expected_output_contract'),'invocation_configuration':p.get('invocation_configuration'),'authority_reference':a.get('authority_reference'),'authority_constraints':a.get('authority_constraints'),'invocation_status':st,'reason_codes':normalize_reasons([st]),'governance_transition_committed':ok,'invocation_authorized':ok,'adapter_loaded':False,'adapter_code_executed':False,'adapter_invoked':False,'runtime_invoked':False,'executor_invoked':False,'scheduler_invoked':False,'external_effect_performed':False,'authority_consumed':False,'mutation_performed':False},ID_KEY,PREFIX)
+
+def validate_runtime_adapter_controlled_invocation(v):
+ r=validate_artifact(v,schema=SCHEMA,id_key=ID_KEY,prefix=PREFIX,fields=FIELDS,status_key=STATUS_KEY,statuses=STATUSES); extra=validate_common_invocation(v) if isinstance(v,Mapping) else []
+ return ValidationResult(r.valid and not extra, tuple(list(r.errors)+extra))
+def inspect_runtime_adapter_controlled_invocation(v):
+ r=validate_runtime_adapter_controlled_invocation(v); return inspect_result(r.valid,r.errors)
