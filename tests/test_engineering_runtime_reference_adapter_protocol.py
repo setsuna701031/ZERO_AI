@@ -1,0 +1,4 @@
+from core.engineering.engineering_runtime_reference_adapters import CanonicalEchoAdapter
+from core.engineering.engineering_runtime_reference_adapter_protocol import build_reference_adapter_descriptor, validate_reference_adapter_descriptor
+def test_descriptor_deterministic_and_valid():
+ a=CanonicalEchoAdapter(); assert build_reference_adapter_descriptor(a)==build_reference_adapter_descriptor(a); assert validate_reference_adapter_descriptor(build_reference_adapter_descriptor(a))[0]
