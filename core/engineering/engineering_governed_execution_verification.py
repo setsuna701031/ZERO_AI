@@ -1,0 +1,13 @@
+from __future__ import annotations
+from typing import Any,Mapping
+from core.engineering.engineering_governed_execution_common import *
+SCHEMA="zero.engineering.governed_execution_verification.v1";ID_KEY="governed_execution_verification_id";PREFIX="engineering-governed-execution-verification-";KIND="governed_execution_verification"
+FIELDS={"engineering_execution_outcome_id","checks","errors","warnings","blocking_conditions","verification_status"}
+def build_engineering_governed_execution_verification(intake:Mapping[str,Any],admission:Mapping[str,Any],session:Mapping[str,Any],handoff:Mapping[str,Any],observation:Mapping[str,Any],evidence:Mapping[str,Any],outcome:Mapping[str,Any])->dict[str,Any]:
+ checks={"intake_accepted":intake.get("status")=="accepted","admission_valid":admission.get("admission_decision")=="admitted","session_linked":session.get("engineering_execution_admission_id")==admission.get("engineering_execution_admission_id"),"handoff_linked":handoff.get("engineering_execution_session_id")==session.get("engineering_execution_session_id"),"observation_linked":observation.get("engineering_runtime_handoff_id")==handoff.get("engineering_runtime_handoff_id"),"evidence_integrity":evidence.get("integrity_status")=="sufficient","scope_contained":contained(outcome.get("completed_scope",{}),session.get("sealed_scope",{})),"authority_consumed":outcome.get("authority_consumption_state",{}).get("execution_authority") in {"consumed","closed"},"mutation_not_retained":outcome.get("authority_consumption_state",{}).get("mutation_authority")=="not_retained","no_forbidden_payload":not any(contains_forbidden(v) for v in (intake,admission,session,handoff,observation,evidence,outcome))}
+ errors=[k for k,v in checks.items() if not v]; status="verified" if not errors and outcome.get("result_status")=="completed" else ("insufficient_evidence" if not checks["evidence_integrity"] else "blocked")
+ p={"engineering_execution_outcome_id":outcome.get("engineering_execution_outcome_id"),"checks":checks,"errors":errors,"warnings":[],"blocking_conditions":errors,"verification_status":status}
+ return artifact(SCHEMA,status,p,ID_KEY,PREFIX,KIND)
+def validate_engineering_governed_execution_verification(v:Any)->ValidationResult:return validate_artifact(v,schema=SCHEMA,statuses={"verified","blocked","invalid","insufficient_evidence"},id_key=ID_KEY,prefix=PREFIX,kind=KIND,fields=FIELDS)
+build_governed_execution_verification=build_engineering_governed_execution_verification
+__all__=["build_engineering_governed_execution_verification","build_governed_execution_verification","validate_engineering_governed_execution_verification"]
