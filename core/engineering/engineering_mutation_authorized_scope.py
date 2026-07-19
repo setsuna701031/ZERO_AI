@@ -1,0 +1,3 @@
+from __future__ import annotations
+from core.engineering.engineering_mutation_transaction_common import seal_mutation_authorized_scope
+__all__ = ['seal_mutation_authorized_scope']
