@@ -1,0 +1,10 @@
+from __future__ import annotations
+from typing import Any
+from core.engineering.engineering_mutation_preparation_common import *
+def build_prepared_mutation_operation(operation,proposal,approved_scope,decision,admission,sequence_index:int=0):
+ rs=[]
+ if admission.get('status')!='admitted': rs.append('admission_not_admitted')
+ if operation.get('operation_id') not in approved_scope.get('approved_operation_ids',[]): rs.append('operation_not_approved')
+ if operation.get('operation_type') not in OP_TYPES: rs.append('operation_type_invalid')
+ body={'original_proposal_operation_id':operation.get('operation_id'),'original_proposal_operation_fingerprint':op_fingerprint(operation),'operation_type':operation.get('operation_type'),'source_relative_path_fingerprint':sha256_text(operation.get('source_relative_path','')) if operation.get('source_relative_path') else None,'target_relative_path_fingerprint':target_fp(operation),'content_id':operation.get('proposed_content_id'),'content_fingerprint':content_fp(operation),'diff_id':None,'diff_fingerprint':diff_fp_for(proposal,operation),'precondition_id':operation.get('precondition_id'),'precondition_fingerprint':pre_fp(operation),'expected_workspace_id':proposal.get('workspace_id'),'expected_workspace_root_fingerprint':proposal.get('workspace_evidence',{}).get('workspace_root_fingerprint'),'expected_before_fingerprint':operation.get('expected_before_fingerprint'),'expected_after_fingerprint':operation.get('proposed_after_fingerprint'),'approved_scope_id':approved_scope.get('approved_scope_id'),'operator_decision_id':decision.get('decision_id'),'preparation_admission_id':admission.get('preparation_admission_id'),'sequence_index':sequence_index,'prepared':not rs,'executable':False,'mutation_authorized':False,'mutation_performed':False,'filesystem_write_performed':False,'patch_applied':False,'status':'prepared' if not rs else 'not_prepared','reason_codes':reasons(rs)}
+ return artifact('pmo',SCHEMAS['prepared_mutation_operation'],body,'prepared_operation_id')
