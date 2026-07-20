@@ -12,6 +12,7 @@ from core.engineering.engineering_repair_candidate_validation import validate_en
 from core.engineering.engineering_repair_plan import SCHEMA as REPAIR_PLAN_SCHEMA
 from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
 from core.engineering.engineering_completion_foundation import (PROPOSAL_LINKAGE_SCHEMA, VERIFICATION_RESULT_SCHEMA, COMPLETION_SCHEMA, validate_proposal_linkage, validate_verification_result, validate_completion)
+from core.engineering.engineering_bootstrap_request import SCHEMA as BOOTSTRAP_REQUEST_SCHEMA
 
 class _R:
     def __init__(self, valid: bool, errors=()): self.valid=valid; self.errors=tuple(errors)
@@ -40,8 +41,14 @@ def _task_verification_validator(a):
     return _R(not errors, errors)
 
 def known_adapters() -> tuple[EngineeringTaskArtifactAdapter, ...]:
+    from core.engineering.engineering_bootstrap_request_validation import validate_engineering_bootstrap_request
+    from core.engineering.engineering_bootstrap_pipeline import RESULT_SCHEMA as BOOTSTRAP_RESULT_SCHEMA, validate_engineering_bootstrap_result
     def d(**kw): return ArtifactAdapterDescriptor(**kw)
     items = [
+        (d(phase='bootstrap_request', supported_schema=BOOTSTRAP_REQUEST_SCHEMA, production_module='core.engineering.engineering_bootstrap_request_validation', validator_entry_point='validate_engineering_bootstrap_request', identity_field='bootstrap_request_id', status_field='bootstrap_status', accepted_statuses=('requested',), rejected_statuses=('invalid','blocked'), linkage_fields=('repository_identity',), validation_level='canonical_validator'),
+         validate_engineering_bootstrap_request),
+        (d(phase='bootstrap_result', supported_schema=BOOTSTRAP_RESULT_SCHEMA, production_module='core.engineering.engineering_bootstrap_pipeline', validator_entry_point='validate_engineering_bootstrap_result', identity_field='bootstrap_result_id', status_field='bootstrap_status', accepted_statuses=('proposal_ready',), rejected_statuses=('invalid','blocked','failed','insufficient_evidence'), linkage_fields=('repository_identity','bootstrap_request_identity'), validation_level='canonical_validator'),
+         validate_engineering_bootstrap_result),
         (d(phase='analysis', supported_schema=ANALYSIS_SCHEMA, production_module='core.engineering.repository_analysis_report', validator_entry_point='validate_repository_analysis_report', identity_field='repository_analysis_report_id', accepted_statuses=('reported',), rejected_statuses=('partial','invalid'), linkage_fields=('repository_identity','task_identity')),
          validate_repository_analysis_report),
         (d(phase='candidate_selection', supported_schema=CANDIDATE_SCHEMA, production_module='core.engineering.engineering_repair_candidate_validation', validator_entry_point='validate_engineering_repair_candidate', identity_field='candidate_id', status_field='selection_status', accepted_statuses=('selected',), rejected_statuses=('invalid','blocked','not_selected'), linkage_fields=('repository_identity','task_id','analysis_identity'), validation_level='canonical_validator'),
