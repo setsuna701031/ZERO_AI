@@ -5,6 +5,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.engineering.engineering_mutation_transaction_common import canonical_json
 from core.engineering import engineering_task_orchestration as o
 from core.engineering.engineering_task_orchestration_resume import resume_task
+from core.engineering.engineering_task_artifact_adapter_registry import default_registry
+from core.engineering.engineering_task_artifact_compatibility import build_compatibility_report
 
 def emit(v): print(canonical_json(v))
 def load_json(text):
@@ -21,7 +23,11 @@ def main(argv=None):
     ns=ap.parse_args(argv)
     try:
         p=load_json(ns.json or '{}'); c=ns.command; tid=ns.task_id or p.get('task_id')
-        if c=='create': out=o.create_task(ns.repo_root,p)
+        if c=='list-adapters': out={'adapters':default_registry().inventory()}
+        elif c=='inspect-adapter': out=default_registry().get(p.get('adapter_id')).descriptor.as_dict()
+        elif c=='compatibility-report': out=build_compatibility_report()
+        elif c=='validate-artifact': out=dict(default_registry().validate_artifact(p.get('phase'), p.get('artifact')))
+        elif c=='create': out=o.create_task(ns.repo_root,p)
         elif c=='inspect': out=o.inspect_task(ns.repo_root,tid)
         elif c=='admit': out=o.admit_task(ns.repo_root,tid)
         elif c=='attach-analysis': out=o.attach_analysis(ns.repo_root,tid,p)

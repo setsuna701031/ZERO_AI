@@ -70,7 +70,7 @@ def _handoff(root: Path, content: str, before_fp: str, after_fp: str, *, target:
         "human_authorization": {"authorized": human, "proposal_id": proposal_id, "target_path": TARGET, "positive_authorization_text": "AUTHORIZED v1.8 governed production repair"} if human else None,
         "authorization_verification": {"status": "verified"} if human and target == TARGET else {"status": "failed"},
         "authorization_decision": {"status": "authorized"} if human and target == TARGET else {"status": "failed"},
-        "authorized_scope": {"status": "valid", "target_path": TARGET} if target == TARGET else {"status": "invalid", "target_path": TARGET},
+        "authorized_scope": {"status": "valid", "authorized_operation_ids": [operation["operation_id"]], "authorized_target_paths": [TARGET], "authorized_operation_types": [operation["operation_type"]], "operation_count": 1} if target == TARGET else {"status": "invalid", "authorized_operation_ids": [operation["operation_id"]], "authorized_target_paths": [TARGET], "authorized_operation_types": [operation["operation_type"]], "operation_count": 1},
         "transaction_planning_completed": True,
         "transaction_execution_authorized": False,
         "authorization_token": {"token_id": "atok-v1-8", "token_purpose": "workspace_mutation_transaction_admission", "use_limit": 1, "token_consumed": False},
