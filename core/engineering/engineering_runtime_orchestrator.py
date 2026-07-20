@@ -15,12 +15,23 @@ from .engineering_runtime_result import build_engineering_runtime_result
 from .engineering_runtime_verification import verify_engineering_runtime
 from .engineering_runtime_evidence import build_engineering_runtime_evidence
 from .engineering_runtime_closure import close_engineering_runtime
+from .engineering_runtime_capability_admission import build_runtime_capability_admission
 
 def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_root=None,cli_execute=False,execute_confirmed=False):
     request=build_engineering_runtime_request(payload.get("request",payload)); session=build_engineering_runtime_session(request); phase=build_engineering_runtime_phase(session["session_id"])
     components={}; checkpoints=[build_engineering_runtime_checkpoint(session,phase)]
     identity=workspace_identity or {"workspace_id":request.get("workspace_id"),"workspace_root_fingerprint":request.get("workspace_root_fingerprint")}
-    admission=admit_engineering_runtime(request,session,identity,payload.get("prior_session")); components["admission"]=admission
+    capability_keys=("capability_registry","requested_capability_id","requested_operation","requested_adapter_id","requested_adapter_fingerprint")
+    capability_input_present=any(key in payload for key in capability_keys)
+    capability_admission=None
+    if capability_input_present:
+        capability_admission=build_runtime_capability_admission(session=session,request=request,
+            capability_registry=payload.get("capability_registry"),requested_capability_id=payload.get("requested_capability_id"),
+            requested_operation=payload.get("requested_operation"),requested_adapter_id=payload.get("requested_adapter_id"),
+            requested_adapter_fingerprint=payload.get("requested_adapter_fingerprint"),prior_admission=payload.get("prior_capability_admission"))
+        components["capability_admission"]=capability_admission
+        checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[capability_admission]))
+    admission=admit_engineering_runtime(request,session,identity,payload.get("prior_session"),capability_admission); components["admission"]=admission
     if admission["status"]=="admitted": phase=transition_phase(phase,"session_admitted"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[admission]))
     mode=request.get("requested_orchestration_mode")
     if admission["status"]=="admitted" and mode!="inspect":
