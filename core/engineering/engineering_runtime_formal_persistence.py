@@ -51,6 +51,7 @@ from core.engineering.mission_bootstrap import bootstrap_engineering_mission
 from core.engineering.repository_analysis import analyze_repository
 from core.engineering.repository_analysis_closure import validate_repository_analysis_closure
 from core.engineering.repository_analysis_request import prepare_repository_analysis_request
+from core.engineering.repository_scoped_analysis import explicit_scope_values, normalize_scoped_repository_scope
 from core.engineering.engineering_runtime_orchestrator_common import canonical_json
 from core.engineering.engineering_runtime_session_store import (
     load_session_store,
@@ -180,6 +181,19 @@ def _analysis_chain(payload: Mapping[str, Any], request: Mapping[str, Any], work
     intent = parse_developer_intent(_request_text(payload, request))
     bootstrap = bootstrap_engineering_mission(intent)
     analysis_request = prepare_repository_analysis_request(bootstrap)
+    scope_values = explicit_scope_values(request, payload)
+    scoped_scope = None
+    if scope_values is not None:
+        try:
+            scoped_scope = normalize_scoped_repository_scope(Path(workspace_root), scope_values)
+        except ValueError as exc:
+            raise FormalPersistenceError(str(exc)) from exc
+        payload_map = dict(analysis_request.get("analysis_request_payload") or {})
+        payload_map["bounded_scope_paths"] = list(scoped_scope.normalized_scope)
+        payload_map["bounded_scope_fingerprint_material"] = dict(scoped_scope.fingerprint_material)
+        analysis_request = {**analysis_request, "analysis_request_payload": payload_map}
+        from core.engineering.engineering_intake_common import identified
+        analysis_request = identified({k: v for k, v in analysis_request.items() if k not in {"repository_analysis_request_id", "fingerprint"}}, "repository_analysis_request_id", "engineering-repository-analysis-request-")
     closure = analyze_repository(analysis_request, workspace_root)
     return {
         "developer_intent": intent,
@@ -422,6 +436,12 @@ def run_formal_persistence_mainline(
             checked = validate_repository_analysis_closure(analysis_closure)
             if not checked.valid:
                 raise FormalPersistenceError("formal_analysis_readback_invalid")
+            requested_scope = explicit_scope_values(request, payload)
+            if requested_scope is not None:
+                expected_scope = list(normalize_scoped_repository_scope(Path(workspace_root), requested_scope).normalized_scope)
+                actual_scope = analysis_closure.get("report", {}).get("repository_summary", {}).get("normalized_scope")
+                if actual_scope != expected_scope:
+                    raise FormalPersistenceError("formal_analysis_scope_conflict")
             index = _read_index(session_root, session_id)
         persisted.append(_artifact_ref(analysis_closure, logical_key="formal_analysis", filename=FORMAL_ANALYSIS_FILE, phase="formal_analysis_persisted", sequence=10))
 
@@ -529,6 +549,12 @@ def _result(
         "executor_invoked": False,
         "workspace_mutation_performed": False,
         "git_mutation_performed": False,
+        "scoped_analysis_enabled": bool((chains.get("analysis_chain") or {}).get("repository_analysis_closure", {}).get("report", {}).get("repository_summary", {}).get("scoped_analysis_enabled")),
+        "normalized_scope": (chains.get("analysis_chain") or {}).get("repository_analysis_closure", {}).get("report", {}).get("repository_summary", {}).get("normalized_scope", []),
+        "analyzed_paths": (chains.get("analysis_chain") or {}).get("repository_analysis_closure", {}).get("report", {}).get("repository_summary", {}).get("analyzed_paths", []),
+        "proposed_missing_targets": (chains.get("analysis_chain") or {}).get("repository_analysis_closure", {}).get("report", {}).get("repository_summary", {}).get("proposed_missing_targets", []),
+        "analysis_coverage": (chains.get("analysis_chain") or {}).get("repository_analysis_closure", {}).get("report", {}).get("repository_summary", {}).get("analysis_coverage"),
+        "analysis_truncated": (chains.get("analysis_chain") or {}).get("repository_analysis_closure", {}).get("report", {}).get("repository_summary", {}).get("snapshot_truncated"),
     }
 
 

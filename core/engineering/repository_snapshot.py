@@ -8,6 +8,7 @@ from typing import Any
 
 from core.engineering.repository_analysis_common import (AdmittedRepositoryRoot, EXCLUDED_DIRECTORIES,
     MAX_ENTRIES, MAX_HASH_BYTES, MAX_PREVIEW_BYTES, artifact, linked, relative_path_valid, validate_artifact)
+from core.engineering.repository_scoped_analysis import ScopedRepositoryScope
 from core.engineering.repository_root_admission import validate_repository_root_admission
 
 SCHEMA = "zero.engineering.repository_snapshot.v1"; ID_KEY = "repository_snapshot_id"; PREFIX = "engineering-repository-snapshot-"
@@ -20,44 +21,62 @@ def _sensitive(name: str) -> bool:
 
 
 def build_repository_snapshot(admission: AdmittedRepositoryRoot, *, max_entries: int = MAX_ENTRIES,
-                              max_hash_bytes: int = MAX_HASH_BYTES, max_preview_bytes: int = MAX_PREVIEW_BYTES) -> dict[str, Any]:
+                              max_hash_bytes: int = MAX_HASH_BYTES, max_preview_bytes: int = MAX_PREVIEW_BYTES,
+                              scoped_scope: ScopedRepositoryScope | None = None) -> dict[str, Any]:
     source = admission.artifact
     common = {**linked(source, "root_admission", "repository_root_admission_id")}
     limits = {"max_entries": max(0, min(int(max_entries), MAX_ENTRIES)),
               "max_hash_bytes": max(0, min(int(max_hash_bytes), MAX_HASH_BYTES)),
               "max_preview_bytes": max(0, min(int(max_preview_bytes), MAX_PREVIEW_BYTES))}
+    scope_payload = {"scoped_analysis_enabled": False, "normalized_scope": [], "analyzed_paths": [], "proposed_missing_targets": [], "analysis_coverage": "repository_complete_when_not_truncated"}
+    if scoped_scope is not None:
+        scope_payload = {"scoped_analysis_enabled": True, "normalized_scope": list(scoped_scope.normalized_scope), "analyzed_paths": [], "proposed_missing_targets": list(scoped_scope.proposed_missing_targets), "analysis_coverage": "bounded_scope_only"}
     if not validate_repository_root_admission(source).valid or source.get("status") != "admitted" or admission.root is None:
         return artifact(SCHEMA, "rejected", {**common, "entries": [], "exclusions": sorted(EXCLUDED_DIRECTORIES),
-            "limits": limits, "truncated": False, "warnings": ["repository_root_not_admitted"]}, ID_KEY, PREFIX)
+            "limits": limits, "truncated": False, "warnings": ["repository_root_not_admitted"], **scope_payload}, ID_KEY, PREFIX)
     root = admission.root
     entries: list[dict[str, Any]] = []
     excluded: set[str] = set()
     warnings: set[str] = set()
     truncated = False
-    for current, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
-        current_path = Path(current)
-        kept = []
-        for dirname in sorted(dirnames):
-            target = current_path / dirname
-            rel = target.relative_to(root).as_posix()
-            if dirname.lower() in EXCLUDED_DIRECTORIES:
+    if scoped_scope is None:
+        for current, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+            current_path = Path(current)
+            kept = []
+            for dirname in sorted(dirnames):
+                target = current_path / dirname
+                rel = target.relative_to(root).as_posix()
+                if dirname.lower() in EXCLUDED_DIRECTORIES:
+                    excluded.add(rel); continue
+                if target.is_symlink():
+                    entries.append(_symlink_entry(root, target)); continue
+                kept.append(dirname)
+            dirnames[:] = kept
+            if current_path != root:
+                entries.append({"relative_path": current_path.relative_to(root).as_posix(), "entry_kind": "directory",
+                                "size_bytes": 0, "sha256": None, "text_kind": "not_applicable", "read_status": "metadata_only"})
+            for filename in sorted(filenames):
+                path = current_path / filename
+                entries.append(_file_entry(root, path, limits, warnings))
+            if len(entries) >= limits["max_entries"]:
+                truncated = True; break
+    else:
+        for rel in scoped_scope.existing_directories:
+            path = root / rel
+            if path.name.lower() in EXCLUDED_DIRECTORIES:
                 excluded.add(rel); continue
-            if target.is_symlink():
-                entries.append(_symlink_entry(root, target)); continue
-            kept.append(dirname)
-        dirnames[:] = kept
-        if current_path != root:
-            entries.append({"relative_path": current_path.relative_to(root).as_posix(), "entry_kind": "directory",
-                            "size_bytes": 0, "sha256": None, "text_kind": "not_applicable", "read_status": "metadata_only"})
-        for filename in sorted(filenames):
-            path = current_path / filename
-            entries.append(_file_entry(root, path, limits, warnings))
-        if len(entries) >= limits["max_entries"]:
-            truncated = True; break
+            entries.append({"relative_path": rel, "entry_kind": "directory", "size_bytes": 0, "sha256": None, "text_kind": "not_applicable", "read_status": "metadata_only"})
+        for rel in scoped_scope.existing_files:
+            entries.append(_file_entry(root, root / rel, limits, warnings))
+        for rel in scoped_scope.proposed_missing_targets:
+            entries.append({"relative_path": rel, "entry_kind": "missing", "size_bytes": 0, "sha256": None, "text_kind": "not_applicable", "read_status": "proposed_missing"})
+        if len(entries) > limits["max_entries"]:
+            truncated = True
     entries = sorted(entries, key=lambda item: item["relative_path"])[:limits["max_entries"]]
     status = "partial" if truncated or warnings else "captured"
+    analyzed_paths = sorted(e["relative_path"] for e in entries if e.get("read_status") != "proposed_missing")
     return artifact(SCHEMA, status, {**common, "entries": entries, "exclusions": sorted(excluded), "limits": limits,
-                    "truncated": truncated, "warnings": sorted(warnings)}, ID_KEY, PREFIX)
+                    "truncated": truncated, "warnings": sorted(warnings), **scope_payload, "analyzed_paths": analyzed_paths}, ID_KEY, PREFIX)
 
 
 def _symlink_entry(root: Path, path: Path) -> dict[str, Any]:
@@ -99,7 +118,7 @@ def _file_entry(root: Path, path: Path, limits: dict[str, int], warnings: set[st
 
 
 def validate_repository_snapshot(value: Any, source_admission: Any = None):
-    fields = {"source_root_admission_id", "source_root_admission_fingerprint", "entries", "exclusions", "limits", "truncated", "warnings"}
+    fields = {"source_root_admission_id", "source_root_admission_fingerprint", "entries", "exclusions", "limits", "truncated", "warnings", "scoped_analysis_enabled", "normalized_scope", "analyzed_paths", "proposed_missing_targets", "analysis_coverage"}
     result = validate_artifact(value, schema=SCHEMA, statuses={"captured", "partial", "rejected", "invalid"}, id_key=ID_KEY, prefix=PREFIX, fields=fields)
     errors = list(result.errors)
     if isinstance(value, dict):

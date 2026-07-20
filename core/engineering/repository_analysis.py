@@ -10,6 +10,7 @@ from core.engineering.repository_engineering_inventory import build_repository_e
 from core.engineering.repository_analysis_evidence import build_repository_analysis_evidence
 from core.engineering.repository_analysis_report import build_repository_analysis_report
 from core.engineering.repository_analysis_closure import build_repository_analysis_closure
+from core.engineering.repository_scoped_analysis import normalize_scoped_repository_scope
 
 SUPPORTED_SCHEMAS={
  "zero.engineering.repository_root_admission.v1","zero.engineering.repository_snapshot.v1","zero.engineering.repository_topology.v1",
@@ -19,7 +20,13 @@ SUPPORTED_SCHEMAS={
 def analyze_repository(request:Any,repository_root:Any)->dict[str,Any]:
  if not validate_repository_analysis_request(request).valid or request.get("status")!="prepared":raise ValueError("repository_analysis_request_invalid")
  admission_wrapper=admit_repository_root(repository_root);admission=admission_wrapper.artifact
- snapshot=build_repository_snapshot(admission_wrapper);topology=build_repository_topology(snapshot)
+ payload=request.get("analysis_request_payload") if isinstance(request,dict) else {}
+ scope_values=payload.get("bounded_scope_paths") if isinstance(payload,dict) else None
+ scoped_scope=None
+ if scope_values is not None:
+  if admission_wrapper.root is None: raise ValueError("scoped_analysis_root_not_admitted")
+  scoped_scope=normalize_scoped_repository_scope(admission_wrapper.root, scope_values)
+ snapshot=build_repository_snapshot(admission_wrapper, scoped_scope=scoped_scope);topology=build_repository_topology(snapshot)
  language,build,test=build_repository_discoveries(snapshot,topology,admission_wrapper)
  dependency=build_repository_dependency_analysis(snapshot,admission_wrapper);inventory=build_repository_engineering_inventory(snapshot,topology)
  evidence=build_repository_analysis_evidence([admission,snapshot,topology,language,build,test,dependency,inventory])

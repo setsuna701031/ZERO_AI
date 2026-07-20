@@ -83,5 +83,11 @@ def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_ro
             "executor_invoked": formal.get("executor_invoked", False),
             "workspace_mutation_performed": formal.get("workspace_mutation_performed", False),
             "git_mutation_performed": formal.get("git_mutation_performed", False),
+            "scoped_analysis_enabled": formal.get("scoped_analysis_enabled", False),
+            "normalized_scope": formal.get("normalized_scope", []),
+            "analyzed_paths": formal.get("analyzed_paths", []),
+            "proposed_missing_targets": formal.get("proposed_missing_targets", []),
+            "analysis_coverage": formal.get("analysis_coverage"),
+            "analysis_truncated": formal.get("analysis_truncated"),
         })
     return response
