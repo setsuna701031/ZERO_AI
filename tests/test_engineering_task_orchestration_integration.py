@@ -1,0 +1,4 @@
+from tests.test_engineering_task_orchestration import test_full_progression_with_monkeypatched_executor
+
+def test_end_to_end_orchestration_integration(tmp_path, monkeypatch):
+    test_full_progression_with_monkeypatched_executor(tmp_path, monkeypatch)
