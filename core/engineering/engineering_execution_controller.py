@@ -62,6 +62,35 @@ def execute_authorized_mutation(session, *, handoff: Mapping[str, Any], workspac
     if "result" not in result: raise EngineeringExecutionError("governed_executor_failed")
     return attach_execution_result(session, result["result"]), result
 
+def attach_verification_plan(session, verification_plan):
+    if not session.get("execution_identity"): raise EngineeringExecutionError("verification_plan_before_execution")
+    _phase_validate("verification_plan", verification_plan)
+    return _set_ref(session,"verification_plan",verification_plan,"verification_plan_id")
+def attach_verification_admission(session, verification_admission):
+    if not session.get("verification_plan_identity"): raise EngineeringExecutionError("admission_before_plan")
+    _phase_validate("verification_admission", verification_admission)
+    return _set_ref(session,"verification_admission",verification_admission,"verification_admission_id")
+def attach_verification_run(session, verification_run):
+    if not session.get("verification_admission_identity"): raise EngineeringExecutionError("run_before_admission")
+    _phase_validate("verification_run", verification_run)
+    return _set_ref(session,"verification_run",verification_run,"verification_run_id")
+def attach_runtime_continuation(session, runtime_continuation):
+    if not session.get("verification_result_identity"): raise EngineeringExecutionError("continuation_before_verification_result")
+    _phase_validate("runtime_continuation", runtime_continuation)
+    cur=deepcopy(dict(session)); cur.setdefault("bounded_summary",{})["completion_eligible"]=bool(runtime_continuation.get("completion_eligible")); cur["bounded_summary"]["verification_passed"]=runtime_continuation.get("decision")=="continue_to_completion"
+    return _set_ref(cur,"runtime_continuation",runtime_continuation,"runtime_continuation_id")
+def build_verification_plan(session, proposal, repair_plan, execution_result, **kwargs):
+    from core.engineering.engineering_verification_plan import build_verification_plan as _b
+    return _b(session=session, proposal=proposal, repair_plan=repair_plan, execution_result=execution_result, **kwargs)
+def admit_verification(plan, **kwargs):
+    from core.engineering.engineering_verification_admission import build_verification_admission
+    return build_verification_admission(plan, **kwargs)
+def decide_runtime_continuation(session, execution_result, verification_result, verification_run=None):
+    from core.engineering.engineering_runtime_continuation import build_runtime_continuation
+    return build_runtime_continuation(session=session, execution_result=execution_result, verification_result=verification_result, verification_run=verification_run)
+def run_verification(**kwargs):
+    from core.engineering.engineering_governed_verification_runner import run_governed_verification
+    return run_governed_verification(**kwargs)
 def attach_verification_result(session, verification_result):
     if not session.get("execution_identity"): raise EngineeringExecutionError("verification_before_execution")
     _phase_validate("verification_result", verification_result)
@@ -69,6 +98,7 @@ def attach_verification_result(session, verification_result):
     return _set_ref(session,"verification_result",verification_result,"verification_result_id")
 def complete_execution_session(session, *, completion: Mapping[str, Any]|None=None, task_id: str|None=None, repository_identity: Any=None, analysis_identity: str="", candidate_identity: str="", repair_plan: Mapping[str, Any]|None=None, proposal: Mapping[str, Any]|None=None, verification_result: Mapping[str, Any]|None=None):
     if not session.get("verification_result_identity"): raise EngineeringExecutionError("completion_before_verification")
+    if session.get("bounded_summary",{}).get("completion_eligible") is False: raise EngineeringExecutionError("completion_not_eligible")
     if completion is None:
         if not (repair_plan and proposal and verification_result): raise EngineeringExecutionError("completion_artifact_required")
         completion=build_completion(task_id=task_id or session.get("task_id"), repository_identity=repository_identity or session.get("repository_identity"), analysis_identity=analysis_identity, candidate_identity=candidate_identity, repair_plan=repair_plan, proposal=proposal, verification_result=verification_result)
