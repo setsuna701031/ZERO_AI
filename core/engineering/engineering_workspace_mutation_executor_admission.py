@@ -1,6 +1,23 @@
 from __future__ import annotations
 from .engineering_workspace_mutation_executor_common import *
 
+def _scope_values(scope, *names):
+    for name in names:
+        value=scope.get(name) if isinstance(scope,dict) else None
+        if value is not None: return list(value) if isinstance(value,(list,tuple)) else []
+    return []
+
+def _validate_explicit_authorized_scope(handoff,ops):
+    scope=handoff.get('authorized_scope')
+    if not isinstance(scope,dict): return []
+    rs=[]; op_ids=[o.get('operation_id') for o in ops]; targets=[target_rel(o) for o in ops]; types=[op_type(o) for o in ops]
+    if scope.get('status','valid') not in ('valid','authorized','approved'): rs.append('authorized_scope_invalid')
+    if _scope_values(scope,'authorized_operation_ids','operation_ids','allowed_operation_ids')!=op_ids: rs.append('authorized_operation_scope_mismatch')
+    if _scope_values(scope,'authorized_target_paths','target_paths','allowed_target_paths')!=targets: rs.append('authorized_target_scope_mismatch')
+    if _scope_values(scope,'authorized_operation_types','operation_types','allowed_operation_types') not in ([],types): rs.append('authorized_operation_type_scope_mismatch')
+    if scope.get('operation_count',len(op_ids))!=len(op_ids): rs.append('authorized_operation_count_mismatch')
+    return rs
+
 def admit_workspace_mutation_executor(binding,handoff):
     rs=[]; pkg=tx_package(handoff); ops=ops_from_handoff(handoff)
     if binding.artifact.get('status')!='bound': rs.append('workspace_binding_invalid')
@@ -8,7 +25,8 @@ def admit_workspace_mutation_executor(binding,handoff):
     for k in ('transaction_closure','readiness','transaction_package_validation','authorization_token','preparation_token','authorization_verification','authorization_decision','authorized_scope','mutation_package_validation'):
         a=handoff.get(k,{})
         if a and a.get('status') in ('invalid','not_ready','not_verified','not_valid','failed'): rs.append(k+'_invalid')
-    if handoff.get('human_mutation_authorization_obtained',handoff.get('human_authorization_obtained',True)) is not True: rs.append('human_authorization_missing')
+    if not ('human_mutation_authorization_obtained' in handoff or 'human_authorization_obtained' in handoff): rs.append('human_authorization_missing')
+    elif handoff.get('human_mutation_authorization_obtained',handoff.get('human_authorization_obtained')) is not True: rs.append('human_authorization_missing')
     if handoff.get('transaction_planning_completed',True) is not True: rs.append('transaction_planning_incomplete')
     if handoff.get('transaction_execution_authorized',False) is not False: rs.append('upstream_already_authorized')
     for k in FALSE_FLAGS:
@@ -19,6 +37,7 @@ def admit_workspace_mutation_executor(binding,handoff):
     if ptok and ptok.get('token_consumed') is not False: rs.append('preparation_token_consumed')
     if not ops: rs.append('empty_operation_subset')
     if len(ops)>MAX_OPS: rs.append('operation_bound_exceeded')
+    rs+=_validate_explicit_authorized_scope(handoff,ops) if ops else []
     targets=[]; ren=[]
     for o in ops:
         typ=op_type(o); tr=target_rel(o); sr=source_rel(o)
