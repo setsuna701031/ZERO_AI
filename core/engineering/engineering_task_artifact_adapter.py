@@ -102,7 +102,9 @@ class EngineeringTaskArtifactAdapter:
             raise ArtifactAdapterError("fingerprint_malformed")
         linkage = {k: artifact.get(k) for k in self.descriptor.linkage_fields if artifact.get(k) is not None}
         summary = {"status": status, "identity_field": self.descriptor.identity_field}
-        for k in ("target_scope","prohibited_scope","allowed_target_paths","prohibited_target_paths","operation_count","ordered_operation_ids"):
+        if self.descriptor.phase == 'repair_plan' and 'verification_expectations' in artifact:
+            summary['verification_expectation_ids'] = [x.get('expectation_id') for x in artifact.get('verification_expectations') or [] if isinstance(x, Mapping)]
+        for k in ("target_scope","prohibited_scope","allowed_target_paths","prohibited_target_paths","operation_count","ordered_operation_ids","verification_expectation_ids","verification_status","completion_status","closure_eligibility","proposal_identity","repair_plan_identity","execution_identity","verification_result_identity"):
             if k in artifact:
                 summary[k] = artifact.get(k)
         return build_artifact_reference(phase=self.descriptor.phase, schema=self.descriptor.supported_schema,

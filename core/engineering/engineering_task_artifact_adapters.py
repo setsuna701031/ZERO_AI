@@ -11,6 +11,7 @@ from core.engineering.engineering_repair_candidate import SCHEMA as CANDIDATE_SC
 from core.engineering.engineering_repair_candidate_validation import validate_engineering_repair_candidate
 from core.engineering.engineering_repair_plan import SCHEMA as REPAIR_PLAN_SCHEMA
 from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
+from core.engineering.engineering_completion_foundation import (PROPOSAL_LINKAGE_SCHEMA, VERIFICATION_RESULT_SCHEMA, COMPLETION_SCHEMA, validate_proposal_linkage, validate_verification_result, validate_completion)
 
 class _R:
     def __init__(self, valid: bool, errors=()): self.valid=valid; self.errors=tuple(errors)
@@ -49,6 +50,8 @@ def known_adapters() -> tuple[EngineeringTaskArtifactAdapter, ...]:
          validate_engineering_repair_plan),
         (d(phase='proposal', supported_schema='zero.engineering.change_proposal.v1', production_module='core.engineering.engineering_change_proposal', validator_entry_point='assemble_change_proposal', identity_field='proposal_id', accepted_statuses=('proposed',), rejected_statuses=('not_proposed',), linkage_fields=('repository_identity','task_identity')),
          _proposal_validator),
+        (d(phase='proposal_linkage', supported_schema=PROPOSAL_LINKAGE_SCHEMA, production_module='core.engineering.engineering_completion_foundation', validator_entry_point='validate_proposal_linkage', identity_field='proposal_linkage_id', accepted_statuses=('linked',), rejected_statuses=('invalid',), linkage_fields=('repository_identity','task_id','analysis_identity','candidate_identity','repair_plan_identity','proposal_identity'), validation_level='canonical_validator'),
+         lambda a: validate_proposal_linkage(a)),
         (d(phase='approval', supported_schema=APPROVAL_SCHEMA, production_module='core.engineering.engineering_approval_decision', validator_entry_point='validate_engineering_approval_decision', identity_field='approval_decision_id', status_field='decision', accepted_statuses=('approved',), rejected_statuses=('rejected','blocked','invalid','insufficient_evidence'), linkage_fields=('proposal_identity','task_identity')),
          validate_engineering_approval_decision),
         (d(phase='authorization', supported_schema=AUTH_SCHEMA, production_module='core.engineering.engineering_authorization_decision', validator_entry_point='validate_engineering_authorization_decision', identity_field='authorization_decision_id', status_field='decision', accepted_statuses=('authorized',), rejected_statuses=('denied','blocked','invalid','insufficient_evidence'), linkage_fields=('proposal_identity','approval_identity','task_identity')),
@@ -65,6 +68,10 @@ def known_adapters() -> tuple[EngineeringTaskArtifactAdapter, ...]:
          lambda a: _seal_valid(a,'handoff_id','mutx-handoff',{'handed_off'})),
         (d(phase='execution_result', supported_schema='zero.engineering.workspace_mutation_result.v1', production_module='core.engineering.engineering_workspace_mutation_result', validator_entry_point='build_result_contract', identity_field='result_id', accepted_statuses=('succeeded','failed_rolled_back','failed_recovery_required','rejected','duplicate_suppressed'), rejected_statuses=('invalid',), linkage_fields=('transaction_identity',), validation_level='canonical_builder_result'),
          lambda a: _seal_valid(a,'result_id','wsmut-result',{'succeeded','failed_rolled_back','failed_recovery_required','rejected','duplicate_suppressed'})),
+        (d(phase='verification_result', supported_schema=VERIFICATION_RESULT_SCHEMA, production_module='core.engineering.engineering_completion_foundation', validator_entry_point='validate_verification_result', identity_field='verification_result_id', status_field='verification_status', accepted_statuses=('passed',), rejected_statuses=('failed','blocked','invalid','not_verified'), linkage_fields=('task_id','repository_identity','proposal_identity','repair_plan_identity','execution_identity'), validation_level='canonical_validator'),
+         lambda a: validate_verification_result(a)),
+        (d(phase='completion', supported_schema=COMPLETION_SCHEMA, production_module='core.engineering.engineering_completion_foundation', validator_entry_point='validate_completion', identity_field='completion_id', status_field='completion_status', accepted_statuses=('completed',), rejected_statuses=('not_completed','blocked','failed','invalid'), linkage_fields=('task_id','repository_identity','proposal_identity','verification_result_identity'), validation_level='canonical_validator'),
+         lambda a: validate_completion(a)),
         (d(phase='verification', supported_schema=VERIFICATION_SCHEMA, production_module='core.engineering.engineering_task_orchestration_validation', validator_entry_point='task_verification_validator', identity_field='verification_id', accepted_statuses=('passed',), rejected_statuses=('failed','invalid'), linkage_fields=('task_identity','transaction_identity'), validation_level='canonical_validator'),
          _task_verification_validator),
     ]
