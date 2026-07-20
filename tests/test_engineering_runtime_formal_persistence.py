@@ -197,3 +197,77 @@ def test_conflicting_duplicate_and_tamper_fail_closed(tmp_path: Path) -> None:
         session_root=str(session_root),
     )
     assert _formal(rerun)["status"] == "invalid"
+
+
+def _run_payload(tmp_path: Path, payload: dict) -> tuple[dict, Path]:
+    session_root = tmp_path / "sessions"
+    result = orchestrate_engineering_runtime(
+        payload,
+        workspace_root=str(_repo(tmp_path)),
+        session_root=str(session_root),
+    )
+    return result, session_root
+
+
+def test_scoped_analysis_records_missing_target_and_avoids_unrelated_paths(tmp_path: Path) -> None:
+    result, session_root = _run(tmp_path, "propose")
+    formal = _formal(result)
+    analysis = read_session_artifact(session_root, formal["session_id"], "formal-analysis.json")
+    summary = analysis["report"]["repository_summary"]
+
+    assert formal["scoped_analysis_enabled"] is True
+    assert formal["normalized_scope"] == [TARGET]
+    assert summary["analysis_coverage"] == "bounded_scope_only"
+    assert summary["proposed_missing_targets"] == [TARGET]
+    assert summary["snapshot_truncated"] is False
+    assert TARGET in summary["proposed_missing_targets"]
+    assert "examples" in summary["analyzed_paths"]
+    assert all(not path.startswith(("core/", "cli/", "tests/")) for path in summary["analyzed_paths"])
+    assert not (tmp_path / "repo" / TARGET).exists()
+
+
+def test_scope_normalization_fail_closed_cases(tmp_path: Path) -> None:
+    cases = [
+        ("absolute", "/tmp/outside.json", "scoped_analysis_absolute_path"),
+        ("drive", "C:/outside.json", "scoped_analysis_absolute_path"),
+        ("traversal", "../outside.json", "scoped_analysis_traversal"),
+        ("missing_parent", "missing_dir/new.json", "scoped_analysis_missing_parent"),
+        ("empty", "", "scoped_analysis_empty_scope"),
+    ]
+    for name, target, reason in cases:
+        payload = _payload("propose")
+        payload["scope_constraints"] = [] if name == "empty" else [target]
+        payload["target_paths"] = [] if name == "empty" else [target]
+        result, _ = _run_payload(tmp_path / name, payload)
+        formal = _formal(result)
+        assert formal["status"] == "invalid"
+        assert reason in formal["reason_codes"][0]
+
+
+def test_symlink_escape_scope_fails_closed(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "examples" / "escape").symlink_to(outside, target_is_directory=True)
+    session_root = tmp_path / "sessions"
+    payload = _payload("propose")
+    payload["scope_constraints"] = ["examples/escape"]
+    payload["target_paths"] = ["examples/escape"]
+
+    result = orchestrate_engineering_runtime(payload, workspace_root=str(root), session_root=str(session_root))
+
+    assert _formal(result)["status"] == "invalid"
+    assert "scoped_analysis_symlink_rejected" in _formal(result)["reason_codes"][0]
+
+
+def test_conflicting_scope_on_same_session_fails_closed(tmp_path: Path) -> None:
+    result, session_root = _run(tmp_path, "propose")
+    payload = _payload("propose")
+    payload["scope_constraints"] = ["examples/.keep"]
+    payload["target_paths"] = ["examples/.keep"]
+
+    rerun = orchestrate_engineering_runtime(payload, workspace_root=str(tmp_path / "repo"), session_root=str(session_root))
+
+    assert _formal(result)["status"] == "awaiting_operator_approval"
+    assert _formal(rerun)["status"] == "invalid"
+    assert "formal_analysis_scope_conflict" in _formal(rerun)["reason_codes"][0]
