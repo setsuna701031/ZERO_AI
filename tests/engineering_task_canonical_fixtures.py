@@ -9,6 +9,7 @@ from core.engineering.engineering_task_orchestration_validation import VERIFICAT
 from core.engineering.repository_analysis_report import build_repository_analysis_report
 from core.engineering.engineering_repair_candidate import build_engineering_repair_candidate
 from core.engineering.engineering_repair_plan import build_engineering_repair_plan
+from core.engineering.engineering_completion_foundation import build_proposal_linkage, build_verification_result, build_completion
 
 
 def structural(schema: str, id_key: str, prefix: str, status: str, **extra: Any) -> dict[str, Any]:
@@ -47,6 +48,16 @@ def repair_plan(candidate: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def proposal() -> dict[str, Any]:
     return assemble_change_proposal({'intent': {'intent_id': 'intent-1'}, 'workspace_evidence': {'workspace_id': 'ws-task'}, 'scope_policy': {'maximum_affected_files': 1, 'maximum_total_proposed_content_bytes': 32}, 'operations': [], 'contents': []})
+
+def proposal_package(task_id: str, repository_identity: Any, analysis: dict[str, Any], candidate: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    p = proposal()
+    return {'proposal': p, 'proposal_linkage': build_proposal_linkage(task_id=task_id, repository_identity=repository_identity, analysis=analysis, candidate=candidate, repair_plan=plan, proposal=p)}
+
+def canonical_verification_result(task_id: str, repository_identity: Any, proposal_artifact: dict[str, Any], plan: dict[str, Any], execution_result_artifact: dict[str, Any]) -> dict[str, Any]:
+    return build_verification_result(task_id=task_id, repository_identity=repository_identity, proposal=proposal_artifact, repair_plan=plan, execution_result=execution_result_artifact, verification_status='passed', verification_expectation_results=[{'expectation_id':'verify-1','expectation_type':'focused_test_passed','status':'passed','summary':'focused validation passed','evidence_reference_ids':['ev-verify']}], evidence_references=[{'evidence_reference_id':'ev-verify','bounded_summary':'recorded externally'}])
+
+def canonical_completion(task_id: str, repository_identity: Any, analysis: dict[str, Any], candidate: dict[str, Any], plan: dict[str, Any], proposal_artifact: dict[str, Any], verification_result: dict[str, Any]) -> dict[str, Any]:
+    return build_completion(task_id=task_id, repository_identity=repository_identity, analysis_identity=analysis['repository_analysis_report_id'], candidate_identity=candidate['candidate_id'], repair_plan=plan, proposal=proposal_artifact, verification_result=verification_result)
 
 
 def approval_decision() -> dict[str, Any]:

@@ -7,6 +7,7 @@ from .engineering_task_artifact_adapter_registry import default_registry
 from .engineering_task_artifact_reference import mutable_reference
 from .engineering_repair_candidate_validation import validate_engineering_repair_candidate
 from .engineering_repair_plan_validation import validate_engineering_repair_plan
+from .engineering_completion_foundation import validate_proposal_linkage, validate_verification_result, validate_completion, SUCCESS_VERIFICATION_STATUSES
 
 class OrchestrationError(ValueError): pass
 
@@ -43,7 +44,7 @@ def _attach(repo_root,s,phase,key,artifact,next_state,pending=None,schema=None,s
 
 def create_task(repo_root, request):
     req=canonical_request(request); tid,tfp=task_identity(req)
-    state={'schema':STATE_SCHEMA,'task_id':tid,'task_fingerprint':tfp,'repository_identity':req['repository_identity'],'request_identity':stable_ref(req,'request_id'),'request':req,'lifecycle_state':'requested','lifecycle_revision':0,'analysis_identity':None,'candidate_identity':None,'plan_identity':None,'proposal_identity':None,'approval_identity':None,'authorization_identity':None,'authorized_scope_identity':None,'preparation_identity':None,'authorization_token_identity':None,'preparation_token_identity':None,'executor_handoff_identity':None,'transaction_identity':None,'execution_result_identity':None,'verification_identity':None,'closure_identity':None,'transaction_evidence_linkage':None,'completed_phases':['requested'],'pending_requirement':'task_admission','failure':None,'terminal':False,'execution_started':False,'execution_completed':False,'execution_replay_prohibited':False}
+    state={'schema':STATE_SCHEMA,'task_id':tid,'task_fingerprint':tfp,'repository_identity':req['repository_identity'],'request_identity':stable_ref(req,'request_id'),'request':req,'lifecycle_state':'requested','lifecycle_revision':0,'analysis_identity':None,'candidate_identity':None,'plan_identity':None,'proposal_identity':None,'approval_identity':None,'authorization_identity':None,'authorized_scope_identity':None,'preparation_identity':None,'authorization_token_identity':None,'preparation_token_identity':None,'executor_handoff_identity':None,'transaction_identity':None,'execution_result_identity':None,'verification_identity':None,'completion_identity':None,'closure_identity':None,'proposal_linkage_identity':None,'verification_linkage':None,'completion_linkage':None,'transaction_evidence_linkage':None,'completed_phases':['requested'],'pending_requirement':'task_admission','failure':None,'terminal':False,'execution_started':False,'execution_completed':False,'execution_replay_prohibited':False}
     return _persist(repo_root,state)
 
 def admit_task(repo_root, task_id):
@@ -64,7 +65,27 @@ def attach_plan(repo_root,task_id,a):
     r=validate_engineering_repair_plan(a, candidate=candidate_context, task_id=s.get('task_id'), repository_identity=s.get('repository_identity'), analysis_identity=(s.get('analysis_identity') or {}).get('artifact_identity'), request_scope=s.get('request',{}).get('bounded_target_scope'))
     if not r.valid: raise OrchestrationError('plan_validation_failed:'+','.join(r.errors))
     return _attach(repo_root,s,'candidate_selected','plan_identity',a,'plan_ready','proposal')
-def attach_proposal(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'plan_ready','proposal_identity',a,'awaiting_human_approval','human_approval')
+
+def attach_proposal(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    if s.get('terminal'): raise OrchestrationError('terminal_state_immutable')
+    existing=s.get('proposal_identity')
+    proposal=a.get('proposal') if isinstance(a,dict) and a.get('proposal_linkage') else a
+    linkage=a.get('proposal_linkage') if isinstance(a,dict) else None
+    if not linkage: raise OrchestrationError('proposal_linkage_required')
+    if existing:
+        pref=mutable_reference(default_registry().validate_artifact('proposal', proposal))
+        lref=mutable_reference(default_registry().validate_artifact('proposal_linkage', linkage))
+        if existing.get('artifact_identity')==pref.get('artifact_identity') and existing.get('artifact_fingerprint')==pref.get('artifact_fingerprint') and (s.get('proposal_linkage_identity') or {}).get('artifact_fingerprint')==lref.get('artifact_fingerprint'):
+            return s
+        raise OrchestrationError('conflicting_artifact_replay')
+    _ensure(s,'plan_ready')
+    analysis=s.get('analysis_identity') or {}; cand=s.get('candidate_identity') or {}; plan=s.get('plan_identity') or {}
+    r=validate_proposal_linkage(linkage, task_id=s.get('task_id'), repository_identity=s.get('repository_identity'), analysis=analysis, candidate=cand, repair_plan={'repair_plan_id':plan.get('artifact_identity'),'fingerprint':plan.get('artifact_fingerprint'), **(plan.get('bounded_summary') or {})}, proposal=proposal)
+    if not r.valid: raise OrchestrationError('proposal_linkage_validation_failed:'+','.join(r.errors))
+    n=_attach(repo_root,s,'plan_ready','proposal_identity',proposal,'awaiting_human_approval','human_approval')
+    n=dict(n); n['proposal_linkage_identity']=mutable_reference(default_registry().validate_artifact('proposal_linkage', linkage)); return _persist(repo_root,n)
+
 def attach_human_approval(repo_root,task_id,a):
     s=_load(repo_root,task_id)
     if a.get('status') not in ('approved','verified') and a.get('decision')!='approved': raise OrchestrationError('approval_not_positive')
@@ -100,7 +121,24 @@ def execute_task(repo_root,task_id,handoff,workspace_root):
     if result.get('execution_closure'): m['transaction_closure_identity']=stable_ref(result['execution_closure'],'closure_id')
     if result.get('failure'): m['failure']={'code':'governed_execution_failed','detail':stable_ref(result['failure'])}
     return _persist(repo_root,m)
+
+def attach_verification_result(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    if s.get('verification_identity'):
+        ref=mutable_reference(default_registry().validate_artifact('verification_result', a))
+        if s['verification_identity'].get('artifact_identity')==ref.get('artifact_identity') and s['verification_identity'].get('artifact_fingerprint')==ref.get('artifact_fingerprint'): return s
+        raise OrchestrationError('conflicting_artifact_replay')
+    _ensure(s,'executed')
+    if not s.get('proposal_identity') or not s.get('execution_result_identity'): raise OrchestrationError('proposal_and_execution_required')
+    plan=s.get('plan_identity') or {}
+    r=validate_verification_result(a, task_id=s.get('task_id'), repository_identity=s.get('repository_identity'), proposal=s.get('proposal_identity') or {}, repair_plan={'repair_plan_id':plan.get('artifact_identity'),'fingerprint':plan.get('artifact_fingerprint'), **(plan.get('bounded_summary') or {})}, execution_result=s.get('execution_result_identity') or {})
+    if not r.valid: raise OrchestrationError('verification_validation_failed:'+','.join(r.errors))
+    ref=mutable_reference(default_registry().validate_artifact('verification_result', a))
+    n=dict(s); n['verification_identity']=ref; n['completed_phases']=list(dict.fromkeys([*n.get('completed_phases',[]),'verified'])); n['lifecycle_state']='verified'; n['lifecycle_revision']=n.get('lifecycle_revision',0)+1; n['pending_requirement']='completion'
+    n['verification_linkage']={'proposal_identity':a.get('proposal_identity'),'repair_plan_identity':a.get('repair_plan_identity'),'execution_identity':a.get('execution_identity')}; return _persist(repo_root,n)
+
 def attach_verification(repo_root,task_id,a):
+    if isinstance(a,dict) and a.get('schema')=='zero.engineering.verification_result.v1': return attach_verification_result(repo_root,task_id,a)
     s=_load(repo_root,task_id); _ensure(s,'executed')
     if a.get('task_id')!=s.get('task_id'): raise OrchestrationError('task_id_mismatch')
     if a.get('transaction_identity')!=s.get('transaction_identity'): raise OrchestrationError('transaction_identity_mismatch')
@@ -108,8 +146,24 @@ def attach_verification(repo_root,task_id,a):
     exp=set(s.get('request',{}).get('requested_verification_expectations') or [])
     if not exp.issubset(set(a.get('performed_verification_set') or [])): raise OrchestrationError('verification_incomplete')
     return _attach(repo_root,s,'executed','verification_identity',a,'verified','closure',schema=VERIFICATION_SCHEMA,statuses={'passed'},id_keys=('verification_id',))
+
+def attach_completion(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    if s.get('terminal'): raise OrchestrationError('terminal_state_immutable')
+    if s.get('completion_identity'):
+        ref=mutable_reference(default_registry().validate_artifact('completion', a))
+        if s['completion_identity'].get('artifact_identity')==ref.get('artifact_identity') and s['completion_identity'].get('artifact_fingerprint')==ref.get('artifact_fingerprint'): return s
+        raise OrchestrationError('conflicting_artifact_replay')
+    _ensure(s,'verified')
+    verification=s.get('verification_identity') or {}
+    if verification.get('validation_status') not in SUCCESS_VERIFICATION_STATUSES: raise OrchestrationError('verification_not_successful')
+    r=validate_completion(a, task_id=s.get('task_id'), repository_identity=s.get('repository_identity'), proposal=s.get('proposal_identity') or {}, verification_result=verification)
+    if not r.valid: raise OrchestrationError('completion_validation_failed:'+','.join(r.errors))
+    n=_attach(repo_root,s,'verified','completion_identity',a,'completed','closure')
+    n=dict(n); n['completion_linkage']={'proposal_identity':a.get('proposal_identity'),'verification_result_identity':a.get('verification_result_identity'),'closure_eligibility':a.get('closure_eligibility')}; return _persist(repo_root,n)
+
 def close_task(repo_root,task_id):
-    s=_load(repo_root,task_id); _ensure(s,'verified')
+    s=_load(repo_root,task_id); _ensure(s,'completed')
     closure=build_task_closure(s); n=dict(s); n['closure_identity']={'schema':closure['schema'],'id':closure['closure_id'],'fingerprint':closure['closure_fingerprint']}; n['closure']=closure; n['lifecycle_state']='closed'; n['terminal']=True; n['pending_requirement']=None; n['completed_phases']=list(dict.fromkeys([*n.get('completed_phases',[]),'closed'])); n['lifecycle_revision']+=1
     return _persist(repo_root,n)
 def inspect_task(repo_root,task_id): return _load(repo_root,task_id)

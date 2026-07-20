@@ -1,4 +1,5 @@
 from core.engineering.engineering_task_orchestration import *
+from core.engineering.engineering_completion_foundation import build_completion
 from core.engineering.engineering_task_orchestration_resume import resume_task
 from tests import engineering_task_canonical_fixtures as cf
 import pytest
@@ -7,7 +8,7 @@ def req(): return {'repository_identity':{'id':'repo','fingerprint':'r'},'reques
 def art(name, status='ok', **kw):
     return {'schema':f'zero.test.{name}.v1', f'{name}_id':f'{name}-1','fingerprint':f'fp-{name}','status':status, **kw}
 def ready(tmp_path):
-    s=create_task(tmp_path, req()); tid=s['task_id']; admit_task(tmp_path,tid); analysis=cf.analysis_report(); attach_analysis(tmp_path,tid,analysis); cand=cf.candidate_selection(task_id=tid, repository_identity=s['repository_identity'], analysis=analysis); attach_candidate_selection(tmp_path,tid,cand); attach_plan(tmp_path,tid,cf.repair_plan(cand)); attach_proposal(tmp_path,tid,cf.proposal()); return tid
+    s=create_task(tmp_path, req()); tid=s['task_id']; admit_task(tmp_path,tid); analysis=cf.analysis_report(); attach_analysis(tmp_path,tid,analysis); cand=cf.candidate_selection(task_id=tid, repository_identity=s['repository_identity'], analysis=analysis); attach_candidate_selection(tmp_path,tid,cand); plan=cf.repair_plan(cand); attach_plan(tmp_path,tid,plan); attach_proposal(tmp_path,tid,cf.proposal_package(tid,s['repository_identity'],analysis,cand,plan)); return tid
 
 def test_deterministic_task_creation(tmp_path):
     a=create_task(tmp_path, req()); b=create_task(tmp_path, dict(reversed(list(req().items()))))
@@ -49,7 +50,12 @@ def test_full_progression_with_monkeypatched_executor(tmp_path, monkeypatch):
     monkeypatch.setattr('core.engineering.engineering_governed_workspace_mutation_executor.execute_pipeline', fake)
     s=execute_task(tmp_path,tid,cf.executor_handoff(),tmp_path); assert s['lifecycle_state']=='executed' and calls==[1]
     with pytest.raises(Exception): execute_task(tmp_path,tid,{},tmp_path)
-    v=cf.task_verification(tid, s['transaction_identity'])
-    assert attach_verification(tmp_path,tid,v)['lifecycle_state']=='verified'
+    v=cf.canonical_verification_result(tid, inspect_task(tmp_path,tid)['repository_identity'], inspect_task(tmp_path,tid)['proposal_identity'], cf.repair_plan(cf.candidate_selection()), s['execution_result_identity'])
+    # rebuild canonical result against the accepted plan/proposal references
+    st=inspect_task(tmp_path,tid); plan={'repair_plan_id':st['plan_identity']['artifact_identity'],'fingerprint':st['plan_identity']['artifact_fingerprint'], **st['plan_identity']['bounded_summary']}
+    v=cf.canonical_verification_result(tid, st['repository_identity'], st['proposal_identity'], plan, st['execution_result_identity'])
+    assert attach_verification_result(tmp_path,tid,v)['lifecycle_state']=='verified'
+    st=inspect_task(tmp_path,tid); comp=build_completion(task_id=tid, repository_identity=st['repository_identity'], analysis_identity=st['analysis_identity']['artifact_identity'], candidate_identity=st['candidate_identity']['artifact_identity'], repair_plan=plan, proposal=st['proposal_identity'], verification_result=v)
+    assert attach_completion(tmp_path,tid,comp)['lifecycle_state']=='completed'
     c=close_task(tmp_path,tid); assert c['lifecycle_state']=='closed' and c['terminal'] is True
     with pytest.raises(Exception): attach_analysis(tmp_path,tid,art('analysis'))

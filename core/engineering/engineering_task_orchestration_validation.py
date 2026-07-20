@@ -59,7 +59,7 @@ def validate_state(state:Any)->ValidationResult:
     if state.get('schema')!=STATE_SCHEMA: e.append('invalid_schema')
     if state.get('task_fingerprint')!=state.get('state_fingerprint'): pass
     if state.get('state_fingerprint')!=state_fingerprint(state): e.append('state_fingerprint_mismatch')
-    if state.get('lifecycle_state') not in {'requested','admitted','analysis_ready','candidate_selected','plan_ready','awaiting_human_approval','approved','authorized','prepared','execution_ready','executing','executed','verification_pending','verified','closing','closed','blocked','failed','invalid'}: e.append('invalid_lifecycle_state')
+    if state.get('lifecycle_state') not in {'requested','admitted','analysis_ready','candidate_selected','plan_ready','awaiting_human_approval','approved','authorized','prepared','execution_ready','executing','executed','verification_pending','verified','completed','closing','closed','blocked','failed','invalid'}: e.append('invalid_lifecycle_state')
     return ValidationResult(not e, tuple(e))
 
 def same_ref(existing:dict[str,Any]|None, artifact:Mapping[str,Any], *id_keys:str)->bool:

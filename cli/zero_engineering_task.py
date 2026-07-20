@@ -11,6 +11,7 @@ from core.engineering.engineering_repair_candidate import build_engineering_repa
 from core.engineering.engineering_repair_candidate_validation import validate_engineering_repair_candidate
 from core.engineering.engineering_repair_plan import build_engineering_repair_plan
 from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
+from core.engineering.engineering_completion_foundation import build_proposal_linkage, validate_proposal_linkage, build_verification_result, validate_verification_result, build_completion, validate_completion
 
 def emit(v): print(canonical_json(v))
 def load_json(text):
@@ -39,6 +40,18 @@ def main(argv=None):
         elif c=='validate-plan':
             r=validate_engineering_repair_plan(p.get('plan',p), candidate=p.get('candidate'), task_id=p.get('expected_task_id'), repository_identity=p.get('expected_repository_identity'), analysis_identity=p.get('expected_analysis_identity'), request_scope=p.get('request_scope'))
             out={'valid':r.valid,'errors':list(r.errors)}
+        elif c=='build-proposal-linkage': out=build_proposal_linkage(**p)
+        elif c=='validate-proposal-linkage':
+            r=validate_proposal_linkage(p.get('proposal_linkage',p), task_id=p.get('expected_task_id'), repository_identity=p.get('expected_repository_identity'), analysis=p.get('analysis'), candidate=p.get('candidate'), repair_plan=p.get('repair_plan'), proposal=p.get('proposal'))
+            out={'valid':r.valid,'errors':list(r.errors)}
+        elif c=='build-verification-result': out=build_verification_result(**p)
+        elif c=='validate-verification-result':
+            r=validate_verification_result(p.get('verification_result',p), task_id=p.get('expected_task_id'), repository_identity=p.get('expected_repository_identity'), proposal=p.get('proposal'), repair_plan=p.get('repair_plan'), execution_result=p.get('execution_result'))
+            out={'valid':r.valid,'errors':list(r.errors)}
+        elif c=='build-completion': out=build_completion(**p)
+        elif c=='validate-completion':
+            r=validate_completion(p.get('completion',p), task_id=p.get('expected_task_id'), repository_identity=p.get('expected_repository_identity'), proposal=p.get('proposal'), verification_result=p.get('verification_result'))
+            out={'valid':r.valid,'errors':list(r.errors)}
         elif c=='create': out=o.create_task(ns.repo_root,p)
         elif c=='inspect': out=o.inspect_task(ns.repo_root,tid)
         elif c=='admit': out=o.admit_task(ns.repo_root,tid)
@@ -52,6 +65,8 @@ def main(argv=None):
         elif c=='attach-token': out=o.attach_authorization_token(ns.repo_root,tid,p)
         elif c=='execute': out=o.execute_task(ns.repo_root,tid,p['handoff'],ns.workspace_root or p['workspace_root'])
         elif c=='attach-verification': out=o.attach_verification(ns.repo_root,tid,p)
+        elif c=='attach-verification-result': out=o.attach_verification_result(ns.repo_root,tid,p)
+        elif c=='attach-completion': out=o.attach_completion(ns.repo_root,tid,p)
         elif c=='close': out=o.close_task(ns.repo_root,tid)
         elif c=='resume': out=resume_task(ns.repo_root,tid)
         else: out={'error':{'code':'unknown_command'}}
