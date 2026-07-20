@@ -16,6 +16,7 @@ from .engineering_runtime_verification import verify_engineering_runtime
 from .engineering_runtime_evidence import build_engineering_runtime_evidence
 from .engineering_runtime_closure import close_engineering_runtime
 from .engineering_runtime_capability_admission import build_runtime_capability_admission
+from .engineering_runtime_adapter_invocation_pipeline import orchestrate_runtime_adapter_invocation
 
 def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_root=None,cli_execute=False,execute_confirmed=False):
     request=build_engineering_runtime_request(payload.get("request",payload)); session=build_engineering_runtime_session(request); phase=build_engineering_runtime_phase(session["session_id"])
@@ -32,9 +33,19 @@ def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_ro
         components["capability_admission"]=capability_admission
         checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[capability_admission]))
     admission=admit_engineering_runtime(request,session,identity,payload.get("prior_session"),capability_admission); components["admission"]=admission
-    if admission["status"]=="admitted": phase=transition_phase(phase,"session_admitted"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[admission]))
+    invocation_input=payload.get("adapter_invocation")
+    invocation_outcome=None
+    if invocation_input is not None:
+        invocation=orchestrate_runtime_adapter_invocation(invocation_input,
+            {"session_id":session.get("session_id"),"request_fingerprint":request.get("fingerprint"),"workspace_id":request.get("workspace_id")},
+            capability_admission)
+        invocation_outcome={"status":invocation["status"],"reason_codes":invocation["reason_codes"]}
+        for name, artifact_value in invocation.get("artifacts",{}).items():
+            components[name]=artifact_value
+    invocation_admitted=invocation_input is None or invocation_outcome.get("status")=="completed_without_mutation"
+    if admission["status"]=="admitted" and invocation_admitted: phase=transition_phase(phase,"session_admitted"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[admission]))
     mode=request.get("requested_orchestration_mode")
-    if admission["status"]=="admitted" and mode!="inspect":
+    if admission["status"]=="admitted" and invocation_admitted and mode!="inspect":
         analysis=coordinate_engineering_runtime_analysis(request,payload.get("analysis_artifacts",[])); components["analysis"]=analysis
         if analysis["status"]=="coordinated": phase=transition_phase(phase,"analysis_coordinated"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[analysis]))
         if mode in ("propose","prepare","authorize","execute") and analysis["status"]=="coordinated":
@@ -53,5 +64,5 @@ def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_ro
                             if execution["status"] not in ("ready","rejected","invalid"):
                                 phase=transition_phase(phase,"execution_started"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[execution],execution_mode="enabled"))
                                 phase=transition_phase(phase,"execution_terminal"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[execution],execution_mode="enabled",result_status=execution["status"]))
-    result=build_engineering_runtime_result(request,session,phase,checkpoints,components); verification=verify_engineering_runtime(request,session,phase,checkpoints,result); evidence=build_engineering_runtime_evidence(request,session,checkpoints,result,verification,components); closure=close_engineering_runtime(result,verification,evidence)
+    result=build_engineering_runtime_result(request,session,phase,checkpoints,components,invocation_outcome); verification=verify_engineering_runtime(request,session,phase,checkpoints,result); evidence=build_engineering_runtime_evidence(request,session,checkpoints,result,verification,components); closure=close_engineering_runtime(result,verification,evidence)
     return {"request":request,"session":session,"phase":phase,"checkpoints":checkpoints,**components,"result":result,"verification":verification,"evidence":evidence,"closure":closure}
