@@ -12,6 +12,14 @@ from core.engineering.engineering_repair_candidate_validation import validate_en
 from core.engineering.engineering_repair_plan import SCHEMA as REPAIR_PLAN_SCHEMA
 from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
 from core.engineering.engineering_completion_foundation import (PROPOSAL_LINKAGE_SCHEMA, VERIFICATION_RESULT_SCHEMA, COMPLETION_SCHEMA, validate_proposal_linkage, validate_verification_result, validate_completion)
+from core.engineering.engineering_verification_plan import SCHEMA as VERIFICATION_PLAN_SCHEMA
+from core.engineering.engineering_verification_plan_validation import validate_verification_plan
+from core.engineering.engineering_verification_admission import SCHEMA as VERIFICATION_ADMISSION_SCHEMA
+from core.engineering.engineering_verification_admission_validation import validate_verification_admission
+from core.engineering.engineering_verification_run import SCHEMA as VERIFICATION_RUN_SCHEMA
+from core.engineering.engineering_verification_run_validation import validate_verification_run
+from core.engineering.engineering_runtime_continuation import SCHEMA as RUNTIME_CONTINUATION_SCHEMA
+from core.engineering.engineering_runtime_continuation_validation import validate_runtime_continuation
 from core.engineering.engineering_execution_session import SESSION_SCHEMA, REPORT_SCHEMA, validate_engineering_execution_session
 from core.engineering.engineering_execution_session_report import validate_execution_session_report
 from core.engineering.engineering_bootstrap_request import SCHEMA as BOOTSTRAP_REQUEST_SCHEMA
@@ -77,6 +85,14 @@ def known_adapters() -> tuple[EngineeringTaskArtifactAdapter, ...]:
          lambda a: _seal_valid(a,'handoff_id','mutx-handoff',{'handed_off'})),
         (d(phase='execution_result', supported_schema='zero.engineering.workspace_mutation_result.v1', production_module='core.engineering.engineering_workspace_mutation_result', validator_entry_point='build_result_contract', identity_field='result_id', accepted_statuses=('succeeded','failed_rolled_back','failed_recovery_required','rejected','duplicate_suppressed'), rejected_statuses=('invalid',), linkage_fields=('transaction_identity',), validation_level='canonical_builder_result'),
          lambda a: _seal_valid(a,'result_id','wsmut-result',{'succeeded','failed_rolled_back','failed_recovery_required','rejected','duplicate_suppressed'})),
+        (d(phase='verification_plan', supported_schema=VERIFICATION_PLAN_SCHEMA, production_module='core.engineering.engineering_verification_plan_validation', validator_entry_point='validate_verification_plan', identity_field='verification_plan_id', status_field='schema', accepted_statuses=(VERIFICATION_PLAN_SCHEMA,), rejected_statuses=('invalid',), linkage_fields=('task_id','repository_identity','execution_session_id','execution_result_identity'), validation_level='canonical_validator'),
+         validate_verification_plan),
+        (d(phase='verification_admission', supported_schema=VERIFICATION_ADMISSION_SCHEMA, production_module='core.engineering.engineering_verification_admission_validation', validator_entry_point='validate_verification_admission', identity_field='verification_admission_id', status_field='admission_status', accepted_statuses=('admitted',), rejected_statuses=('blocked','invalid','consumed'), linkage_fields=('verification_plan_identity','execution_session_id','execution_result_identity'), validation_level='canonical_validator'),
+         validate_verification_admission),
+        (d(phase='verification_run', supported_schema=VERIFICATION_RUN_SCHEMA, production_module='core.engineering.engineering_verification_run_validation', validator_entry_point='validate_verification_run', identity_field='verification_run_id', status_field='run_status', accepted_statuses=('passed',), rejected_statuses=('failed','blocked','invalid','runner_error'), linkage_fields=('verification_plan_identity','verification_admission_identity','execution_session_id','execution_result_identity'), validation_level='canonical_validator'),
+         validate_verification_run),
+        (d(phase='runtime_continuation', supported_schema=RUNTIME_CONTINUATION_SCHEMA, production_module='core.engineering.engineering_runtime_continuation_validation', validator_entry_point='validate_runtime_continuation', identity_field='runtime_continuation_id', status_field='decision', accepted_statuses=('continue_to_completion',), rejected_statuses=('remain_blocked','verification_failed','manual_intervention_required','invalid'), linkage_fields=('execution_session_id','execution_result_identity','verification_result_identity'), validation_level='canonical_validator'),
+         validate_runtime_continuation),
         (d(phase='verification_result', supported_schema=VERIFICATION_RESULT_SCHEMA, production_module='core.engineering.engineering_completion_foundation', validator_entry_point='validate_verification_result', identity_field='verification_result_id', status_field='verification_status', accepted_statuses=('passed',), rejected_statuses=('failed','blocked','invalid','not_verified'), linkage_fields=('task_id','repository_identity','proposal_identity','repair_plan_identity','execution_identity'), validation_level='canonical_validator'),
          lambda a: validate_verification_result(a)),
         (d(phase='completion', supported_schema=COMPLETION_SCHEMA, production_module='core.engineering.engineering_completion_foundation', validator_entry_point='validate_completion', identity_field='completion_id', status_field='completion_status', accepted_statuses=('completed',), rejected_statuses=('not_completed','blocked','failed','invalid'), linkage_fields=('task_id','repository_identity','proposal_identity','verification_result_identity'), validation_level='canonical_validator'),
