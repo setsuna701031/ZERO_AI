@@ -1,0 +1,85 @@
+from __future__ import annotations
+from typing import Any, Mapping
+from .engineering_task_orchestration_validation import *
+from .engineering_task_orchestration_persistence import save_state, load_state
+from .engineering_task_orchestration_closure import build_task_closure
+
+class OrchestrationError(ValueError): pass
+
+def seal_state(s:Mapping[str,Any])->dict[str,Any]:
+    d=dict(s); d['state_fingerprint']=state_fingerprint({k:v for k,v in d.items() if k!='state_fingerprint'}); return d
+
+def _persist(repo_root, s): return save_state(repo_root, seal_state(s))
+def _load(repo_root, task_id): return load_state(repo_root, task_id)
+def _ensure(s, state):
+    if s.get('terminal'): raise OrchestrationError('terminal_state_immutable')
+    if s.get('lifecycle_state')!=state: raise OrchestrationError('out_of_order_artifact')
+def _attach(repo_root,s,phase,key,artifact,next_state,pending=None,schema=None,statuses=None,id_keys=()):
+    if s.get('terminal'):
+        raise OrchestrationError('terminal_state_immutable')
+    ref=stable_ref(artifact,*id_keys)
+    if s.get(key):
+        if s[key]==ref: return s
+        raise OrchestrationError('conflicting_artifact_replay')
+    _ensure(s, phase)
+    v=require_artifact(artifact,schema,statuses)
+    if not v.valid: raise OrchestrationError(','.join(v.errors))
+    if artifact.get('task_id') not in (None,s.get('task_id')): raise OrchestrationError('task_id_mismatch')
+    if artifact.get('repository_identity') not in (None,s.get('repository_identity')): raise OrchestrationError('repository_identity_mismatch')
+    n=dict(s); n[key]=ref; n['completed_phases']=list(dict.fromkeys([*n.get('completed_phases',[]), next_state])); n['lifecycle_state']=next_state; n['lifecycle_revision']=n.get('lifecycle_revision',0)+1; n['pending_requirement']=pending
+    return _persist(repo_root,n)
+
+def create_task(repo_root, request):
+    req=canonical_request(request); tid,tfp=task_identity(req)
+    state={'schema':STATE_SCHEMA,'task_id':tid,'task_fingerprint':tfp,'repository_identity':req['repository_identity'],'request_identity':stable_ref(req,'request_id'),'request':req,'lifecycle_state':'requested','lifecycle_revision':0,'analysis_identity':None,'candidate_identity':None,'plan_identity':None,'proposal_identity':None,'approval_identity':None,'authorization_identity':None,'authorized_scope_identity':None,'preparation_identity':None,'authorization_token_identity':None,'transaction_identity':None,'execution_result_identity':None,'verification_identity':None,'closure_identity':None,'transaction_evidence_linkage':None,'completed_phases':['requested'],'pending_requirement':'task_admission','failure':None,'terminal':False,'execution_started':False,'execution_completed':False,'execution_replay_prohibited':False}
+    return _persist(repo_root,state)
+
+def admit_task(repo_root, task_id):
+    s=_load(repo_root,task_id); _ensure(s,'requested'); n=dict(s); n['lifecycle_state']='admitted'; n['lifecycle_revision']+=1; n['pending_requirement']='analysis'; n['completed_phases'].append('admitted'); return _persist(repo_root,n)
+def attach_analysis(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'admitted','analysis_identity',a,'analysis_ready','candidate_selection')
+def attach_candidate_selection(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'analysis_ready','candidate_identity',a,'candidate_selected','repair_plan')
+def attach_plan(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'candidate_selected','plan_identity',a,'plan_ready','proposal')
+def attach_proposal(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'plan_ready','proposal_identity',a,'awaiting_human_approval','human_approval')
+def attach_human_approval(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    if a.get('status') not in ('approved','verified') and a.get('decision')!='approved': raise OrchestrationError('approval_not_positive')
+    return _attach(repo_root,s,'awaiting_human_approval','approval_identity',a,'approved','formal_authorization')
+def attach_authorization(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    r=_attach(repo_root,s,'approved','authorization_identity',a,'authorized','preparation',statuses={'verified','authorized'})
+    if a.get('authorized_scope_id'): r=dict(r); r['authorized_scope_identity']={'id':a.get('authorized_scope_id'),'fingerprint':a.get('authorized_scope_fingerprint'),'schema':a.get('authorized_scope_schema')}; r=_persist(repo_root,r)
+    return r
+def attach_preparation(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'authorized','preparation_identity',a,'prepared','authorization_token',statuses={'closed','ready','prepared'})
+def attach_authorization_token(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    if a.get('token_consumed') is not False or a.get('use_limit') not in (None,1): raise OrchestrationError('token_not_single_use_available')
+    r=_attach(repo_root,s,'prepared','authorization_token_identity',a,'execution_ready','execute',statuses={'issued'})
+    tx=a.get('transaction_id') or a.get('mutation_transaction_id')
+    if tx: r=dict(r); r['transaction_identity']={'id':tx,'fingerprint':a.get('transaction_fingerprint'),'schema':a.get('transaction_schema')}; r=_persist(repo_root,r)
+    return r
+def execute_task(repo_root,task_id,handoff,workspace_root):
+    s=_load(repo_root,task_id); _ensure(s,'execution_ready')
+    if s.get('execution_started') or s.get('execution_completed'): raise OrchestrationError('execution_replay_prohibited')
+    n=dict(s); n['execution_started']=True; n['execution_replay_prohibited']=True; n['lifecycle_state']='executing'; n['lifecycle_revision']+=1; _persist(repo_root,n)
+    from core.engineering.engineering_governed_workspace_mutation_executor import execute_pipeline
+    result=execute_pipeline(handoff,workspace_root,execute_confirmed=True)
+    m=dict(n); m['execution_completed']=True; m['lifecycle_state']='executed'; m['pending_requirement']='verification'; m['completed_phases']=list(dict.fromkeys([*m.get('completed_phases',[]),'executed']))
+    res=result.get('result') or result.get('failure') or result
+    m['execution_result_identity']=stable_ref(res,'result_id')
+    if result.get('execution_evidence'): m['transaction_evidence_linkage']=stable_ref(result['execution_evidence'],'evidence_id')
+    if result.get('execution_closure'): m['transaction_closure_identity']=stable_ref(result['execution_closure'],'closure_id')
+    if result.get('failure'): m['failure']={'code':'governed_execution_failed','detail':stable_ref(result['failure'])}
+    return _persist(repo_root,m)
+def attach_verification(repo_root,task_id,a):
+    s=_load(repo_root,task_id); _ensure(s,'executed')
+    if a.get('task_id')!=s.get('task_id'): raise OrchestrationError('task_id_mismatch')
+    if a.get('transaction_identity')!=s.get('transaction_identity'): raise OrchestrationError('transaction_identity_mismatch')
+    if a.get('status')!='passed' or a.get('failed_count',0)!=0: raise OrchestrationError('verification_not_successful')
+    exp=set(s.get('request',{}).get('requested_verification_expectations') or [])
+    if not exp.issubset(set(a.get('performed_verification_set') or [])): raise OrchestrationError('verification_incomplete')
+    return _attach(repo_root,s,'executed','verification_identity',a,'verified','closure',schema=VERIFICATION_SCHEMA,statuses={'passed'},id_keys=('verification_id',))
+def close_task(repo_root,task_id):
+    s=_load(repo_root,task_id); _ensure(s,'verified')
+    closure=build_task_closure(s); n=dict(s); n['closure_identity']={'schema':closure['schema'],'id':closure['closure_id'],'fingerprint':closure['closure_fingerprint']}; n['closure']=closure; n['lifecycle_state']='closed'; n['terminal']=True; n['pending_requirement']=None; n['completed_phases']=list(dict.fromkeys([*n.get('completed_phases',[]),'closed'])); n['lifecycle_revision']+=1
+    return _persist(repo_root,n)
+def inspect_task(repo_root,task_id): return _load(repo_root,task_id)
