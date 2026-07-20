@@ -8,7 +8,7 @@ FORBIDDEN_KEYS=frozenset({"patch","diff","source_content","replacement_content",
 def approval_boundary(*,closed:bool=False,approval_granted:bool=False)->dict[str,Any]:
  return {"sealed":True,"read_only":True,"approval_artifact":True,"approval_closed":closed,"repository_modified":False,"patch_generated":False,"diff_generated":False,"execution_started":False,"runtime_activated":False,"approval_authority":"granted" if approval_granted else "not_granted","authorization_authority":"not_granted","execution_authority":"not_granted","mutation_authority":"not_granted"}
 def contains_forbidden(value:Any)->bool:
- if isinstance(value,Mapping):return any(str(k).lower() in FORBIDDEN_KEYS or contains_forbidden(v) for k,v in value.items())
+ if isinstance(value,Mapping):return any((str(k).lower() in FORBIDDEN_KEYS and v not in (False,None,"not_granted")) or contains_forbidden(v) for k,v in value.items())
  if isinstance(value,list):return any(contains_forbidden(x) for x in value)
  return False
 def approval_artifact(schema:str,status:str,payload:Mapping[str,Any],id_key:str,prefix:str,*,closed:bool=False,approval_granted:bool=False)->dict[str,Any]:

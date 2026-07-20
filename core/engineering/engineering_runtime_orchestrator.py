@@ -17,8 +17,9 @@ from .engineering_runtime_evidence import build_engineering_runtime_evidence
 from .engineering_runtime_closure import close_engineering_runtime
 from .engineering_runtime_capability_admission import build_runtime_capability_admission
 from .engineering_runtime_adapter_invocation_pipeline import orchestrate_runtime_adapter_invocation
+from .engineering_runtime_formal_persistence import run_formal_persistence_mainline
 
-def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_root=None,cli_execute=False,execute_confirmed=False):
+def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_root=None,cli_execute=False,execute_confirmed=False,session_root=None):
     request=build_engineering_runtime_request(payload.get("request",payload)); session=build_engineering_runtime_session(request); phase=build_engineering_runtime_phase(session["session_id"])
     components={}; checkpoints=[build_engineering_runtime_checkpoint(session,phase)]
     identity=workspace_identity or {"workspace_id":request.get("workspace_id"),"workspace_root_fingerprint":request.get("workspace_root_fingerprint")}
@@ -65,4 +66,22 @@ def orchestrate_engineering_runtime(payload,workspace_identity=None,workspace_ro
                                 phase=transition_phase(phase,"execution_started"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[execution],execution_mode="enabled"))
                                 phase=transition_phase(phase,"execution_terminal"); checkpoints.append(build_engineering_runtime_checkpoint(session,phase,checkpoints[-1],[execution],execution_mode="enabled",result_status=execution["status"]))
     result=build_engineering_runtime_result(request,session,phase,checkpoints,components,invocation_outcome); verification=verify_engineering_runtime(request,session,phase,checkpoints,result); evidence=build_engineering_runtime_evidence(request,session,checkpoints,result,verification,components); closure=close_engineering_runtime(result,verification,evidence)
-    return {"request":request,"session":session,"phase":phase,"checkpoints":checkpoints,**components,"result":result,"verification":verification,"evidence":evidence,"closure":closure}
+    formal=None
+    if session_root and request.get("status")=="valid" and admission.get("status")=="admitted" and request.get("requested_orchestration_mode") in ("analyze","propose","prepare","pipeline"):
+        formal=run_formal_persistence_mainline(payload=payload,request=request,session=session,session_root=session_root,workspace_root=workspace_root,mode=request.get("requested_orchestration_mode"))
+        components["formal_persistence"]=formal
+    response={"request":request,"session":session,"phase":phase,"checkpoints":checkpoints,**components,"result":result,"verification":verification,"evidence":evidence,"closure":closure}
+    if formal:
+        response.update({
+            "session_root": formal.get("session_root"),
+            "session_id": formal.get("session_id"),
+            "current_phase": formal.get("current_phase"),
+            "persisted_artifacts": formal.get("persisted_artifacts", []),
+            "artifact_index": formal.get("artifact_index", {}),
+            "required_operator_input": formal.get("required_operator_input", {}),
+            "execution_enabled": formal.get("execution_enabled", False),
+            "executor_invoked": formal.get("executor_invoked", False),
+            "workspace_mutation_performed": formal.get("workspace_mutation_performed", False),
+            "git_mutation_performed": formal.get("git_mutation_performed", False),
+        })
+    return response
