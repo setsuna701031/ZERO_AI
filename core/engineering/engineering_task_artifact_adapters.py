@@ -12,6 +12,8 @@ from core.engineering.engineering_repair_candidate_validation import validate_en
 from core.engineering.engineering_repair_plan import SCHEMA as REPAIR_PLAN_SCHEMA
 from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
 from core.engineering.engineering_completion_foundation import (PROPOSAL_LINKAGE_SCHEMA, VERIFICATION_RESULT_SCHEMA, COMPLETION_SCHEMA, validate_proposal_linkage, validate_verification_result, validate_completion)
+from core.engineering.engineering_execution_session import SESSION_SCHEMA, REPORT_SCHEMA, validate_engineering_execution_session
+from core.engineering.engineering_execution_session_report import validate_execution_session_report
 from core.engineering.engineering_bootstrap_request import SCHEMA as BOOTSTRAP_REQUEST_SCHEMA
 
 class _R:
@@ -79,6 +81,10 @@ def known_adapters() -> tuple[EngineeringTaskArtifactAdapter, ...]:
          lambda a: validate_verification_result(a)),
         (d(phase='completion', supported_schema=COMPLETION_SCHEMA, production_module='core.engineering.engineering_completion_foundation', validator_entry_point='validate_completion', identity_field='completion_id', status_field='completion_status', accepted_statuses=('completed',), rejected_statuses=('not_completed','blocked','failed','invalid'), linkage_fields=('task_id','repository_identity','proposal_identity','verification_result_identity'), validation_level='canonical_validator'),
          lambda a: validate_completion(a)),
+        (d(phase='execution_session', supported_schema=SESSION_SCHEMA, production_module='core.engineering.engineering_execution_session', validator_entry_point='validate_engineering_execution_session', identity_field='execution_session_id', status_field='session_status', accepted_statuses=('awaiting_approval','approved','authorized','prepared','ready_for_execution','awaiting_verification','verified','completed','closed'), rejected_statuses=('blocked','failed','invalid'), linkage_fields=('task_id','repository_identity','proposal_identity'), validation_level='canonical_validator'),
+         validate_engineering_execution_session),
+        (d(phase='execution_session_report', supported_schema=REPORT_SCHEMA, production_module='core.engineering.engineering_execution_session_report', validator_entry_point='validate_execution_session_report', identity_field='report_id', status_field='session_status', accepted_statuses=('awaiting_approval','approved','authorized','prepared','ready_for_execution','awaiting_verification','verified','completed','closed'), rejected_statuses=('blocked','failed','invalid'), linkage_fields=('execution_session_id','task_id','repository_identity'), validation_level='canonical_validator'),
+         validate_execution_session_report),
         (d(phase='verification', supported_schema=VERIFICATION_SCHEMA, production_module='core.engineering.engineering_task_orchestration_validation', validator_entry_point='task_verification_validator', identity_field='verification_id', accepted_statuses=('passed',), rejected_statuses=('failed','invalid'), linkage_fields=('task_identity','transaction_identity'), validation_level='canonical_validator'),
          _task_verification_validator),
     ]
