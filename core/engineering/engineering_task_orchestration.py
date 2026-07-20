@@ -5,6 +5,8 @@ from .engineering_task_orchestration_persistence import save_state, load_state
 from .engineering_task_orchestration_closure import build_task_closure
 from .engineering_task_artifact_adapter_registry import default_registry
 from .engineering_task_artifact_reference import mutable_reference
+from .engineering_repair_candidate_validation import validate_engineering_repair_candidate
+from .engineering_repair_plan_validation import validate_engineering_repair_plan
 
 class OrchestrationError(ValueError): pass
 
@@ -47,8 +49,21 @@ def create_task(repo_root, request):
 def admit_task(repo_root, task_id):
     s=_load(repo_root,task_id); _ensure(s,'requested'); n=dict(s); n['lifecycle_state']='admitted'; n['lifecycle_revision']+=1; n['pending_requirement']='analysis'; n['completed_phases'].append('admitted'); return _persist(repo_root,n)
 def attach_analysis(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'admitted','analysis_identity',a,'analysis_ready','candidate_selection')
-def attach_candidate_selection(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'analysis_ready','candidate_identity',a,'candidate_selected','repair_plan')
-def attach_plan(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'candidate_selected','plan_identity',a,'plan_ready','proposal')
+def attach_candidate_selection(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    analysis=s.get('analysis_identity') or {}
+    r=validate_engineering_repair_candidate(a, task_id=s.get('task_id'), repository_identity=s.get('repository_identity'), analysis_identity=analysis.get('artifact_identity'), analysis_fingerprint=analysis.get('artifact_fingerprint'), request_scope=s.get('request',{}).get('bounded_target_scope'))
+    if not r.valid: raise OrchestrationError('candidate_validation_failed:'+','.join(r.errors))
+    return _attach(repo_root,s,'analysis_ready','candidate_identity',a,'candidate_selected','repair_plan')
+def attach_plan(repo_root,task_id,a):
+    s=_load(repo_root,task_id)
+    if not s.get('candidate_identity'): raise OrchestrationError('candidate_required')
+    cref=s.get('candidate_identity') or {}
+    if a.get('candidate_identity')!=cref.get('artifact_identity') or a.get('candidate_fingerprint')!=cref.get('artifact_fingerprint'): raise OrchestrationError('candidate_linkage_mismatch')
+    candidate_context={'selection_status':'selected','candidate_id':cref.get('artifact_identity'),'fingerprint':cref.get('artifact_fingerprint'),'target_scope':cref.get('bounded_summary',{}).get('target_scope',[]),'prohibited_scope':cref.get('bounded_summary',{}).get('prohibited_scope',[]),'analysis_identity':(s.get('analysis_identity') or {}).get('artifact_identity'),'repository_identity':s.get('repository_identity')}
+    r=validate_engineering_repair_plan(a, candidate=candidate_context, task_id=s.get('task_id'), repository_identity=s.get('repository_identity'), analysis_identity=(s.get('analysis_identity') or {}).get('artifact_identity'), request_scope=s.get('request',{}).get('bounded_target_scope'))
+    if not r.valid: raise OrchestrationError('plan_validation_failed:'+','.join(r.errors))
+    return _attach(repo_root,s,'candidate_selected','plan_identity',a,'plan_ready','proposal')
 def attach_proposal(repo_root,task_id,a): return _attach(repo_root,_load(repo_root,task_id),'plan_ready','proposal_identity',a,'awaiting_human_approval','human_approval')
 def attach_human_approval(repo_root,task_id,a):
     s=_load(repo_root,task_id)

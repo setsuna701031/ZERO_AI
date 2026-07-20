@@ -7,6 +7,8 @@ from core.engineering.engineering_approval_decision import build_engineering_app
 from core.engineering.engineering_authorization_decision import build_engineering_authorization_decision
 from core.engineering.engineering_task_orchestration_validation import VERIFICATION_SCHEMA
 from core.engineering.repository_analysis_report import build_repository_analysis_report
+from core.engineering.engineering_repair_candidate import build_engineering_repair_candidate
+from core.engineering.engineering_repair_plan import build_engineering_repair_plan
 
 
 def structural(schema: str, id_key: str, prefix: str, status: str, **extra: Any) -> dict[str, Any]:
@@ -33,12 +35,14 @@ def analysis_report() -> dict[str, Any]:
     return build_repository_analysis_report(req, admission, snapshot, topology, lang, build, test, dep, inv, evidence)
 
 
-def candidate_selection() -> dict[str, Any]:
-    return structural('zero.engineering.task_candidate_selection.v1','candidate_selection_id','engineering-task-candidate-selection','selected')
+def candidate_selection(task_id: str = 'task-1', repository_identity: str = 'repo-1', analysis: dict[str, Any] | None = None) -> dict[str, Any]:
+    a = analysis or analysis_report()
+    return dict(build_engineering_repair_candidate(task_id=task_id, repository_identity=repository_identity, analysis_identity=a['repository_analysis_report_id'], analysis_fingerprint=a['fingerprint'], requested_outcome='bounded repair', defect_classification='contract_mismatch', defect_summary='bounded defect summary', evidence_references=[{'evidence_id':'ev-1','evidence_type':'analysis','source_artifact_identity':a['repository_analysis_report_id'],'source_fingerprint':a['fingerprint'],'repository_relative_path':'a','bounded_summary':'bounded evidence'}], target_scope=['a'], prohibited_scope=['secrets']))
 
 
-def repair_plan() -> dict[str, Any]:
-    return structural('zero.engineering.task_repair_plan.v1','repair_plan_id','engineering-task-repair-plan','planned')
+def repair_plan(candidate: dict[str, Any] | None = None) -> dict[str, Any]:
+    c = candidate or candidate_selection()
+    return dict(build_engineering_repair_plan(candidate=c, ordered_operations=[{'operation_type':'replace_file','target_path':'a','rationale':'bounded rationale','expected_postcondition':'file contract repaired','verification_expectation_ids':['verify-1']}], verification_expectations=[{'expectation_id':'verify-1','expectation_type':'focused_test_passed','target_path':'a','required':True,'expected_status':'passed','description':'focused validation passes'}]))
 
 
 def proposal() -> dict[str, Any]:

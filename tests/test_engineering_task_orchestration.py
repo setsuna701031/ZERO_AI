@@ -7,7 +7,7 @@ def req(): return {'repository_identity':{'id':'repo','fingerprint':'r'},'reques
 def art(name, status='ok', **kw):
     return {'schema':f'zero.test.{name}.v1', f'{name}_id':f'{name}-1','fingerprint':f'fp-{name}','status':status, **kw}
 def ready(tmp_path):
-    s=create_task(tmp_path, req()); tid=s['task_id']; admit_task(tmp_path,tid); attach_analysis(tmp_path,tid,cf.analysis_report()); attach_candidate_selection(tmp_path,tid,cf.candidate_selection()); attach_plan(tmp_path,tid,cf.repair_plan()); attach_proposal(tmp_path,tid,cf.proposal()); return tid
+    s=create_task(tmp_path, req()); tid=s['task_id']; admit_task(tmp_path,tid); analysis=cf.analysis_report(); attach_analysis(tmp_path,tid,analysis); cand=cf.candidate_selection(task_id=tid, repository_identity=s['repository_identity'], analysis=analysis); attach_candidate_selection(tmp_path,tid,cand); attach_plan(tmp_path,tid,cf.repair_plan(cand)); attach_proposal(tmp_path,tid,cf.proposal()); return tid
 
 def test_deterministic_task_creation(tmp_path):
     a=create_task(tmp_path, req()); b=create_task(tmp_path, dict(reversed(list(req().items()))))
