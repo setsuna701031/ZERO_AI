@@ -167,3 +167,37 @@ def close_task(repo_root,task_id):
     closure=build_task_closure(s); n=dict(s); n['closure_identity']={'schema':closure['schema'],'id':closure['closure_id'],'fingerprint':closure['closure_fingerprint']}; n['closure']=closure; n['lifecycle_state']='closed'; n['terminal']=True; n['pending_requirement']=None; n['completed_phases']=list(dict.fromkeys([*n.get('completed_phases',[]),'closed'])); n['lifecycle_revision']+=1
     return _persist(repo_root,n)
 def inspect_task(repo_root,task_id): return _load(repo_root,task_id)
+
+def attach_failure_analysis(repo_root, task_id, a):
+    s=_load(repo_root,task_id)
+    if s.get('lifecycle_state') not in ('verified','verification_failed'): raise OrchestrationError('failed_verification_required')
+    ref=mutable_reference(default_registry().validate_artifact('failure_analysis', a)); existing=s.get('failure_analysis_identity')
+    if existing:
+        if existing.get('artifact_identity')==ref.get('artifact_identity') and existing.get('artifact_fingerprint')==ref.get('artifact_fingerprint'): return s
+        raise OrchestrationError('conflicting_artifact_replay')
+    n=dict(s); n['failure_analysis_identity']=ref; n['lifecycle_state']='failure_analysis_ready'; n['pending_requirement']='repair_continuation_eligibility'; n['lifecycle_revision']+=1; n['completed_phases']=list(dict.fromkeys([*n.get('completed_phases',[]),'failure_analysis_ready'])); return _persist(repo_root,n)
+
+def attach_repair_continuation_eligibility(repo_root, task_id, a):
+    s=_load(repo_root,task_id); _ensure(s,'failure_analysis_ready')
+    ref=mutable_reference(default_registry().validate_artifact('repair_continuation_eligibility', a)); n=dict(s); n['repair_continuation_eligibility_identity']=ref; n['lifecycle_state']='repair_continuation_eligible' if a.get('eligible') else 'repair_continuation_blocked'; n['pending_requirement']='continuation_candidate' if a.get('eligible') else 'manual_intervention'; n['lifecycle_revision']+=1; return _persist(repo_root,n)
+
+def attach_repair_continuation_cycle(repo_root, task_id, a):
+    s=_load(repo_root,task_id)
+    if s.get('lifecycle_state') not in ('repair_continuation_eligible','continuation_candidate_ready','continuation_plan_ready','continuation_proposal_ready'): raise OrchestrationError('out_of_order_artifact')
+    ref=mutable_reference(default_registry().validate_artifact('repair_continuation_cycle', a)); n=dict(s); n['repair_continuation_cycle_identity']=ref; n['lifecycle_state']=a.get('cycle_status'); n['pending_requirement']='human_approval' if a.get('awaiting_human_approval') else 'continuation_progress'; n['lifecycle_revision']+=1; return _persist(repo_root,n)
+
+def attach_continuation_candidate(repo_root, task_id, a):
+    s=_load(repo_root,task_id); _ensure(s,'repair_continuation_eligible')
+    ref=mutable_reference(default_registry().validate_artifact('candidate_selection', a)); n=dict(s); n['continuation_candidate_identity']=ref; n['lifecycle_state']='continuation_candidate_ready'; n['pending_requirement']='continuation_plan'; n['lifecycle_revision']+=1; return _persist(repo_root,n)
+
+def attach_continuation_plan(repo_root, task_id, a):
+    s=_load(repo_root,task_id); _ensure(s,'continuation_candidate_ready')
+    ref=mutable_reference(default_registry().validate_artifact('repair_plan', a)); n=dict(s); n['continuation_plan_identity']=ref; n['lifecycle_state']='continuation_plan_ready'; n['pending_requirement']='continuation_proposal'; n['lifecycle_revision']+=1; return _persist(repo_root,n)
+
+def attach_continuation_proposal(repo_root, task_id, a):
+    s=_load(repo_root,task_id); _ensure(s,'continuation_plan_ready')
+    ref=mutable_reference(default_registry().validate_artifact('proposal', a)); n=dict(s); n['continuation_proposal_identity']=ref; n['lifecycle_state']='continuation_proposal_ready'; n['pending_requirement']='continuation_proposal_linkage'; n['lifecycle_revision']+=1; return _persist(repo_root,n)
+
+def attach_continuation_proposal_linkage(repo_root, task_id, a):
+    s=_load(repo_root,task_id); _ensure(s,'continuation_proposal_ready')
+    ref=mutable_reference(default_registry().validate_artifact('proposal_linkage', a)); n=dict(s); n['continuation_proposal_linkage_identity']=ref; n['lifecycle_state']='awaiting_human_approval'; n['pending_requirement']='human_approval'; n['lifecycle_revision']+=1; return _persist(repo_root,n)
