@@ -7,6 +7,10 @@ from core.engineering.repository_analysis_report import SCHEMA as ANALYSIS_SCHEM
 from core.engineering.engineering_change_proposal import assemble_change_proposal
 from core.engineering.engineering_approval_decision import SCHEMA as APPROVAL_SCHEMA, validate_engineering_approval_decision
 from core.engineering.engineering_authorization_decision import SCHEMA as AUTH_SCHEMA, validate_engineering_authorization_decision
+from core.engineering.engineering_repair_candidate import SCHEMA as CANDIDATE_SCHEMA
+from core.engineering.engineering_repair_candidate_validation import validate_engineering_repair_candidate
+from core.engineering.engineering_repair_plan import SCHEMA as REPAIR_PLAN_SCHEMA
+from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
 
 class _R:
     def __init__(self, valid: bool, errors=()): self.valid=valid; self.errors=tuple(errors)
@@ -39,10 +43,10 @@ def known_adapters() -> tuple[EngineeringTaskArtifactAdapter, ...]:
     items = [
         (d(phase='analysis', supported_schema=ANALYSIS_SCHEMA, production_module='core.engineering.repository_analysis_report', validator_entry_point='validate_repository_analysis_report', identity_field='repository_analysis_report_id', accepted_statuses=('reported',), rejected_statuses=('partial','invalid'), linkage_fields=('repository_identity','task_identity')),
          validate_repository_analysis_report),
-        (d(phase='candidate_selection', supported_schema='zero.engineering.task_candidate_selection.v1', production_module='core.engineering.engineering_task_orchestration_validation', validator_entry_point='structural_reference_contract', identity_field='candidate_selection_id', accepted_statuses=('selected',), rejected_statuses=('invalid',), linkage_fields=('repository_identity','task_identity'), validation_level='structural_reference_only'),
-         lambda a: _seal_valid(a,'candidate_selection_id','engineering-task-candidate-selection',{'selected'})),
-        (d(phase='repair_plan', supported_schema='zero.engineering.task_repair_plan.v1', production_module='core.engineering.engineering_task_orchestration_validation', validator_entry_point='structural_reference_contract', identity_field='repair_plan_id', accepted_statuses=('planned',), rejected_statuses=('invalid',), linkage_fields=('repository_identity','task_identity'), validation_level='structural_reference_only'),
-         lambda a: _seal_valid(a,'repair_plan_id','engineering-task-repair-plan',{'planned'})),
+        (d(phase='candidate_selection', supported_schema=CANDIDATE_SCHEMA, production_module='core.engineering.engineering_repair_candidate_validation', validator_entry_point='validate_engineering_repair_candidate', identity_field='candidate_id', status_field='selection_status', accepted_statuses=('selected',), rejected_statuses=('invalid','blocked','not_selected'), linkage_fields=('repository_identity','task_id','analysis_identity'), validation_level='canonical_validator'),
+         validate_engineering_repair_candidate),
+        (d(phase='repair_plan', supported_schema=REPAIR_PLAN_SCHEMA, production_module='core.engineering.engineering_repair_plan_validation', validator_entry_point='validate_engineering_repair_plan', identity_field='repair_plan_id', status_field='plan_status', accepted_statuses=('planned',), rejected_statuses=('invalid','blocked'), linkage_fields=('repository_identity','task_id','analysis_identity','candidate_identity'), validation_level='canonical_validator'),
+         validate_engineering_repair_plan),
         (d(phase='proposal', supported_schema='zero.engineering.change_proposal.v1', production_module='core.engineering.engineering_change_proposal', validator_entry_point='assemble_change_proposal', identity_field='proposal_id', accepted_statuses=('proposed',), rejected_statuses=('not_proposed',), linkage_fields=('repository_identity','task_identity')),
          _proposal_validator),
         (d(phase='approval', supported_schema=APPROVAL_SCHEMA, production_module='core.engineering.engineering_approval_decision', validator_entry_point='validate_engineering_approval_decision', identity_field='approval_decision_id', status_field='decision', accepted_statuses=('approved',), rejected_statuses=('rejected','blocked','invalid','insufficient_evidence'), linkage_fields=('proposal_identity','task_identity')),

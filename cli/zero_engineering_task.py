@@ -7,6 +7,10 @@ from core.engineering import engineering_task_orchestration as o
 from core.engineering.engineering_task_orchestration_resume import resume_task
 from core.engineering.engineering_task_artifact_adapter_registry import default_registry
 from core.engineering.engineering_task_artifact_compatibility import build_compatibility_report
+from core.engineering.engineering_repair_candidate import build_engineering_repair_candidate
+from core.engineering.engineering_repair_candidate_validation import validate_engineering_repair_candidate
+from core.engineering.engineering_repair_plan import build_engineering_repair_plan
+from core.engineering.engineering_repair_plan_validation import validate_engineering_repair_plan
 
 def emit(v): print(canonical_json(v))
 def load_json(text):
@@ -27,6 +31,14 @@ def main(argv=None):
         elif c=='inspect-adapter': out=default_registry().get(p.get('adapter_id')).descriptor.as_dict()
         elif c=='compatibility-report': out=build_compatibility_report()
         elif c=='validate-artifact': out=dict(default_registry().validate_artifact(p.get('phase'), p.get('artifact')))
+        elif c=='build-candidate': out=dict(build_engineering_repair_candidate(**p))
+        elif c=='validate-candidate':
+            r=validate_engineering_repair_candidate(p.get('candidate',p), task_id=p.get('expected_task_id'), repository_identity=p.get('expected_repository_identity'), analysis_identity=p.get('expected_analysis_identity'), analysis_fingerprint=p.get('expected_analysis_fingerprint'), request_scope=p.get('request_scope'))
+            out={'valid':r.valid,'errors':list(r.errors)}
+        elif c=='build-plan': out=dict(build_engineering_repair_plan(**p))
+        elif c=='validate-plan':
+            r=validate_engineering_repair_plan(p.get('plan',p), candidate=p.get('candidate'), task_id=p.get('expected_task_id'), repository_identity=p.get('expected_repository_identity'), analysis_identity=p.get('expected_analysis_identity'), request_scope=p.get('request_scope'))
+            out={'valid':r.valid,'errors':list(r.errors)}
         elif c=='create': out=o.create_task(ns.repo_root,p)
         elif c=='inspect': out=o.inspect_task(ns.repo_root,tid)
         elif c=='admit': out=o.admit_task(ns.repo_root,tid)
@@ -43,7 +55,7 @@ def main(argv=None):
         elif c=='close': out=o.close_task(ns.repo_root,tid)
         elif c=='resume': out=resume_task(ns.repo_root,tid)
         else: out={'error':{'code':'unknown_command'}}
-        emit(out); return 0 if 'error' not in out else 2
+        emit(out); return 0 if 'error' not in out and out.get('valid', True) is not False else 2
     except Exception as exc:
         emit({'error':{'code':str(exc) or 'invalid_request'}}); return 2
 if __name__=='__main__': raise SystemExit(main())

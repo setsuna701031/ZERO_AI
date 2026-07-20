@@ -46,6 +46,6 @@ def test_compatibility_report_labels_unsupported_and_structural_limitations():
     phases={r['phase']:r for r in report['adapters'] if r['health_status']=='unsupported'}
     assert 'closure' in phases
     structural={r['phase']:r for r in report['adapters'] if r['validation_level']=='structural_reference_only'}
-    assert structural['candidate_selection']['orchestration_readiness']=='limited'
+    assert 'candidate_selection' not in structural
     levels={r['validation_level'] for r in report['adapters']}
     assert 'canonical_builder_result' in levels
