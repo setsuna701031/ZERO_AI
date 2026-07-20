@@ -52,7 +52,7 @@ def safe_rel_path(rel:str)->tuple[bool,list[str]]:
     parts=str(rel).split('/')
     if any(p in ('','.', '..') for p in parts): rs.append('path_escape')
     if ':' in str(rel): rs.append('path_invalid')
-    if str(rel)=='.zero' or str(rel).startswith(TX_PARENT) or str(rel).startswith('.zero/transactions/'): rs.append('path_escape')
+    if str(rel)=='.zero' or str(rel)==TX_PARENT or str(rel).startswith(TX_PARENT + '/'): rs.append('path_escape')
     return (not rs,reasons(rs))
 
 def resolve_inside(root:Path,rel:str):
