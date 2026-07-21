@@ -209,7 +209,10 @@ def close_pull_request(preparation:Mapping[str,Any],remote:Mapping[str,Any],revi
   "authorization_id":authorization.get("pull_request_authorization_id"),"execution_result_id":execution.get("pull_request_execution_id"),
   "evidence_id":evidence.get("pull_request_evidence_id"),"post_verification_id":post.get("pull_request_post_verification_id"),
   "provider_pr_id":execution.get("provider_pr_id"),"repository_id":preparation.get("repository_id"),"source_branch":preparation.get("source_branch"),
-  "target_branch":preparation.get("target_branch"),"source_commit_sha":preparation.get("source_commit_sha"),"sealed":not errors,
+  "repository_provider":preparation.get("repository_provider"),"remote_url":preparation.get("remote_url"),
+  "target_branch":preparation.get("target_branch"),"source_commit_sha":preparation.get("source_commit_sha"),
+  "target_commit_sha":evidence.get("observed_target_remote_head"),"observed_pr_state":post.get("observed_state"),
+  "merged":bool(post.get("merged")),"closed":bool(post.get("closed")),"sealed":not errors,
   "closure_status":"awaiting_merge_review" if not errors else "failed","reason_codes":sorted(set(errors)),"merge_authorized":False,"merged":False,"authority":NO_AUTHORITY}
  return canon(payload,"pull_request_closure_fingerprint","pull_request_closure_id","engineering-pr-closure-")
 

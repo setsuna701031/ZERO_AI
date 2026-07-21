@@ -7,6 +7,7 @@ ALLOWED_FILES=ALLOWED_FILES+("reproduction/workspace-snapshot.json","repair/plan
 ALLOWED_FILES=ALLOWED_FILES+("commit/preparation-intake.json","commit/candidate.json","commit/diff-verification.json","commit/admission.json","commit/request.json","commit/evidence.json","commit/verification.json")
 ALLOWED_FILES=ALLOWED_FILES+("push/verified-commit-closure.json","push/preparation.json","push/remote-verification-before.json","push/review.json","push/authorization.json","push/execution.json","push/evidence.json","push/remote-verification-after.json","push/closure.json")
 ALLOWED_FILES=ALLOWED_FILES+("pull-request/preparation.json","pull-request/provider-admission.json","pull-request/remote-verification.json","pull-request/review.json","pull-request/authorization.json","pull-request/creation-request.json","pull-request/execution-result.json","pull-request/evidence.json","pull-request/post-verification.json","pull-request/closure.json")
+ALLOWED_FILES=ALLOWED_FILES+("merge/preparation.json","merge/remote-verification.json","merge/eligibility.json","merge/review.json","merge/authorization.json","merge/execution-request.json","merge/execution-result.json","merge/evidence.json","merge/post-verification.json","merge/closure.json")
 def _path(root,session_id,name):
     if name not in ALLOWED_FILES or not SAFE_RELATIVE.fullmatch(session_id): raise ValueError("unsafe_session_store_name")
     return Path(root).resolve()/session_id/name

@@ -2278,3 +2278,14 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Revalidated closure integrity, canonical references, authorization scope/use, branch freezes, commit identity, changes, and equivalent PR absence immediately before one provider call.
 - Added canonical evidence and post-verification proving an open, unmerged, unclosed PR before sealing closure as `awaiting_merge_review`.
 - Added no merge, auto-PR, retry, branch mutation, force push, labels, reviewers, milestones, issues, tags, releases, repository settings, or workflow capability.
+
+## v5.7 Governed Explicit Merge Review
+
+- Added canonical Merge Preparation, Remote Verification, Eligibility, Human Review, explicit Authorization, Execution Request/Result, Evidence, post-verification, and Merge Closure artifacts.
+- Made sealed `awaiting_merge_review` PR Closure the sole upstream source and propagated one immutable `pr_closure_id` through the complete merge chain.
+- Added a provider-neutral structured adapter boundary supporting only read merge state, perform one merge, and read merge result.
+- Restricted the method to `merge_commit`; squash, rebase, provider default, auto-merge, and merge queue are rejected or absent.
+- Froze repository/PR identity, source/target branches and heads, source commit, conflict status, remaining difference, and method across review and single-use authorization.
+- Consumed merge authorization on entry to the sole provider attempt, including timeout, exception, failure, and ambiguous outcomes; another attempt requires a new review and authorization.
+- Required mandatory post-verification of merged state, merge commit, target head, source reachability, retained source branch, and unrelated-branch stability before sealing `merged_verified`.
+- Added no retry, branch creation/deletion, force push, tags, releases, deployments, settings, labels, reviewers, milestones, conflict resolution, pull, rebase, or workflow capability.
