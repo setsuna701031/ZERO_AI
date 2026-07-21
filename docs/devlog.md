@@ -2218,3 +2218,13 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Kept root cause unconfirmed and blocked patch construction whenever impact requires scope expansion.
 - Restricted Patch Candidates to deterministic high-level metadata; executable code, diffs, replacements, commands, Change Packages, and authority payloads fail closed.
 - Preserved decision-only inspect/resume behavior and all no-Approval, no-Authorization, no-Execution, no-retry, and no-completion boundaries.
+
+## v5.1 Governed Patch Authoring Candidate
+
+- Required a valid Patch Candidate and confirmed Human Patch Review before authoring intake.
+- Added bounded deterministic source snapshots with UTF-8, file-count, byte-count, scope, fingerprint, and workspace-drift controls.
+- Added human-supplied production/test edit candidates and deterministic repository-relative unified diff artifacts without timestamps.
+- Required exact-text replacements to match once and bound test edits to confirmed test targets.
+- Added fail-closed validation for stale lineage, drift, scope expansion, unsupported edits, missing mappings, executable or Change Package payloads, and authority.
+- Added Human Authored Patch Review and explicit revision lineage while keeping repository files unchanged.
+- Extended decision-only inspect/resume and Session Store persistence; no apply, execution, Approval, Authorization, retry, or completion capability was added.

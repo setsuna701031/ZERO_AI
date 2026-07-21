@@ -1544,3 +1544,7 @@ After Human Plan Confirmation, ZERO can prepare a canonical Reproduction Request
 ## v5.0 Governed Repair Planning & Patch Candidate
 
 An accepted Human Repair Review may now open a read-only repair-planning chain: Repair Planning Intake, Root-Cause Hypothesis Candidate, Impact Analysis, Repair Strategy Candidate, Patch Candidate, Patch Validation, and Human Patch Review. Root cause remains explicitly unconfirmed. Impact Analysis blocks patch construction when scope expansion needs human review. Patch Candidates contain only deterministic paths, high-level change intent, symbols, dependencies, acceptance mappings, and bounded test planning; they contain no code, diff, replacement, executable operation, Change Package, or authority. Human Patch Review is not Approval, Authorization, or execution permission.
+
+## v5.1 Governed Patch Authoring Candidate
+
+A confirmed Human Patch Review may open a candidate-only authoring chain: Patch Authoring Intake, bounded Source Snapshot, human-supplied File and Test Edit Candidates, deterministic Candidate Diff, Authoring Validation, and Human Authored Patch Review. Source files are UTF-8, scope-bound, size-limited, fingerprinted, and checked for workspace drift. Candidate content and unified diff exist only as Session Store artifacts and are never applied to the repository. Exact replacements require one unique match. The chain creates no Change Package and grants no Approval, Authorization, execution, retry, completion, or mutation authority.
