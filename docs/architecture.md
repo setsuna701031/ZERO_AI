@@ -225,3 +225,20 @@ The v3.5 work entry architecture provides a single coordination surface from `ze
 Inspection is read-only and reports stage timeline, missing artifacts, next governed action, authority state, runtime linkage, completion readiness, iteration health, and resumability. Resume revalidates the coordination artifact and returns a decision without planning automatic approval, authorization, execution, completion, or proposal creation. Persistence is under the session store `work-entry/` namespace using canonical UTF-8 JSON and read-back validation.
 
 v3.5 is not a fully autonomous engineering loop. It is the governed entry and coordination layer that safely connects existing analysis, planning, proposal, review, approval, authorization, execution, verification, and v3.4 completion capabilities while preserving human governance gates.
+
+## v3.6 Governed Read-Only Engineering Preparation Pipeline
+
+The v3.6 pipeline is an additive coordination layer. It reuses v3.5 Work Request, Work Intake, and Work Coordination as the entry point; v3.3 Runtime Session, Journal, Checkpoint, Resume, and Inspect boundaries; v3.4 Runtime Session Objectives and completion limits; and existing Repository Analysis, Planning, Proposal, and Proposal Review builders/validators as frozen contracts.
+
+Pipeline flow:
+
+1. Work Request / Work Intake / Work Coordination.
+2. Repository Admission validates the repository root and read-only authority.
+3. Repository Analysis creates the existing root admission, snapshot, topology, discovery, dependency analysis, engineering inventory, analysis evidence, analysis report, and analysis closure artifacts.
+4. Session Objective Definition creates `zero.engineering.runtime_session_objective.v1` only when bounded acceptance criteria are present.
+5. Engineering Planning creates the existing planning context, goals, work breakdown, dependency ordering, validation strategy, risk assessment, plan, verification, and planning closure.
+6. Proposal Preparation creates existing proposal intake, scope, proposed change set, dependency mapping, validation plan, risk review, engineering proposal, verification, and proposal closure.
+7. Proposal Review creates a proposal review closure that may be ready for human approval but is never approval.
+8. Human Gate Handoff records pending approval with authority, authorization, and execution states still not granted/not started.
+
+The pipeline status enum is `created`, `running`, `awaiting_input`, `awaiting_human_approval`, `completed_read_only_preparation`, `blocked`, `failed`, and `invalid`. Stage results use `completed`, `awaiting_input`, `blocked`, `failed`, and `invalid`. `completed_read_only_preparation` means the requested pre-approval read-only mode ended; it does not mean the engineering task or runtime session is complete. Legacy v3.5 work entries without a v3.6 artifact inspect as `not_initialized`.

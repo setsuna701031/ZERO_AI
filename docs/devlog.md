@@ -2128,3 +2128,13 @@ Acceptance validation expanded the focused test surface so collected node names 
 Implemented a governed Engineering Work Entry bundle as an additive orchestration layer. It introduces deterministic work request, work intake, work coordination, human gate handoff, journal, checkpoint, inspect, resume, CLI, and bounded work-entry persistence artifacts. The coordinator links to existing Engineering Runtime Session identity and treats existing repository analysis, planning, proposal review, approval, authorization, execution preparation, execution, verification, v3.4 completion readiness, and iteration health contracts as external/frozen artifact evidence rather than parallel implementations.
 
 Governance boundary: the entry may normalize and validate requests, admit bounded repository scope, link read-only and proposal artifacts, derive next governed action, and stop at human approval. It cannot auto-approve, auto-authorize, auto-execute, auto-complete, issue authority, append cycles, or mutate repository source.
+
+## v3.6 — Governed Read-Only Engineering Pipeline Activation
+
+- Added `core/engineering/engineering_read_only_pipeline.py` as the activation layer connecting v3.5 Work Entry with existing repository analysis, v3.4 objectives, engineering planning, proposal preparation, proposal review, journal, checkpoint, inspect, and resume contracts.
+- Added requested modes: `analysis_only`, `plan_only`, `proposal_only`, and `governed_delivery`. Each mode terminates before approval/authorization/execution, with governed delivery stopping at `awaiting_human_approval`.
+- Added canonical read-only pipeline and stage-result artifacts with deterministic identities and fixed `mutation_authority = not_granted`.
+- Extended `cli.zero_engineering_work` with pipeline-aware `submit`, `prepare`, `prepare-next`, `inspect`, `resume`, and `verify-pipeline` behavior while preserving existing work-entry commands.
+- Added focused v3.6 tests including real temporary repository invariance checks that compare tracked/source file hashes, directory contents, and Git status before and after read-only preparation.
+
+Boundary note: v3.6 can prepare evidence and hand off to a human approval gate. It cannot approve, authorize, execute, complete sessions, invoke adapters, run shell/Git mutation, or mutate repository source.
