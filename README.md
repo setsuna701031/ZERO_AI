@@ -1488,3 +1488,11 @@ v3.6 adds an additive governed read-only preparation pipeline for Engineering Wo
 Requested modes are bounded: `analysis_only` stops after Repository Analysis Closure, `plan_only` stops after Planning Closure, `proposal_only` stops after Proposal Review, and `governed_delivery` stops at `awaiting_human_approval`. Read-only preparation completed means only pre-approval preparation is complete; it is not engineering completion. `ready_for_approval` is not approval. v3.6 grants no approval, authorization, execution, completion, adapter, shell, Git, or repository mutation authority, and it is not a fully autonomous engineering loop.
 
 Inspect and resume expose the read-only timeline, latest artifact references, requested-mode completion, journal/checkpoint state, and fixed no-action resume decisions without progressing the pipeline. Pipeline persistence is bounded under `work-entry/`, and repository analysis output is held as session/work-entry evidence rather than source-tree mutation.
+
+## ZERO Engineering Runtime v3.7 — Governed Approval-to-Execution Activation
+
+v3.7 adds an approval-to-execution activation layer after the v3.6 read-only pipeline. Human Approval and Human Authorization are external artifacts that ZERO receives and validates; v3.7 does not self-approve, self-authorize, create an execution token, retry execution automatically, or complete a session automatically.
+
+The governed sequence is: proposal review closure, external Human Approval, approval validation, authorization handoff, external Human Authorization, authorization validation, execution preparation, adapter admission, explicit execution activation, controlled execution evidence, verification, objective progress evaluation, and completion readiness. Approval is not Authorization, Authorization is not Execution, Execution is not Verification, and Verification is not Completion.
+
+Authorization is bound to a single session, workspace, exact ordered operation package, and activation. Successful execution consumes authorization and replay is rejected. Inspect and Resume are read-only decision surfaces; Completion Candidate routes to Human Completion Review, and remaining work routes only to a Next Iteration Candidate. v3.7 is a governed engineering loop boundary, not a fully autonomous engineering loop.

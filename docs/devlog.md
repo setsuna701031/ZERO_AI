@@ -2138,3 +2138,11 @@ Governance boundary: the entry may normalize and validate requests, admit bounde
 - Added focused v3.6 tests including real temporary repository invariance checks that compare tracked/source file hashes, directory contents, and Git status before and after read-only preparation.
 
 Boundary note: v3.6 can prepare evidence and hand off to a human approval gate. It cannot approve, authorize, execute, complete sessions, invoke adapters, run shell/Git mutation, or mutate repository source.
+
+## v3.7 Governed Approval-to-Execution Activation
+
+- Added `zero.engineering.approval_execution_activation.v1` and `zero.engineering.execution_authorization_handoff.v1` artifacts for the governed post-approval path.
+- Human Approval and Human Authorization remain externally supplied; Approval does not imply Authorization, Authorization does not imply Execution, and explicit `execute` is the only command that invokes controlled execution.
+- Execution Preparation, Adapter Admission, Controlled Execution Evidence, Verification, Objective Progress, Completion Readiness, Inspect, Resume, Journal, Checkpoint, and bounded Persistence are connected as an additive activation layer over v3.6.
+- Authorization consumption prevents replay; operation mismatch, workspace drift, scope expansion, fake artifacts, and consumed/revoked/expired authorizations fail closed.
+- v3.7 does not auto-approve, auto-authorize, auto-retry, auto-complete, or create an executable next proposal; it is not a fully autonomous engineering loop.
