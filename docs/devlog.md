@@ -2228,3 +2228,12 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Added fail-closed validation for stale lineage, drift, scope expansion, unsupported edits, missing mappings, executable or Change Package payloads, and authority.
 - Added Human Authored Patch Review and explicit revision lineage while keeping repository files unchanged.
 - Extended decision-only inspect/resume and Session Store persistence; no apply, execution, Approval, Authorization, retry, or completion capability was added.
+
+## v5.2 Governed Patch Authorization & Change Package Preparation
+
+- Added canonical Change Package Preparation, Candidate, Validation, Approval, Authorization Request/Decision, Authorized Package, and Readiness artifacts.
+- Bound ordered text-edit operations to reviewed edit candidates, source and result fingerprints, repository/session/iteration lineage, confirmed scope, acceptance criteria, bounded tests, and rollback data.
+- Added fail-closed checks for workspace drift, stale reviews, scope or authority expansion, dependency cycles, unbounded verification, replay, and operation/path substitution.
+- Kept Human Change Package Approval distinct from Human Patch Authorization and made authorization single-use and exact-package only.
+- Extended Session Store and CLI inspect/resume surfaces through execution readiness.
+- Stopped at `awaiting_explicit_apply`; no patch apply, repository mutation, test execution, commit automation, push, retry, or completion capability was added.

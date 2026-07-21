@@ -1548,3 +1548,7 @@ An accepted Human Repair Review may now open a read-only repair-planning chain: 
 ## v5.1 Governed Patch Authoring Candidate
 
 A confirmed Human Patch Review may open a candidate-only authoring chain: Patch Authoring Intake, bounded Source Snapshot, human-supplied File and Test Edit Candidates, deterministic Candidate Diff, Authoring Validation, and Human Authored Patch Review. Source files are UTF-8, scope-bound, size-limited, fingerprinted, and checked for workspace drift. Candidate content and unified diff exist only as Session Store artifacts and are never applied to the repository. Exact replacements require one unique match. The chain creates no Change Package and grants no Approval, Authorization, execution, retry, completion, or mutation authority.
+
+## v5.2 Governed Patch Authorization & Change Package Preparation
+
+A confirmed Human Authored Patch Review may now produce a deterministic Change Package Candidate bound to the exact diff, source snapshots, repository, session, iteration, scope, ordered operations, bounded verification plan, and rollback plan. Validation fails closed on drift, stale lineage, scope expansion, dependency cycles, substitutions, unbounded tests, and embedded authority. Human Change Package Approval and Human Patch Authorization are separate canonical decisions. The resulting single-use Authorized Change Package is readiness-checked and stops at `awaiting_explicit_apply`; v5.2 contains no patch executor, repository mutation, test execution, commit, push, retry, or completion capability.
