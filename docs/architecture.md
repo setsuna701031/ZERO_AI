@@ -274,3 +274,11 @@ Repository evidence is bounded and read-only. It admits explicit paths and exact
 Confirmation formalization reuses the existing v3.5 Work Request builder and v3.6 pipeline constructor. It does not prepare, approve, authorize, execute, or complete work. Confirmation only establishes that a human accepted the specification; approval and authorization remain frozen downstream contracts.
 
 The model boundary remains optional and conservative. Core v3.9 behavior is deterministic and model-agnostic. Model suggestions may only be validated candidate suggestions and cannot become confirmed requirements or grant authority.
+
+## v4.0 Governed Practical Repository Task Runner Architecture
+
+The practical runner adds canonical artifacts under the engineering session store: `work-entry/governed-change-package.json`, `execution/bounded-test-policy.json`, `execution/practical-execution-evidence.json`, `execution/test-results.json`, and `verification/practical-verification.json`. These paths are bounded and written with the existing atomic canonical session-store helper.
+
+The execution pipeline is: Confirmed Specification → Work Request → Read-Only Analysis → Proposal → Governed Change Package → Human Approval → Human Authorization → Execution Preparation → Adapter Admission → Explicit Execution → Evidence → Verification → Progress → Completion Review Candidate. v4.0 treats existing Approval, Authorization, Execution Activation, Adapter Admission/Invocation, workspace drift protection, replay protection, canonical JSON/SHA-256 fingerprints, and session-store semantics as frozen governance contracts. The practical runner is additive and does not create a parallel authorization token, adapter registry, shell runner, or Git mutation path.
+
+Bounded test execution is limited to tokenized `python -m pytest <tests path> -q` or a single pytest node under configured test roots. Output is size-bounded, timeout-bounded, and executed with `shell=False`. Git diff evidence uses read-only tokenized Git inspection only. Unexpected changed paths fail verification and prevent completion candidacy.
