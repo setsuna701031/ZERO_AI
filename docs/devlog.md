@@ -2146,3 +2146,9 @@ Boundary note: v3.6 can prepare evidence and hand off to a human approval gate. 
 - Execution Preparation, Adapter Admission, Controlled Execution Evidence, Verification, Objective Progress, Completion Readiness, Inspect, Resume, Journal, Checkpoint, and bounded Persistence are connected as an additive activation layer over v3.6.
 - Authorization consumption prevents replay; operation mismatch, workspace drift, scope expansion, fake artifacts, and consumed/revoked/expired authorizations fail closed.
 - v3.7 does not auto-approve, auto-authorize, auto-retry, auto-complete, or create an executable next proposal; it is not a fully autonomous engineering loop.
+
+## v3.8 Governed Developer Task Experience
+
+Added a unified operator flow for engineering tasks. The flow connects Work Request, Read-Only Analysis, Proposal Review, Human Approval, Human Authorization, Execution Preparation, Adapter Admission, Controlled Execution, Verification, Objective Progress, and Completion Review without bypassing their existing contracts.
+
+Operator-facing additions include active work resolution, canonical `zero.engineering.operator_flow.v1`, unified status, Chinese human-readable output, deterministic JSON output, approval summary, authorization summary, execution preview, explicit execution confirmation, result summary, verification summary, resume guidance, and completion review summary. The layer intentionally does not approve, authorize, execute, retry, complete, or create the next executable proposal automatically.
