@@ -2115,3 +2115,10 @@ Closed documentation scope:
 - v3.3 is not a fully autonomous engineering loop.
 
 Acceptance validation expanded the focused test surface so collected node names now explicitly expose the required acceptance cases for deterministic creation, three-cycle linkage, governance non-inheritance, resume interruption points, fingerprint/checkpoint corruption, journal chain failures, persistence corruption, read-only inspect, and CLI behavior.
+
+## ZERO Engineering Runtime v3.4 — Governed Iteration Objective & Completion Coordination
+
+- Added deterministic v3.4 objective coordination artifacts for session objectives, acceptance criteria, cycle objective assignments, objective progress, completion readiness, completion review requests, human completion decisions, iteration decisions, iteration health, and next iteration objective candidates.
+- Integrated v3.4 summaries into v3.3 inspect/resume/checkpoint persistence without replacing v3.3 session, cycle, proposal, approval, authorization, execution, verification, feedback, journal, or checkpoint contracts.
+- Preserved the governance boundary: `completion_candidate=true` is only readiness for human review; only a human `approved_complete` decision can permit session completion; v3.4 does not auto-create proposals, auto-approve, auto-authorize, auto-execute, or auto-append cycles.
+- Added bounded stalled-loop detection using objective/criterion/evidence/failure identities and a fixed three-cycle no-progress threshold.

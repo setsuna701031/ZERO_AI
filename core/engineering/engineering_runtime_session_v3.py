@@ -13,7 +13,7 @@ JOURNAL_SCHEMA="zero.engineering.runtime_session_journal_entry.v1"
 CHECKPOINT_SCHEMA="zero.engineering.runtime_session_checkpoint.v1"
 STATUSES=("created","active","awaiting_approval","awaiting_authorization","ready_for_execution","executing","awaiting_verification","verifying","awaiting_feedback","awaiting_next_proposal","blocked","failed","completed","closed","invalid")
 TERMINAL={"completed","closed","failed","invalid"}
-EVENTS=("session_created","cycle_admitted","approval_observed","authorization_observed","execution_started","execution_completed","verification_started","verification_completed","feedback_recorded","proposal_candidate_created","cycle_closed","session_resumed","session_blocked","session_failed","session_completed","session_closed")
+EVENTS=("session_objective_defined","cycle_objectives_assigned","objective_progress_evaluated","completion_readiness_evaluated","completion_review_requested","completion_decision_recorded","iteration_health_evaluated","next_iteration_objective_candidate_created","session_created","cycle_admitted","approval_observed","authorization_observed","execution_started","execution_completed","verification_started","verification_completed","feedback_recorded","proposal_candidate_created","cycle_closed","session_resumed","session_blocked","session_failed","session_completed","session_closed")
 REQUIRED_REF_KEYS=("schema","artifact_identity","artifact_fingerprint")
 
 class RuntimeSessionError(ValueError): pass
@@ -143,7 +143,8 @@ def replay_journal(entries:Sequence[Mapping[str,Any]], session_id:str)->dict[str
 def inspect_engineering_runtime_session(session:Mapping[str,Any], cycles:Sequence[Mapping[str,Any]], checkpoint:Mapping[str,Any]|None=None)->dict[str,Any]:
     validate_engineering_runtime_session(session)
     completed=sum(1 for c in cycles if c.get("cycle_status")=="closed")
-    return {"session_id":session["session_id"],"session_status":session["status"],"repository_identity":session["repository_identity"],"current_cycle":session.get("current_cycle_number"),"cycle_count":session.get("cycle_count"),"completed_cycles":completed,"blocked_cycles":sum(1 for c in cycles if c.get("cycle_status")=="blocked"),"failed_cycles":sum(1 for c in cycles if c.get("cycle_status")=="failed"),"pending_governance_stage":determine_next_governed_action(session),"next_governed_action":determine_next_governed_action(session),"resumability":resume_decision(session,cycles,checkpoint)["decision"],"latest_durable_checkpoint":checkpoint.get("checkpoint_fingerprint") if checkpoint else None,"session_fingerprint_verification":"valid","cycle_lineage_verification":"valid","timeline":[_timeline(c) for c in cycles]}
+    v4=checkpoint.get("v3_4_objective_coordination",{}) if checkpoint else {}
+    return {"session_id":session["session_id"],"session_status":session["status"],"repository_identity":session["repository_identity"],"current_cycle":session.get("current_cycle_number"),"cycle_count":session.get("cycle_count"),"completed_cycles":completed,"blocked_cycles":sum(1 for c in cycles if c.get("cycle_status")=="blocked"),"failed_cycles":sum(1 for c in cycles if c.get("cycle_status")=="failed"),"pending_governance_stage":determine_next_governed_action(session),"next_governed_action":determine_next_governed_action(session),"resumability":resume_decision(session,cycles,checkpoint)["decision"],"latest_durable_checkpoint":checkpoint.get("checkpoint_fingerprint") if checkpoint else None,"session_fingerprint_verification":"valid","cycle_lineage_verification":"valid","objective_count":v4.get("objective_count",0),"required_objective_count":v4.get("required_objective_count",0),"satisfied_objective_count":v4.get("satisfied_objective_count",0),"remaining_objective_count":v4.get("remaining_objective_count",0),"current_iteration_health":v4.get("iteration_health","not_initialized"),"completion_readiness":v4.get("completion_readiness","not_initialized"),"completion_candidate":v4.get("completion_candidate",False),"human_completion_review_required":v4.get("human_completion_review_required",False),"next_iteration_recommendation":v4.get("next_iteration_recommendation","objective_coordination_unavailable"),"timeline":[_timeline(c) for c in cycles]}
 
 def _timeline(c):
     steps=["Proposal"]
@@ -157,7 +158,7 @@ def _timeline(c):
     return {"cycle_number":c.get("cycle_number"),"line":" → ".join(steps)}
 
 def build_checkpoint(session:Mapping[str,Any], cycles:Sequence[Mapping[str,Any]], journal_entries:Sequence[Mapping[str,Any]])->dict[str,Any]:
-    body={"schema":CHECKPOINT_SCHEMA,"session_id":session["session_id"],"session_status":session["status"],"session_fingerprint":session["session_fingerprint"],"current_cycle":session.get("current_cycle_number"),"cycle_references":session.get("cycle_references",[]),"journal_head":journal_entries[-1]["entry_fingerprint"] if journal_entries else None,"latest_verified_artifact_references":[c.get("verification_result_reference") for c in cycles if c.get("verification_result_reference")],"resume_metadata":{"next_governed_action":determine_next_governed_action(session)}}
+    body={"schema":CHECKPOINT_SCHEMA,"session_id":session["session_id"],"session_status":session["status"],"session_fingerprint":session["session_fingerprint"],"current_cycle":session.get("current_cycle_number"),"cycle_references":session.get("cycle_references",[]),"journal_head":journal_entries[-1]["entry_fingerprint"] if journal_entries else None,"latest_verified_artifact_references":[c.get("verification_result_reference") for c in cycles if c.get("verification_result_reference")],"resume_metadata":{"next_governed_action":determine_next_governed_action(session)},"v3_4_objective_coordination":session.get("v3_4_objective_coordination",{"status":"not_initialized"})}
     return _seal(body,"checkpoint_fingerprint","checkpoint_id","engineering-runtime-checkpoint-")
 
 def resume_decision(session:Mapping[str,Any], cycles:Sequence[Mapping[str,Any]], checkpoint:Mapping[str,Any]|None=None)->dict[str,Any]:
@@ -172,8 +173,9 @@ def resume_decision(session:Mapping[str,Any], cycles:Sequence[Mapping[str,Any]],
     if session.get("status")=="closed": d="already_closed"
     elif session.get("status")=="completed": d="already_completed"
     elif session.get("status")=="blocked": d="blocked"
+    elif checkpoint and (checkpoint.get("v3_4_objective_coordination") or {}).get("resume_decision"): d=(checkpoint.get("v3_4_objective_coordination") or {}).get("resume_decision")
     else: d=determine_next_governed_action(session)
-    return {"decision":d,"will_approve":False,"will_authorize":False,"will_execute":False}
+    return {"decision":d,"will_approve":False,"will_authorize":False,"will_execute":False,"will_create_proposal":False,"will_complete":False}
 
 class RuntimeSessionStore:
     def __init__(self,root:str|Path): self.root=Path(root)
@@ -197,6 +199,12 @@ class RuntimeSessionStore:
         return value
     def create(self,session): self._write(self._base(session["session_id"])/"session.json",session); return self.save_index(session["session_id"])
     def save_cycle(self,cycle): self._write(self._base(cycle["session_id"])/"cycles"/f"cycle-{cycle['cycle_number']:04d}.json",cycle); return self.save_index(cycle["session_id"])
+    def save_objective(self,obj): self._write(self._base(obj["session_id"])/"objectives"/f"{obj['objective_id']}.json",obj); return self.save_index(obj["session_id"])
+    def save_assignment(self,a): self._write(self._base(a["session_id"])/"assignments"/f"cycle-{a['cycle_number']:04d}.json",a); return self.save_index(a["session_id"])
+    def save_progress(self,p): self._write(self._base(p["session_id"])/"progress"/f"cycle-{p['cycle_number']:04d}.json",p,overwrite=True); return self.save_index(p["session_id"])
+    def save_completion(self,c): self._write(self._base(c["session_id"])/"completion"/f"{c.get('readiness_id') or c.get('review_request_id') or c.get('decision_id')}.json",c); return self.save_index(c["session_id"])
+    def save_iteration_health(self,h): self._write(self._base(h["session_id"])/"iteration-health"/"latest.json",h,overwrite=True); return self.save_index(h["session_id"])
+    def save_next_objective_candidate(self,c): self._write(self._base(c["session_id"])/"next-objective-candidates"/f"{c['candidate_id']}.json",c); return self.save_index(c["session_id"])
     def save_checkpoint(self,checkpoint): self._write(self._base(checkpoint["session_id"])/"checkpoints"/"latest.json",checkpoint,overwrite=True); return self.save_index(checkpoint["session_id"])
     def append_journal(self,entry): self._write(self._base(entry["session_id"])/"journal"/f"entry-{entry['sequence_number']:06d}.json",entry); return self.save_index(entry["session_id"])
     def load(self,session_id):
@@ -205,7 +213,13 @@ class RuntimeSessionStore:
         session=self._read(base/"session.json"); cycles=[self._read(p) for p in sorted((base/"cycles").glob("cycle-*.json"))] if (base/"cycles").exists() else []
         journal=[self._read(p) for p in sorted((base/"journal").glob("entry-*.json"))] if (base/"journal").exists() else []
         checkpoint=self._read(base/"checkpoints"/"latest.json") if (base/"checkpoints"/"latest.json").exists() else None
-        return {"session":session,"cycles":cycles,"journal":journal,"checkpoint":checkpoint,"index":self._read(base/"index.json") if (base/"index.json").exists() else None}
+        objectives=[self._read(p) for p in sorted((base/"objectives").glob("*.json"))] if (base/"objectives").exists() else []
+        assignments=[self._read(p) for p in sorted((base/"assignments").glob("*.json"))] if (base/"assignments").exists() else []
+        progress=[self._read(p) for p in sorted((base/"progress").glob("*.json"))] if (base/"progress").exists() else []
+        completion=[self._read(p) for p in sorted((base/"completion").glob("*.json"))] if (base/"completion").exists() else []
+        health=self._read(base/"iteration-health"/"latest.json") if (base/"iteration-health"/"latest.json").exists() else None
+        next_candidates=[self._read(p) for p in sorted((base/"next-objective-candidates").glob("*.json"))] if (base/"next-objective-candidates").exists() else []
+        return {"session":session,"cycles":cycles,"journal":journal,"checkpoint":checkpoint,"objectives":objectives,"assignments":assignments,"progress":progress,"completion":completion,"iteration_health":health,"next_objective_candidates":next_candidates,"index":self._read(base/"index.json") if (base/"index.json").exists() else None}
     def save_index(self,session_id):
         base=self._base(session_id); files=sorted(str(p.relative_to(base)).replace('\\','/') for p in base.rglob('*.json') if p.name!="index.json")
         index={"schema":"zero.engineering.runtime_session_index.v1","session_id":session_id,"files":files}

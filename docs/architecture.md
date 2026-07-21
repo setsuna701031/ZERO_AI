@@ -205,3 +205,15 @@ Architecture boundaries:
 - Checkpoints seal durable session state, current cycle references, journal head, verified artifact references, and resume metadata.
 
 Therefore v3.3 remains governed coordination rather than a fully autonomous engineering loop. Actual repository mutation authority remains outside the Session coordinator and must continue through existing governed execution paths.
+
+## Engineering Runtime v3.4 Objective and Completion Coordination
+
+Runtime v3.4 is an additive governance layer over the v3.3 Engineering Runtime Session. The existing v3.3 Session/Cycle/Journal/Checkpoint/Resume/Inspect contracts remain frozen for required fields and fingerprint semantics; v3.4 persists additional artifacts in bounded session subdirectories.
+
+The v3.4 artifact flow is: Session Objective → Cycle Objective Assignment → governed Proposal/Approval/Authorization/Execution/Verification/Feedback → Objective Progress Evaluation → Completion Readiness → Iteration Health → Iteration Decision. When readiness is sufficient, the runtime may create a Completion Review Request with `authority_state=not_granted`. A Human Completion Decision is separate from proposal approval and authorization; only `approved_complete` permits the existing completed-session transition.
+
+Completion readiness fails closed when required acceptance criteria lack evidence, evidence references are invalid, lineage is invalid, scope deviates, a failed cycle remains open, unresolved feedback exists, or required objectives remain unsatisfied. Testing or verification success is treated as evidence only, not as automatic objective completion.
+
+Iteration health uses deterministic progression deltas: newly satisfied criteria indicate progressing; new evidence without satisfaction indicates slow progress; three consecutive no-progress cycles indicate stalled; repeated verification failure identities indicate repeating failure. Stalled or repeating-failure health requires human reassessment and blocks unbounded next-candidate generation.
+
+Next Iteration Objective Candidates are bounded by remaining approved objectives and criteria. They are explicitly candidate-only, not proposals, not approved, not authorized, and not executable.
