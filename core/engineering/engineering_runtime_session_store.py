@@ -2,7 +2,7 @@ from __future__ import annotations
 import json, os, tempfile
 from pathlib import Path
 from .engineering_runtime_orchestrator_common import canonical_json, SAFE_RELATIVE
-ALLOWED_FILES=("request.json","session.json","phase.json","checkpoints.json","artifact-index.json","formal-analysis.json","formal-planning.json","formal-proposal.json","formal-approval.json","formal-authorization.json","formal-preparation.json","result.json","verification.json","evidence.json","closure.json","work-entry/request.json","work-entry/intake.json","work-entry/coordination.json","work-entry/human-gate-handoff.json")
+ALLOWED_FILES=("request.json","session.json","phase.json","checkpoints.json","artifact-index.json","formal-analysis.json","formal-planning.json","formal-proposal.json","formal-approval.json","formal-authorization.json","formal-preparation.json","result.json","verification.json","evidence.json","closure.json","work-entry/request.json","work-entry/intake.json","work-entry/coordination.json","work-entry/human-gate-handoff.json","work-entry/pipeline.json","work-entry/checkpoint.json","work-entry/journal.json","work-entry/stages/repository-admission.json","work-entry/stages/repository-analysis.json","work-entry/stages/objective-definition.json","work-entry/stages/planning.json","work-entry/stages/proposal-preparation.json","work-entry/stages/proposal-review.json")
 def _path(root,session_id,name):
     if name not in ALLOWED_FILES or not SAFE_RELATIVE.fullmatch(session_id): raise ValueError("unsafe_session_store_name")
     return Path(root).resolve()/session_id/name
