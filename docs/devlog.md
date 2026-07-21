@@ -2237,3 +2237,12 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Kept Human Change Package Approval distinct from Human Patch Authorization and made authorization single-use and exact-package only.
 - Extended Session Store and CLI inspect/resume surfaces through execution readiness.
 - Stopped at `awaiting_explicit_apply`; no patch apply, repository mutation, test execution, commit automation, push, retry, or completion capability was added.
+
+## v5.3 Governed Explicit Patch Apply
+
+- Added canonical Explicit Apply Request, Apply Admission, Authorization Usage, Transaction, Operation Evidence, Apply Result, Verification Result, Completion Candidate, and Human Completion Review artifacts.
+- Required a named human to confirm the exact authorized package, operation IDs, paths, test targets, workspace/source snapshots, rollback, and risks before admission.
+- Added single-use authorization reservation and consumption with replay rejection and manual reauthorization after every failed transaction.
+- Added an all-or-nothing bounded text mutation executor with source/result hashes, safe relative paths, symlink rejection, per-operation evidence, and rollback evidence.
+- Reused the bounded argument-vector pytest runner for separately invoked focused verification only.
+- Kept verification distinct from completion and denied implicit retry, rollback, completion, commit, push, and PR authority.
