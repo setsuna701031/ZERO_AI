@@ -1528,3 +1528,7 @@ The workflow does not grant approval, authorization, execution, retry, repair, c
 ## v4.2 Governed Work Request Integrity Closure
 
 The governed multi-file planning path now requires the existing `zero.engineering.work_request.v1` Formal Work Request as an upstream artifact. A human-confirmed Specification is persisted with its Work Request, repository evidence, and verifiable references before a Multi-File Plan can become `ready_for_confirmation`. Specification Confirmation is not Approval, a Work Request grants no execution authority, and plan validation checks the complete lineage. Legacy sessions remain incomplete and are never repaired automatically. The intentionally deferred Perform/perf intent-classifier behavior is unchanged.
+
+## v4.3 Intent Classification Boundary Hardening
+
+Intent vocabulary entries now declare an explicit matching kind for short ASCII aliases, full ASCII words, multiword phrases, identifier/path tokens, and non-ASCII phrases. Short aliases such as `perf` no longer match inside ordinary words such as `Perform`, while explicit performance terms, Chinese phrases, snake-case identifiers, kebab boundaries, slash boundaries, quoted terms, and Unicode-normalized input remain supported. Classification evidence records the bounded span, match kind, and normalization basis. This change does not modify the v4.2 Formal Work Request chain and adds no Approval, Authorization, or Execution capability.

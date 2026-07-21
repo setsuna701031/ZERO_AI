@@ -294,3 +294,9 @@ Artifacts are persisted through the existing Runtime Session Store under bounded
 The governed read-only chain is: Natural-Language Intake → Clarification → human Specification Confirmation → existing Formal Work Request → Repository Analysis/Evidence → Multi-File Plan Candidate → linkage validation → Human Plan Confirmation. The Formal Work Request is a required governance ancestor, not an Approval or execution grant. Plan validation binds the Work Request fingerprint, confirmed Specification reference, repository-analysis reference, repository identity, confirmed scope, and session identity. Missing, stale, mismatched, or silently expanded lineage fails closed with bounded reason codes. Legacy sessions without v4.2 linkage are reported as not initialized or incomplete and are not automatically migrated.
 
 This closure adds no second schema, session store, or CLI and deliberately does not change the Perform/perf intent-classifier behavior.
+
+## v4.3 Intent Classification Boundary Hardening
+
+The existing natural-language Intake classifier now uses a single deterministic vocabulary policy whose entries explicitly select `short_ascii_alias`, `full_ascii_word`, `multiword_phrase`, `identifier_token`, or `non_ascii_phrase`. NFKC normalization and lowercase comparison happen before matching. ASCII terms require bounded locations, with identifier and slash-prefix handling preserving snake-case, kebab-case, and repository-path use; non-ASCII phrases retain contiguous matching because Chinese text does not require spaces.
+
+Classification evidence remains backward compatible through `matched_terms` and additionally exposes each match kind, bounded span, and normalization basis. Ambiguous short substrings fail safe by producing no match. The v4.2 Formal Work Request and Multi-File Plan linkage chain is unchanged, and classification grants no Approval, Authorization, Execution, or mutation authority.

@@ -41,18 +41,42 @@ def detect_language(s:str)->str:
     has_cjk=bool(re.search(r'[\u4e00-\u9fff]',s)); has_en=bool(re.search(r'[A-Za-z]',s))
     return 'mixed' if has_cjk and has_en else 'zh' if has_cjk else 'en' if has_en else 'unknown'
 
+MATCH_KINDS={'short_ascii_alias','full_ascii_word','multiword_phrase','identifier_token','non_ascii_phrase'}
+INTENT_TERMS={
+    'test_addition':[('test','short_ascii_alias'),('tests/','identifier_token'),('測試','non_ascii_phrase'),('测试','non_ascii_phrase')],
+    'bug_fix':[('fix','short_ascii_alias'),('bug','short_ascii_alias'),('error','full_ascii_word'),('broken','full_ascii_word'),('修正','non_ascii_phrase'),('錯誤','non_ascii_phrase'),('错误','non_ascii_phrase'),('沒反應','non_ascii_phrase'),('没反应','non_ascii_phrase'),('失敗','non_ascii_phrase'),('失败','non_ascii_phrase')],
+    'feature_addition':[('add','short_ascii_alias'),('新增','non_ascii_phrase'),('增加','non_ascii_phrase'),('feature','full_ascii_word'),('支援','non_ascii_phrase'),('支持','non_ascii_phrase')],
+    'documentation_change':[('docs/','identifier_token'),('document','full_ascii_word'),('documentation','full_ascii_word'),('readme','full_ascii_word'),('文件','non_ascii_phrase'),('說明','non_ascii_phrase'),('说明','non_ascii_phrase')],
+    'security_hardening':[('security','full_ascii_word'),('secure','full_ascii_word'),('password','full_ascii_word'),('secret','full_ascii_word'),('token','full_ascii_word'),('密碼','non_ascii_phrase'),('密码','non_ascii_phrase'),('認證','non_ascii_phrase'),('认证','non_ascii_phrase'),('授權','non_ascii_phrase'),('授权','non_ascii_phrase')],
+    'dependency_change':[('dependency','full_ascii_word'),('dependencies','full_ascii_word'),('upgrade','full_ascii_word'),('package','full_ascii_word'),('依賴','non_ascii_phrase'),('依赖','non_ascii_phrase'),('升級','non_ascii_phrase'),('升级','non_ascii_phrase')],
+    'refactor':[('refactor','full_ascii_word'),('重構','non_ascii_phrase'),('重构','non_ascii_phrase')],
+    'performance_improvement':[('performance improvement','multiword_phrase'),('improve performance','multiword_phrase'),('optimize performance','multiword_phrase'),('performance_improvement','identifier_token'),('performance','full_ascii_word'),('perf','short_ascii_alias'),('效能改善','non_ascii_phrase'),('性能優化','non_ascii_phrase'),('改善效能','non_ascii_phrase'),('速度','non_ascii_phrase'),('效能','non_ascii_phrase'),('性能','non_ascii_phrase')],
+    'configuration_change':[('config','full_ascii_word'),('configuration','full_ascii_word'),('設定','non_ascii_phrase'),('配置','non_ascii_phrase')],
+    'repository_analysis':[('analyze repository','multiword_phrase'),('repository analysis','multiword_phrase'),('分析程式庫','non_ascii_phrase'),('分析仓库','non_ascii_phrase')],
+}
+
+def _intent_term_matches(statement:str, term:str, kind:str)->list[dict[str,Any]]:
+    if kind not in MATCH_KINDS: return []
+    normalized=statement.lower(); needle=term.lower()
+    matches=[]
+    for found in re.finditer(re.escape(needle),normalized):
+        start,end=found.span(); left=normalized[start-1] if start else ''; right=normalized[end] if end<len(normalized) else ''
+        left_ok=not left.isalnum(); right_ok=needle.endswith(('/','_','-')) or not right.isalnum()
+        if kind=='non_ascii_phrase' or (left_ok and right_ok): matches.append({'matched_term':term,'match_kind':kind,'matched_span':[start,end],'normalization_basis':'NFKC_then_lowercase'})
+    return matches
+
 def classify_engineering_intent(statement:str)->dict[str,Any]:
-    s=statement.lower(); hits=[]
-    rules=[('test_addition',['test','tests/','測試','测试']),('bug_fix',['fix','bug','error','broken','修正','錯誤','错误','沒反應','没反应','失敗','失败']),('feature_addition',['add','新增','增加','feature','支援','支持']),('documentation_change',['docs/','document','documentation','readme','文件','說明','说明']),('security_hardening',['security','secure','password','secret','token','密碼','密码','認證','认证','授權','授权']),('dependency_change',['dependency','dependencies','upgrade','package','依賴','依赖','升級','升级']),('refactor',['refactor','重構','重构']),('performance_improvement',['performance','perf','速度','效能','性能']),('configuration_change',['config','configuration','設定','配置']),('repository_analysis',['analyze repository','repository analysis','分析程式庫','分析仓库'])]
-    for intent, words in rules:
-        ev=[w for w in words if w in s]
-        if ev: hits.append((intent,ev))
-    if len({h[0] for h in hits})>1 and any(x in s for x in [',',';','、',' and ','以及']): primary='mixed'
+    s=unicodedata.normalize('NFKC',statement).lower(); hits=[]
+    for intent, terms in INTENT_TERMS.items():
+        matches=[match for term,kind in terms for match in _intent_term_matches(s,term,kind)]
+        if matches: hits.append((intent,matches))
+    if len({h[0] for h in hits})>1 and any(marker in s for marker in (',',';','、',' and ','以及',' with explicit ')): primary='mixed'
+    elif any(intent=='performance_improvement' and any(match['matched_term']=='perf' for match in matches) for intent,matches in hits): primary='performance_improvement'
     elif hits: primary=hits[0][0]
     else: primary='unknown'
     secondary=sorted({h[0] for h in hits if h[0]!=primary})
     conf='high' if primary!='unknown' and len(hits)==1 else 'medium' if primary!='unknown' else 'unknown'
-    return {'primary_intent':primary,'secondary_intents':secondary,'confidence_band':conf,'classification_evidence':[{'intent':i,'matched_terms':e} for i,e in hits],'unsupported_elements':[] if primary!='unknown' else ['unsupported_intent']}
+    return {'primary_intent':primary,'secondary_intents':secondary,'confidence_band':conf,'classification_evidence':[{'intent':intent,'matched_terms':[match['matched_term'] for match in matches],'matches':matches} for intent,matches in hits],'unsupported_elements':[] if primary!='unknown' else ['unsupported_intent']}
 
 def _extract_refs(statement:str)->dict[str,list[str]]:
     paths=sorted(set(m.group(0).strip('.,;:，。；') for m in re.finditer(r'(?:(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+)', statement)))

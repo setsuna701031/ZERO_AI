@@ -2184,3 +2184,10 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Required non-empty Work Request, confirmed Specification, and repository-analysis references in new Multi-File Plan candidates.
 - Added fail-closed linkage validation and decision-only inspect/resume reporting; no Approval, Authorization, Execution, mutation, retry, or completion capability was added.
 - Kept legacy sessions incomplete without automatic repair and left the Perform/perf classifier bug unchanged for a separate change.
+
+## v4.3 Intent Classification Boundary Hardening
+
+- Replaced unrestricted intent-term substring checks with one deterministic, normalization-aware boundary policy in the existing classifier.
+- Marked every vocabulary entry explicitly as a short ASCII alias, full ASCII word, multiword phrase, identifier/path token, or non-ASCII phrase.
+- Preserved explicit `perf`/`performance`, identifier, path, punctuation, Chinese, and mixed-language matches while removing false `perf` evidence from `Perform`, `performed`, and `performing`.
+- Added bounded match metadata without changing the Intake schema, CLI, v4.2 Work Request wiring, or any Approval, Authorization, Execution, mutation, repair, or retry boundary.

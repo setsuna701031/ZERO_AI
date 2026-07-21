@@ -92,8 +92,7 @@ def test_cli_end_to_end_stops_at_human_plan_confirmation(tmp_path):
     assert all(resumed[k] is False for k in ('will_modify_repository','will_execute_tests','will_approve','will_authorize','will_retry','will_complete'))
 
 
-def test_authority_boundary_and_classifier_unchanged(tmp_path):
-    parts=governed(tmp_path); plan=parts[-1]
+def test_authority_boundary_and_work_request_contract_unchanged(tmp_path):
+    parts=governed(tmp_path); request=parts[5]; plan=parts[-1]
     assert plan['authority']=={'may_approve':False,'may_authorize':False,'may_execute':False,'may_complete':False}
-    source=Path('core/engineering/engineering_natural_language_intake.py').read_text(encoding='utf-8')
-    assert "('performance_improvement',['performance','perf'" in source
+    assert request['schema']=='zero.engineering.work_request.v1'
