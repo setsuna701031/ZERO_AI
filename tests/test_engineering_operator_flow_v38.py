@@ -86,7 +86,7 @@ def test_execute_confirmation_drift_replay_and_verification_failure(tmp_path):
 def test_cli_start_status_preview_execute_confirmation(tmp_path):
     repo=tmp_path/'repo'; repo.mkdir(); store=tmp_path/'store'
     cmd=[sys.executable,'-m','cli.zero_engineering_work','--store-root',str(store),'--format','json']
-    r=subprocess.run(cmd+['start','建立 docs/status.txt','--repository',str(repo)],text=True,capture_output=True)
+    r=subprocess.run(cmd+['start','建立 docs/status.txt','--repository',str(repo),'--legacy-direct-work-request'],text=True,capture_output=True)
     assert r.returncode==0 and json.loads(r.stdout)['operator_flow']['schema']=='zero.engineering.operator_flow.v1'
     sid=json.loads(r.stdout)['coordination']['runtime_session_reference']['artifact_identity']
     r=subprocess.run(cmd+['--session-id',sid,'status'],text=True,capture_output=True)

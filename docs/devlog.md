@@ -2152,3 +2152,15 @@ Boundary note: v3.6 can prepare evidence and hand off to a human approval gate. 
 Added a unified operator flow for engineering tasks. The flow connects Work Request, Read-Only Analysis, Proposal Review, Human Approval, Human Authorization, Execution Preparation, Adapter Admission, Controlled Execution, Verification, Objective Progress, and Completion Review without bypassing their existing contracts.
 
 Operator-facing additions include active work resolution, canonical `zero.engineering.operator_flow.v1`, unified status, Chinese human-readable output, deterministic JSON output, approval summary, authorization summary, execution preview, explicit execution confirmation, result summary, verification summary, resume guidance, and completion review summary. The layer intentionally does not approve, authorize, execute, retry, complete, or create the next executable proposal automatically.
+
+## v3.9 — Governed Natural-Language Task Intake
+
+- Added governed natural-language task intake before formal Work Request creation.
+- Preserved original user statements and added deterministic NFKC/spacing/punctuation normalization.
+- Added rule-first engineering intent classification with stable confidence bands and fail-safe unknown/mixed handling.
+- Added bounded, read-only repository evidence collection for explicit paths, filenames, likely components, tests, and config without running project commands or tests.
+- Added Work Specification Candidate artifacts with observed/inferred/confirmed separation, proposed-only acceptance criteria, risk hints, assumptions, unresolved questions, and no authority.
+- Added clarification assessment and human clarification response artifacts with append-only candidate version lineage.
+- Added human specification confirmation validation, high-risk acknowledgement requirements, and conversion into the existing v3.5 Work Request builder plus v3.6 read-only pipeline creation.
+- Extended the unified engineering CLI with intake, intake-status, specification, clarification, respond-clarification, confirm-specification, reject-specification, formalize, start-confirmed, inspect, and resume behavior.
+- Documented that natural language is not a formal requirement, candidates are not Work Requests, confirmations are not approvals, and v3.9 performs no auto-confirm, auto-approve, auto-authorize, auto-execute, or source mutation.

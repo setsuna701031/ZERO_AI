@@ -262,3 +262,15 @@ The canonical `zero.engineering.operator_flow.v1` artifact includes schema, oper
 The active work resolver supports explicit session, coordination, and work request IDs. With exactly one active work it resolves that work; with multiple active works it returns `ambiguous_active_work`; with none it returns `no_active_work`. Completed, closed, and invalid work is excluded from default active resolution.
 
 Preview remains read-only and reports workspace, adapter, ordered operations, target paths, before-state hashes, expected paths, validation/recovery information, authorization actor, consumption state, readiness, and blocking conditions. Execute requires explicit confirmation and delegates to the governed v3.7 controlled execution API, which rechecks workspace state, operation package identity, and unconsumed authorization before mutation. Verify delegates to the v3.7 verification API and does not mark the engineering task completed.
+
+## v3.9 Architecture — Governed Natural-Language Intake Layer
+
+The v3.9 layer sits before v3.5 Work Entry. The governed flow is: Natural-Language Task → Normalized Task Intent → Repository-Grounded Evidence → Work Specification Candidate → Clarification Assessment → Human Specification Confirmation → Formal Engineering Work Request → v3.5 Work Entry → v3.6 Read-Only Pipeline.
+
+Artifacts use canonical JSON and SHA-256 fingerprints, persisted through the existing runtime session store allowlist under bounded `work-entry/` paths. Candidate and clarification response lineage is append-only: a response creates a new candidate version linked to the previous candidate, while confirmations bind to an exact candidate fingerprint. Legacy v3.8 work without intake reports `natural_language_intake_status = not_initialized`, not corruption.
+
+Repository evidence is bounded and read-only. It admits explicit paths and exact filenames, records unresolved references without substituting similar paths, notes observed tests/configuration, and declares limitations such as no project test execution and no arbitrary command execution. The evidence layer does not create a second repository analyzer or session registry.
+
+Confirmation formalization reuses the existing v3.5 Work Request builder and v3.6 pipeline constructor. It does not prepare, approve, authorize, execute, or complete work. Confirmation only establishes that a human accepted the specification; approval and authorization remain frozen downstream contracts.
+
+The model boundary remains optional and conservative. Core v3.9 behavior is deterministic and model-agnostic. Model suggestions may only be validated candidate suggestions and cannot become confirmed requirements or grant authority.
