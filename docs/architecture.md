@@ -217,3 +217,11 @@ Completion readiness fails closed when required acceptance criteria lack evidenc
 Iteration health uses deterministic progression deltas: newly satisfied criteria indicate progressing; new evidence without satisfaction indicates slow progress; three consecutive no-progress cycles indicate stalled; repeated verification failure identities indicate repeating failure. Stalled or repeating-failure health requires human reassessment and blocks unbounded next-candidate generation.
 
 Next Iteration Objective Candidates are bounded by remaining approved objectives and criteria. They are explicitly candidate-only, not proposals, not approved, not authorized, and not executable.
+
+## Engineering Work Entry v3.5 Architecture
+
+The v3.5 work entry architecture provides a single coordination surface from `zero.engineering.work_request.v1` through `zero.engineering.work_intake.v1` into `zero.engineering.work_coordination.v1`. Coordination references the existing Engineering Runtime Session rather than creating a second runtime. Stage transitions are validated by artifact evidence: repository admission, repository analysis closure, objective, planning closure, proposal, proposal review closure, approval closure, authorization closure, execution preparation closure, execution result, verification closure, progress evaluation, completion review, or next-iteration handoff.
+
+Inspection is read-only and reports stage timeline, missing artifacts, next governed action, authority state, runtime linkage, completion readiness, iteration health, and resumability. Resume revalidates the coordination artifact and returns a decision without planning automatic approval, authorization, execution, completion, or proposal creation. Persistence is under the session store `work-entry/` namespace using canonical UTF-8 JSON and read-back validation.
+
+v3.5 is not a fully autonomous engineering loop. It is the governed entry and coordination layer that safely connects existing analysis, planning, proposal, review, approval, authorization, execution, verification, and v3.4 completion capabilities while preserving human governance gates.

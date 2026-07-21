@@ -2122,3 +2122,9 @@ Acceptance validation expanded the focused test surface so collected node names 
 - Integrated v3.4 summaries into v3.3 inspect/resume/checkpoint persistence without replacing v3.3 session, cycle, proposal, approval, authorization, execution, verification, feedback, journal, or checkpoint contracts.
 - Preserved the governance boundary: `completion_candidate=true` is only readiness for human review; only a human `approved_complete` decision can permit session completion; v3.4 does not auto-create proposals, auto-approve, auto-authorize, auto-execute, or auto-append cycles.
 - Added bounded stalled-loop detection using objective/criterion/evidence/failure identities and a fixed three-cycle no-progress threshold.
+
+## v3.5 — Governed Engineering Work Intake & Coordination Entry
+
+Implemented a governed Engineering Work Entry bundle as an additive orchestration layer. It introduces deterministic work request, work intake, work coordination, human gate handoff, journal, checkpoint, inspect, resume, CLI, and bounded work-entry persistence artifacts. The coordinator links to existing Engineering Runtime Session identity and treats existing repository analysis, planning, proposal review, approval, authorization, execution preparation, execution, verification, v3.4 completion readiness, and iteration health contracts as external/frozen artifact evidence rather than parallel implementations.
+
+Governance boundary: the entry may normalize and validate requests, admit bounded repository scope, link read-only and proposal artifacts, derive next governed action, and stop at human approval. It cannot auto-approve, auto-authorize, auto-execute, auto-complete, issue authority, append cycles, or mutate repository source.
