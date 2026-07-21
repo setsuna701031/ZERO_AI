@@ -2176,3 +2176,11 @@ Safety boundaries: no arbitrary shell, no arbitrary Python execution, no Git mut
 Added v4.1 governed multi-file coding workflow artifacts and CLI surfaces. The implementation adds Multi-File Change Plan Candidate creation/validation, Human Plan Confirmation, plan revision lineage, production/test/documentation/configuration/fixture role marking, deterministic dependency ordering, acceptance criterion mapping, bounded test-set execution over the existing v4.0 bounded pytest runner, deterministic pytest output parsing, Test Failure Evidence, suspected path correlation, Repair Proposal Candidate, Human Repair Review, and bounded iteration indexing. Formalization reuses `zero.engineering.governed_change_package.v1`; no second change-package, test runner, approval, authorization, execution runtime, repository analyzer, or session store is introduced.
 
 The new repair path is evidence-only and review-gated: it can summarize failures, list traceback-backed suspected paths, propose read-only investigation steps, and propose high-level change intents, but it cannot approve, authorize, mutate, retry, expand scope, complete, commit, push, or run additional tests. Each next iteration requires fresh approval and authorization, and `automatic_iterations = 0`.
+
+## v4.2 Governed Work Request Integrity Closure
+
+- Reused the v3.5 `zero.engineering.work_request.v1` builder and validator instead of introducing another Work Request contract.
+- Wired human Specification Confirmation to Formal Work Request persistence in the originating intake session.
+- Required non-empty Work Request, confirmed Specification, and repository-analysis references in new Multi-File Plan candidates.
+- Added fail-closed linkage validation and decision-only inspect/resume reporting; no Approval, Authorization, Execution, mutation, retry, or completion capability was added.
+- Kept legacy sessions incomplete without automatic repair and left the Perform/perf classifier bug unchanged for a separate change.
