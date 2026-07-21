@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.engineering.engineering_work_entry import *
 from core.engineering.engineering_read_only_pipeline import create_read_only_pipeline, run_read_only_pipeline, run_next_read_only_stage, inspect_read_only_pipeline, resume_read_only_pipeline, verify_read_only_pipeline, ReadOnlyPipelineError
 from core.engineering.engineering_runtime_orchestrator_common import canonical_json
@@ -9,6 +10,10 @@ from core.engineering.engineering_operator_flow import build_operator_status, st
 from core.engineering.engineering_natural_language_intake import *
 from core.engineering.engineering_runtime_session_store import write_session_artifact
 from core.engineering.engineering_practical_task_runner import build_governed_change_package, validate_governed_change_package, preview_practical_execution, execute_practical_change_package, verify_practical_repository_execution, bounded_test_policy, practical_result, inspect_practical_state, resume_practical_state, run_bounded_test_operation
+from core.engineering.engineering_multifile_coding_workflow import *
+from core.engineering.engineering_test_failure_analysis import build_test_failure_evidence
+from core.engineering.engineering_repair_proposal_candidate import build_repair_proposal_candidate, review_repair_candidate, build_iteration_index
+from core.engineering.engineering_runtime_session_store import load_session_store
 
 def _load(p):
     with open(p, encoding='utf-8') as f: return json.load(f)
@@ -60,11 +65,14 @@ def main(argv=None):
     p.add_argument('--format', choices=['json','human'], default='json'); p.add_argument('--verbose', action='store_true'); p.add_argument('--store-root', default='.zero-engineering-sessions'); p.add_argument('--session-id')
     sub=p.add_subparsers(dest='cmd', required=True)
     s=sub.add_parser('start'); s.add_argument('statement'); s.add_argument('--repository', default='.'); s.add_argument('--repo-id', default='default'); s.add_argument('--scope', action='append', default=['docs/status.txt']); s.add_argument('--mode', default='governed_delivery'); s.add_argument('--acceptance-intent', default='ZERO engineering flow verified.'); s.add_argument('--prepare', action='store_true'); s.add_argument('--legacy-direct-work-request', action='store_true')
-    for c in ('status','inspect','review','approval-summary','authorization-summary','preview','result','resume','completion-review-summary','verify-flow','intake-status','specification','clarification','formalize','start-confirmed','validate-change-package','change-package','execution-evidence','run-tests'):
+    for c in ('status','inspect','review','approval-summary','authorization-summary','preview','result','resume','completion-review-summary','verify-flow','intake-status','specification','clarification','formalize','start-confirmed','validate-change-package','change-package','execution-evidence','run-tests','build-multifile-plan','validate-multifile-plan','multifile-plan','test-failure-evidence','repair-candidate','iteration-status'):
         sub.add_parser(c)
     bcp=sub.add_parser('build-change-package'); bcp.add_argument('operations_json')
     ni=sub.add_parser('intake'); ni.add_argument('statement'); ni.add_argument('--repository', default='.'); ni.add_argument('--repo-id', default='default'); ni.add_argument('--mode', default='governed_delivery')
     rc=sub.add_parser('respond-clarification'); rc.add_argument('response_json')
+    for name in ('confirm-multifile-plan','reject-multifile-plan','revise-multifile-plan','formalize-multifile-plan','review-repair-candidate'):
+        sp=sub.add_parser(name); sp.add_argument('json_file', nargs='?')
+    tsp=sub.add_parser('test-set'); tsp.add_argument('--execute', action='store_true')
     cc=sub.add_parser('confirm-specification'); cc.add_argument('confirmation_json')
     rj=sub.add_parser('reject-specification'); rj.add_argument('confirmation_json')
     sub.add_parser('prepare').add_argument('--repository', default='.')
@@ -99,10 +107,35 @@ def main(argv=None):
             b=load_intake_bundle(_store(ns), _sid(ns)); form=create_formal_work_request_from_confirmed_specification(b[STORE_FILES['candidate']], b[STORE_FILES['confirmation']], repository_root_reference='.', repository_identity={'repository_id':'default'}); out=persist_formalized(_store(ns), b[STORE_FILES['intake']]['intake_id'], form);
         elif ns.cmd=='resume':
             bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
-            out=resume_practical_state({'package':bundle.get('work-entry/governed-change-package.json'),'approval':bundle.get('work-entry/approval.json'),'authorization':bundle.get('work-entry/authorization.json'),'admitted':bundle.get('work-entry/adapter-admission.json'),'evidence':bundle.get('execution/practical-execution-evidence.json'),'verification':bundle.get('verification/practical-verification.json')}) if bundle.get('work-entry/governed-change-package.json') else resume_natural_language_intake(_store(ns), session_id=_sid(ns))
+            out=resume_multifile_state(bundle) if bundle.get('planning/multifile-change-plan-candidate.json') else (resume_practical_state({'package':bundle.get('work-entry/governed-change-package.json'),'approval':bundle.get('work-entry/approval.json'),'authorization':bundle.get('work-entry/authorization.json'),'admitted':bundle.get('work-entry/adapter-admission.json'),'evidence':bundle.get('execution/practical-execution-evidence.json'),'verification':bundle.get('verification/practical-verification.json')}) if bundle.get('work-entry/governed-change-package.json') else resume_natural_language_intake(_store(ns), session_id=_sid(ns)))
         elif ns.cmd in {'status','inspect'}:
             bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
-            out={**build_operator_status(_store(ns), session_id=_sid(ns)), **inspect_natural_language_intake(_store(ns), session_id=_sid(ns)), **inspect_practical_state(bundle)}
+            out={**build_operator_status(_store(ns), session_id=_sid(ns)), **inspect_natural_language_intake(_store(ns), session_id=_sid(ns)), **inspect_practical_state(bundle), **inspect_multifile_state(bundle)}
+
+        elif ns.cmd=='build-multifile-plan':
+            b=load_session_store(_store(ns), _sid(ns)); spec=b.get('work-entry/specification-candidate.json') or {'confirmed_scope':['docs/status.txt'],'acceptance_criteria':['bounded_acceptance']}; wr=b.get('work-entry/request.json') or {'requested_scope':spec.get('confirmed_scope'),'repository_identity':{'repository_id':'default'}}; ra=b.get('work-entry/stages/repository-analysis.json') or {'observed_paths':spec.get('confirmed_scope')}; plan=build_multifile_change_plan_candidate(confirmed_specification=spec, work_request=wr, repository_analysis=ra, repository_identity=wr.get('repository_identity')); write_session_artifact(_store(ns), _sid(ns), 'planning/multifile-change-plan-candidate.json', plan); out=plan
+        elif ns.cmd=='validate-multifile-plan':
+            b=load_session_store(_store(ns), _sid(ns)); out=validate_multifile_change_plan_candidate(b['planning/multifile-change-plan-candidate.json'], confirmed_specification=b.get('work-entry/specification-candidate.json'), work_request=b.get('work-entry/request.json'), repository_analysis=b.get('work-entry/stages/repository-analysis.json'))
+        elif ns.cmd=='multifile-plan':
+            b=load_session_store(_store(ns), _sid(ns)); out=b.get('planning/multifile-change-plan-candidate.json', {'multifile_coding_workflow_status':'not_initialized'})
+        elif ns.cmd in {'confirm-multifile-plan','reject-multifile-plan'}:
+            b=load_session_store(_store(ns), _sid(ns)); raw=_load(ns.json_file); raw['decision']='rejected' if ns.cmd=='reject-multifile-plan' else raw.get('decision','confirmed'); out=confirm_multifile_change_plan(b['planning/multifile-change-plan-candidate.json'], raw); write_session_artifact(_store(ns), _sid(ns), 'planning/multifile-change-plan-confirmation.json', out)
+        elif ns.cmd=='revise-multifile-plan':
+            b=load_session_store(_store(ns), _sid(ns)); out=revise_multifile_change_plan(b['planning/multifile-change-plan-candidate.json'], _load(ns.json_file)); write_session_artifact(_store(ns), _sid(ns), 'planning/multifile-change-plan-candidate.json', out)
+        elif ns.cmd=='formalize-multifile-plan':
+            b=load_session_store(_store(ns), _sid(ns)); raw=_load(ns.json_file); out=formalize_confirmed_multifile_plan(plan=b['planning/multifile-change-plan-candidate.json'], confirmation=b['planning/multifile-change-plan-confirmation.json'], approved_proposal=raw.get('approved_proposal',{}), authorization=raw.get('authorization',{}), operation_definitions=raw.get('operation_definitions',[]), confirmed_specification=raw.get('confirmed_specification') or b.get('work-entry/specification-candidate.json',{}), work_request=raw.get('work_request') or b.get('work-entry/request.json',{}), repository_analysis=b.get('work-entry/stages/repository-analysis.json',{}));
+            (write_session_artifact(_store(ns), _sid(ns), 'work-entry/governed-change-package.json', out['change_package']) if out.get('change_package') else None)
+        elif ns.cmd=='test-set':
+            b=load_session_store(_store(ns), _sid(ns)); pkg=b.get('work-entry/governed-change-package.json',{}); plan=b.get('planning/multifile-change-plan-candidate.json',{}); out=run_bounded_test_set(pkg, plan.get('test_strategy',{}).get('required_test_targets',[]), workspace_root=pkg.get('workspace_root','.'), stop_policy=plan.get('test_strategy',{}).get('stop_policy','first_failure')) if ns.execute else {'test_execution_order':plan.get('test_strategy',{}).get('execution_order',[]),'will_execute_tests':False};
+            (write_session_artifact(_store(ns), _sid(ns), 'testing/bounded-test-set-result.json', out) if ns.execute else None)
+        elif ns.cmd=='test-failure-evidence':
+            b=load_session_store(_store(ns), _sid(ns)); pkg=b.get('work-entry/governed-change-package.json',{}); out=build_test_failure_evidence(execution=b.get('execution/practical-execution-evidence.json',{}), verification=b.get('verification/practical-verification.json',{}), test_set=b.get('testing/bounded-test-set-result.json',{}), changed_paths=pkg.get('expected_changed_paths',[]), confirmed_scope=pkg.get('confirmed_scope',[])); write_session_artifact(_store(ns), _sid(ns), 'testing/test-failure-evidence.json', out)
+        elif ns.cmd=='repair-candidate':
+            b=load_session_store(_store(ns), _sid(ns)); pkg=b.get('work-entry/governed-change-package.json',{}); out=build_repair_proposal_candidate(parent_work_request=b.get('work-entry/request.json',{}), parent_change_package=pkg, parent_execution=b.get('execution/practical-execution-evidence.json',{}), test_failure_evidence=b.get('testing/test-failure-evidence.json',{}), confirmed_scope=pkg.get('confirmed_scope',[])); write_session_artifact(_store(ns), _sid(ns), 'feedback/repair-proposal-candidate.json', out)
+        elif ns.cmd=='review-repair-candidate':
+            b=load_session_store(_store(ns), _sid(ns)); out=review_repair_candidate(b['feedback/repair-proposal-candidate.json'], _load(ns.json_file)); write_session_artifact(_store(ns), _sid(ns), 'feedback/repair-candidate-review.json', out)
+        elif ns.cmd=='iteration-status':
+            b=load_session_store(_store(ns), _sid(ns)); out=b.get('iterations/iteration-index.json') or build_iteration_index([])
         elif ns.cmd=='prepare': out=prepare_operator_flow(_store(ns), session_id=_sid(ns), repository=ns.repository)
         elif ns.cmd=='review': out={'schema':'zero.engineering.operator_review_summary.v1','status':build_operator_status(_store(ns), session_id=_sid(ns)),'ready_for_approval':build_operator_status(_store(ns), session_id=_sid(ns)).get('approval_status')=='pending','approved':False,'read_only':True}
         elif ns.cmd=='approval-summary':
