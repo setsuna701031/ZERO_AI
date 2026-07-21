@@ -175,3 +175,33 @@ Engineering verdict:
 ```text
 Goal Lineage Coordination Seal: SEALED
 ```
+
+---
+
+## ZERO Engineering Runtime v3.3 - Governed Multi-Cycle Runtime Coordination
+
+Implementation baseline: `b098fcd feat(engineering): add governed multi-cycle runtime coordination`.
+
+Runtime v3.3 adds a governed orchestration layer, not a replacement artifact family. The model is:
+
+```text
+Engineering Runtime Session
+├── Runtime Cycle 1: Proposal → Approval → Authorization → Execution → Verification → Feedback → Closure
+├── Runtime Cycle 2: New Proposal → New Approval → New Authorization → Execution → Verification → Feedback → Closure
+└── Runtime Cycle 3: New Proposal → New Approval → New Authorization → Execution → Verification → Completed/Closed
+```
+
+Architecture boundaries:
+
+- Session identity and fingerprints are deterministic canonical JSON / SHA-256 seals.
+- Cycle identity and fingerprints are deterministic canonical JSON / SHA-256 seals.
+- Cycle 1 has no previous-cycle link; later cycles must reference the exact previous cycle identity and fingerprint.
+- Cycle numbers cannot skip, repeat, or cross sessions.
+- Each cycle must carry fresh Approval and Authorization references; prior-cycle Approval or Authorization references are rejected.
+- Feedback can only create a Proposal Candidate marked candidate-only, not approved, not authorized, and not executable.
+- Resume validates persisted session/cycle/checkpoint evidence and returns the next governed action; it never approves, authorizes, invokes adapters, runs shell commands, or executes mutations.
+- Inspect is a read-only projection over existing session, cycle, journal, and checkpoint artifacts.
+- Journal replay is deterministic because each entry has a strict sequence and previous-entry fingerprint chain.
+- Checkpoints seal durable session state, current cycle references, journal head, verified artifact references, and resume metadata.
+
+Therefore v3.3 remains governed coordination rather than a fully autonomous engineering loop. Actual repository mutation authority remains outside the Session coordinator and must continue through existing governed execution paths.
