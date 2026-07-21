@@ -2246,3 +2246,12 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Added an all-or-nothing bounded text mutation executor with source/result hashes, safe relative paths, symlink rejection, per-operation evidence, and rollback evidence.
 - Reused the bounded argument-vector pytest runner for separately invoked focused verification only.
 - Kept verification distinct from completion and denied implicit retry, rollback, completion, commit, push, and PR authority.
+
+## v5.4 Governed Commit Preparation & Explicit Commit
+
+- Added canonical Commit Preparation, Candidate, Diff Verification, Admission, Explicit Commit Request, Commit Evidence, and Commit Verification artifacts.
+- Reused Completion Review, applied mutation and focused-verification evidence, Session Store persistence, canonical fingerprints, and the existing engineering CLI.
+- Bound commit admission to the exact repository root, HEAD, changed paths, diff fingerprint, commit message, consumed apply authorization, and named human request.
+- Limited Git mutation to `git add -- <confirmed paths>` followed by one ordinary local `git commit`; amend, broad staging, push, PR, merge, tag, release, force, and automatic retry remain unavailable.
+- Added replay, staleness, workspace-drift, untracked-file, staged/unstaged, session-artifact, path-substitution, and message-substitution protections.
+- Commit verification stops at `awaiting_explicit_push_review` and records that no push or remote change occurred.

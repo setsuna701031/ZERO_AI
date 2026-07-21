@@ -1556,3 +1556,7 @@ A confirmed Human Authored Patch Review may now produce a deterministic Change P
 ## v5.3 Governed Explicit Patch Apply
 
 An Authorized Change Package that passes readiness still requires a separate canonical Explicit Human Apply Request. Apply Admission rechecks exact package, approval, authorization, session, iteration, operation, path, test-target, workspace, and source-snapshot bindings before reserving the single-use authorization. The transactional executor supports only the five reviewed bounded text operations, records per-operation evidence, verifies expected hashes, and rolls back the whole attempt on failure. Focused pytest verification is a separate explicit step. A passing result creates only a Completion Review Candidate; Human Completion Review grants no commit, push, PR, retry, or implicit completion authority.
+
+## v5.4 Governed Commit Preparation & Explicit Commit
+
+A completed Human Completion Review may now enter a separate commit-preparation chain. ZERO binds a Commit Candidate to the exact repository, HEAD, authorized changed paths, and diff fingerprint; performs fail-closed Git diff verification; and requires both Commit Admission and a named human's exact Explicit Commit Request. The single-use executor stages only confirmed paths and creates one ordinary local commit. Commit Evidence and post-commit verification prove the parent, message, paths, fingerprint, and clean workspace, then stop at `awaiting_explicit_push_review`. No push, PR, merge, tag, release, amend, force, retry, or automatic commit authority is provided.
