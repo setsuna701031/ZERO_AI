@@ -242,3 +242,13 @@ Pipeline flow:
 8. Human Gate Handoff records pending approval with authority, authorization, and execution states still not granted/not started.
 
 The pipeline status enum is `created`, `running`, `awaiting_input`, `awaiting_human_approval`, `completed_read_only_preparation`, `blocked`, `failed`, and `invalid`. Stage results use `completed`, `awaiting_input`, `blocked`, `failed`, and `invalid`. `completed_read_only_preparation` means the requested pre-approval read-only mode ended; it does not mean the engineering task or runtime session is complete. Legacy v3.5 work entries without a v3.6 artifact inspect as `not_initialized`.
+
+## v3.7 Governed Approval-to-Execution Activation Architecture
+
+The v3.7 activation module is an additive layer after Read-Only Preparation and Proposal Review. It reuses the existing work coordination references, read-only pipeline references, runtime session identity, runtime adapter admission contract validators, runtime adapter controlled invocation artifacts, runtime verification boundary, and v3.4 progress/completion vocabulary while treating existing Approval, Authorization, execution token, adapter admission fingerprint, and frozen contract semantics as immutable.
+
+Artifacts are canonical JSON with deterministic SHA-256 fingerprints that exclude their own fingerprint fields. Activation identity binds one Work Request, Coordination, Runtime Session, Read-Only Pipeline, Proposal, Proposal Review Closure, Workspace, and exact ordered operation package. The Authorization Handoff requests human authorization with `authority_state = not_granted` and never embeds an execution token.
+
+State transitions are artifact-gated: awaiting approval, awaiting authorization, preparing execution, ready for explicit execution, awaiting verification, verification completed, awaiting completion review, next iteration candidate, blocked, failed, invalid, completed, or closed. Inspect is read-only and Resume only returns decisions such as requiring human authorization, execution preparation, adapter admission, explicit execution activation, verification, progress evaluation, completion review, next iteration proposal, or reassessment.
+
+Controlled execution is limited to one sealed package, one workspace, one authorization, and one invocation. Evidence records before/after state, changed and unchanged paths, operation observations, adapter references, commit markers, rollback markers, and authorization consumption. Verification must succeed before objective progress is evaluated; completion readiness still requires human completion review.
