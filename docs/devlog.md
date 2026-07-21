@@ -2200,3 +2200,12 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Added fail-closed Multi-File Plan validation for missing, unresolved, stale, pre-finalization, identity, fingerprint, session, and Specification lineage defects.
 - Reported legacy sessions as incomplete and reconfirmation-required without rewriting artifacts or granting automatic authority.
 - Preserved the v4.3 classifier and all Approval, Authorization, Execution, mutation, repair, retry, and completion boundaries.
+
+## v4.5 Governed Bug Reproduction & Evidence Collection
+
+- Reused the existing bounded pytest runner, test-set runner, failure parser, repair candidate builder, Session Store, and CLI.
+- Added canonical Reproduction Request, human Reproduction Confirmation, single-use Test Admission, and Reproduction Result artifacts.
+- Restricted targets to explicit repository-relative `tests/*.py` files or node IDs with bounded count, timeout, output, and stop policy.
+- Bound execution to the confirmed session, repository identity, scope, and workspace snapshot; stale, drifted, replayed, or expanded requests fail closed.
+- Kept failure evidence bounded and `confirmed_root_cause` null; repair candidates grant no retry, execution, mutation, Approval, Authorization, or Completion authority.
+- Added decision-only inspect/resume reporting and stopped the governed chain at Human Repair Review.

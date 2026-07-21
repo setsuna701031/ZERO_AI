@@ -1536,3 +1536,7 @@ Intent vocabulary entries now declare an explicit matching kind for short ASCII 
 ## v4.4 Persisted Intake Lineage Integrity Closure
 
 Formalization now persists one canonical finalized natural-language Intake artifact in the originating intake session and reads it back before creating the Formal Work Request. The Work Request references that artifact's exact identity, fingerprint, and session. Multi-File Plan validation resolves the persisted reference and fails closed for missing, unresolved, stale, pre-finalization, identity, fingerprint, session, Work Request, and Specification lineage mismatches. Legacy sessions remain incomplete and require reconfirmation; inspect and resume are decision-only and grant no Approval, Authorization, Execution, mutation, retry, repair, or completion authority.
+
+## v4.5 Governed Bug Reproduction & Evidence Collection
+
+After Human Plan Confirmation, ZERO can prepare a canonical Reproduction Request Candidate for explicit `tests/` pytest files or node IDs. A second human confirmation is required before a single-use bounded-test admission can run. Admission binds the Work Request, Specification, Plan Confirmation, session, repository identity, confirmed scope, test targets, timeout, and workspace snapshot. Execution uses the existing argument-vector pytest runner with bounded output and no shell, network, installation, Git, or production-code mutation capability. Failures produce bounded Test Failure Evidence with no confirmed root cause, followed only by a Repair Proposal Candidate requiring Human Repair Review.

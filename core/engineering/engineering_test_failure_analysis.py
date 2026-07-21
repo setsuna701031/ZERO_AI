@@ -64,6 +64,6 @@ def build_test_failure_evidence(*, execution:Mapping[str,Any], verification:Mapp
     failed=[]
     for r in test_set.get('ordered_results',[]):
         if r.get('status') not in {'passed','not_executed'}:
-            failed += parse_pytest_output((r.get('stdout') or '')+'\n'+(r.get('stderr') or ''), repository_root='.')
+            failed += parse_pytest_output((r.get('stdout') or r.get('stdout_summary') or '')+'\n'+(r.get('stderr') or r.get('stderr_summary') or ''), repository_root='.')
     suspected=correlate_suspected_paths(failed, changed_paths, confirmed_scope)
     return canon({'schema':FAILURE_SCHEMA,'execution_reference':_ref(execution),'verification_reference':_ref(verification),'test_set_reference':_ref(test_set),'failed_tests':failed,'repository_evidence':list(repository_evidence or []),'changed_paths':list(changed_paths),'suspected_related_paths':suspected,'confirmed_root_cause':None,'root_cause_status':'suspected' if suspected else 'unknown','limitations':['bounded pytest output only','root cause is not confirmed','no repair authorization is granted'],'evidence_status':'collected'},'evidence_fingerprint','evidence_id','engineering-test-failure-evidence-')

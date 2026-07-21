@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from core.engineering.engineering_runtime_orchestrator_common import fingerprint
@@ -187,11 +188,13 @@ def formalize_confirmed_multifile_plan(*, plan, confirmation, approved_proposal,
     return {'formalization_status':'change_package_created','change_package':pkg}
 
 def run_bounded_test_set(change_package, ordered_targets, *, workspace_root='.', stop_policy='first_failure', total_timeout_seconds=360, maximum_output_bytes=24000):
-    results=[]; outbytes=0; failed=False
+    results=[]; outbytes=0; failed=False; started=time.monotonic()
     pol=bounded_test_policy(maximum_output_bytes=maximum_output_bytes)
     for t in ordered_targets:
         if failed and stop_policy=='first_failure': results.append({'target':t,'status':'not_executed'}); continue
-        r=run_bounded_test_operation({'operation_type':'run_bounded_test','target_path':str(t).split('::')[0],'test_targets':[t],'flags':['-q'],'timeout_seconds':min(120,total_timeout_seconds)}, Path(workspace_root), pol); r['target']=t; results.append(r); outbytes+=len(str(r.get('stdout','')))+len(str(r.get('stderr',''))); failed=r.get('status')!='passed'
+        remaining=int(total_timeout_seconds-(time.monotonic()-started))
+        if remaining<1: results.append({'target':t,'status':'timed_out','timed_out':True}); failed=True; continue
+        r=run_bounded_test_operation({'operation_type':'run_bounded_test','target_path':str(t).split('::')[0],'test_targets':[t],'flags':['-q'],'timeout_seconds':min(120,remaining)}, Path(workspace_root), pol); r['target']=t; results.append(r); outbytes+=len(str(r.get('stdout_summary','')))+len(str(r.get('stderr_summary',''))); failed=r.get('status')!='passed'
         if outbytes>maximum_output_bytes: break
     status='passed' if all(r.get('status')=='passed' for r in results) and len(results)==len(ordered_targets) else 'failed' if any(r.get('status')=='failed' for r in results) else 'partially_executed'
     body={'schema':TEST_SET_SCHEMA,'change_package_reference':_ref(change_package),'ordered_results':results,'total_targets':len(ordered_targets),'executed_targets':sum(r.get('status')!='not_executed' for r in results),'passed_targets':sum(r.get('status')=='passed' for r in results),'failed_targets':sum(r.get('status')=='failed' for r in results),'timed_out_targets':sum(r.get('status')=='timed_out' for r in results),'not_executed_targets':[r['target'] for r in results if r.get('status')=='not_executed'],'stop_policy':stop_policy,'overall_status':status}
