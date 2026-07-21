@@ -6,7 +6,7 @@ from pathlib import Path
 
 from core.engineering.engineering_governed_explicit_commit import STORE_FILES as COMMIT_FILES
 from core.engineering.engineering_governed_explicit_push import (
-    STORE_FILES, authorize_push, build_push_evidence, build_push_preparation, close_push,
+    STORE_FILES, authorize_push, build_push_evidence, build_push_preparation, close_push, close_verified_commit,
     execute_push, inspect_push_state, resume_push_state, review_push, verify_remote,
 )
 from core.engineering.engineering_runtime_session_store import load_session_store, write_session_artifact
@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--store", required=True); parser.add_argument("--session", required=True)
     parser.add_argument("--workspace-root", default=".")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("close-verified-commit")
     prep = sub.add_parser("prepare-push"); prep.add_argument("--remote", required=True); prep.add_argument("--branch", required=True)
     sub.add_parser("verify-remote-before")
     review = sub.add_parser("review-push"); review.add_argument("review_json")
@@ -40,8 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     ns = build_parser().parse_args(argv); bundle = load_session_store(ns.store, ns.session)
     command = ns.command
-    if command == "prepare-push":
-        out = build_push_preparation(bundle[COMMIT_FILES["verification"]], bundle[COMMIT_FILES["evidence"]],
+    if command == "close-verified-commit":
+        out = close_verified_commit(bundle[COMMIT_FILES["verification"]], bundle[COMMIT_FILES["evidence"]], workspace_root=ns.workspace_root)
+        write_session_artifact(ns.store, ns.session, STORE_FILES["verified_commit_closure"], out)
+    elif command == "prepare-push":
+        out = build_push_preparation(bundle[STORE_FILES["verified_commit_closure"]],
                                      remote=ns.remote, branch=ns.branch, workspace_root=ns.workspace_root)
         write_session_artifact(ns.store, ns.session, STORE_FILES["preparation"], out)
     elif command == "verify-remote-before":
@@ -56,8 +60,8 @@ def main(argv=None) -> int:
         write_session_artifact(ns.store, ns.session, STORE_FILES["authorization"], out)
     elif command == "execute-push":
         used, out = execute_push(bundle[STORE_FILES["preparation"]], bundle[STORE_FILES["remote_before"]],
-            bundle[STORE_FILES["review"]], bundle[STORE_FILES["authorization"]], bundle[COMMIT_FILES["verification"]],
-            bundle[COMMIT_FILES["evidence"]], observed_at=ns.observed_at, workspace_root=ns.workspace_root)
+            bundle[STORE_FILES["review"]], bundle[STORE_FILES["authorization"]],
+            bundle[STORE_FILES["verified_commit_closure"]], observed_at=ns.observed_at, workspace_root=ns.workspace_root)
         write_session_artifact(ns.store, ns.session, STORE_FILES["authorization"], used)
         write_session_artifact(ns.store, ns.session, STORE_FILES["execution"], out)
     elif command == "push-evidence":
