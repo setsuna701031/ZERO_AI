@@ -2255,3 +2255,14 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Limited Git mutation to `git add -- <confirmed paths>` followed by one ordinary local `git commit`; amend, broad staging, push, PR, merge, tag, release, force, and automatic retry remain unavailable.
 - Added replay, staleness, workspace-drift, untracked-file, staged/unstaged, session-artifact, path-substitution, and message-substitution protections.
 - Commit verification stops at `awaiting_explicit_push_review` and records that no push or remote change occurred.
+
+## v5.5 Governed Explicit Push Review
+
+- Added canonical Push Preparation, Remote Verification, Human Push Review, Explicit Push Authorization, Push Execution, Push Evidence, post-push verification, and Push Closure artifacts.
+- Added the dedicated `zero_engineering_runtime_push` CLI with one explicit command per stage and decision-only inspect/resume behavior.
+- Bound one verified commit by repository ID, remote name/URL, branch, full commit/parent/tree SHAs, Commit Verification fingerprint, and stable push fingerprint.
+- Required an existing frozen remote branch at the verified parent, a one-commit range, and fast-forward eligibility before review.
+- Revalidated Commit Verification/Evidence, actual parent/tree, local HEAD/branch, clean workspace, remote URL, and remote HEAD immediately before push.
+- Restricted execution to `git push <remote> <40-char SHA>:refs/heads/<branch>` and rejected `HEAD`, force, force-with-lease, tags, deletion refspecs, wildcards, broad pushes, multiple commits, and authorization replay.
+- Added append-only evidence and post-push proof that the remote head equals the pushed commit before closure.
+- Added no PR, merge, pull, rebase, branch creation/deletion, tag, release, workflow, retry, conflict resolution, or automatic action capability.
