@@ -6,6 +6,8 @@ from core.engineering.engineering_read_only_pipeline import create_read_only_pip
 from core.engineering.engineering_runtime_orchestrator_common import canonical_json
 from core.engineering.engineering_approval_execution_activation import *
 from core.engineering.engineering_operator_flow import build_operator_status, start_operator_flow, prepare_operator_flow, create_demo_activation, preview_execution, human_text, resolve_active_engineering_work
+from core.engineering.engineering_natural_language_intake import *
+from core.engineering.engineering_runtime_session_store import write_session_artifact
 
 def _load(p):
     with open(p, encoding='utf-8') as f: return json.load(f)
@@ -44,7 +46,7 @@ def _legacy_main(argv):
         elif ns.cmd=='verify-execution': ver,act=verify_execution(_load(ns.activation_json), _load(ns.execution_json)); out={'verification':ver,'activation':act}
         elif ns.cmd=='evaluate-progress': pr,act=evaluate_progress(_load(ns.activation_json), _load(ns.verification_json)); out={'progress':pr,'activation':act}
         _dump(out); return 0
-    except (WorkEntryError, ReadOnlyPipelineError, ActivationError) as e:
+    except (WorkEntryError, ReadOnlyPipelineError, ActivationError, NaturalLanguageIntakeError) as e:
         _dump({'valid':False,'error':e.code}); return 2
 
 def main(argv=None):
@@ -56,8 +58,12 @@ def main(argv=None):
     p=argparse.ArgumentParser(prog='zero engineering')
     p.add_argument('--format', choices=['json','human'], default='json'); p.add_argument('--verbose', action='store_true'); p.add_argument('--store-root', default='.zero-engineering-sessions'); p.add_argument('--session-id')
     sub=p.add_subparsers(dest='cmd', required=True)
-    s=sub.add_parser('start'); s.add_argument('statement'); s.add_argument('--repository', default='.'); s.add_argument('--repo-id', default='default'); s.add_argument('--scope', action='append', default=['docs/status.txt']); s.add_argument('--mode', default='governed_delivery'); s.add_argument('--acceptance-intent', default='ZERO engineering flow verified.'); s.add_argument('--prepare', action='store_true')
-    for c in ('status','inspect','review','approval-summary','authorization-summary','preview','result','resume','completion-review-summary','verify-flow'): sub.add_parser(c)
+    s=sub.add_parser('start'); s.add_argument('statement'); s.add_argument('--repository', default='.'); s.add_argument('--repo-id', default='default'); s.add_argument('--scope', action='append', default=['docs/status.txt']); s.add_argument('--mode', default='governed_delivery'); s.add_argument('--acceptance-intent', default='ZERO engineering flow verified.'); s.add_argument('--prepare', action='store_true'); s.add_argument('--legacy-direct-work-request', action='store_true')
+    for c in ('status','inspect','review','approval-summary','authorization-summary','preview','result','resume','completion-review-summary','verify-flow','intake-status','specification','clarification','formalize','start-confirmed'): sub.add_parser(c)
+    ni=sub.add_parser('intake'); ni.add_argument('statement'); ni.add_argument('--repository', default='.'); ni.add_argument('--repo-id', default='default'); ni.add_argument('--mode', default='governed_delivery')
+    rc=sub.add_parser('respond-clarification'); rc.add_argument('response_json')
+    cc=sub.add_parser('confirm-specification'); cc.add_argument('confirmation_json')
+    rj=sub.add_parser('reject-specification'); rj.add_argument('confirmation_json')
     sub.add_parser('prepare').add_argument('--repository', default='.')
     aa=sub.add_parser('attach-approval'); aa.add_argument('approval_json')
     ah=sub.add_parser('attach-authorization'); ah.add_argument('authorization_json'); ah.add_argument('--approval-json')
@@ -71,8 +77,25 @@ def main(argv=None):
         x=sub.add_parser(c); x.add_argument('jsons', nargs='*'); x.add_argument('--statement'); x.add_argument('--repo-id'); x.add_argument('--repo-root', default='.'); x.add_argument('--request-json'); x.add_argument('--intake-json'); x.add_argument('--pipeline-json'); x.add_argument('--approval-json'); x.add_argument('--authorization-json'); x.add_argument('--handoff-json'); x.add_argument('--preparation-json'); x.add_argument('--admission-json'); x.add_argument('--execution-json'); x.add_argument('--verification-json'); x.add_argument('--workspace-root', default='.')
     ns=p.parse_args(argv)
     try:
-        if ns.cmd=='start': out=start_operator_flow(ns.statement,store_root=_store(ns),repository=ns.repository,repo_id=ns.repo_id,scope=ns.scope,mode=ns.mode,acceptance_intent=ns.acceptance_intent,prepare=ns.prepare)
-        elif ns.cmd in {'status','inspect'}: out=build_operator_status(_store(ns), session_id=_sid(ns))
+        if ns.cmd=='start':
+            if ns.legacy_direct_work_request:
+                out=start_operator_flow(ns.statement,store_root=_store(ns),repository=ns.repository,repo_id=ns.repo_id,scope=ns.scope,mode=ns.mode,acceptance_intent=ns.acceptance_intent,prepare=ns.prepare); out['governance_warning']='legacy direct Work Request path; not allowed for high-risk or unknown intent and still requires v3.5 validation'
+            else:
+                out=start_natural_language_intake(ns.statement,store_root=_store(ns),repository=ns.repository,repo_id=ns.repo_id,requested_mode=ns.mode)
+        elif ns.cmd=='intake': out=start_natural_language_intake(ns.statement,store_root=_store(ns),repository=ns.repository,repo_id=ns.repo_id,requested_mode=ns.mode)
+        elif ns.cmd=='intake-status': out=inspect_natural_language_intake(_store(ns), session_id=_sid(ns))
+        elif ns.cmd=='specification':
+            b=load_intake_bundle(_store(ns), _sid(ns)); out={'human_notice':'這是候選規格，尚未確認。Candidate is not a Work Request.', 'specification_candidate':b.get(STORE_FILES['candidate'])}
+        elif ns.cmd=='clarification':
+            b=load_intake_bundle(_store(ns), _sid(ns)); cl=b.get(STORE_FILES['clarification']); out={'clarification_status':(cl or {}).get('clarification_status'),'required_questions':(cl or {}).get('required_questions',[]),'optional_questions':(cl or {}).get('optional_questions',[]),'prohibited_assumptions':(cl or {}).get('prohibited_assumptions',[])}
+        elif ns.cmd=='respond-clarification':
+            b=load_intake_bundle(_store(ns), _sid(ns)); resp,new=apply_human_clarification_response(b[STORE_FILES['candidate']], b[STORE_FILES['clarification']], _load(ns.response_json)); sid=b[STORE_FILES['intake']]['intake_id']; write_session_artifact(_store(ns),sid,STORE_FILES['response'],resp); write_session_artifact(_store(ns),sid,STORE_FILES['candidate'],new); out={'clarification_response':resp,'specification_candidate':new}
+        elif ns.cmd in {'confirm-specification','reject-specification'}:
+            b=load_intake_bundle(_store(ns), _sid(ns)); raw=_load(ns.confirmation_json); raw['decision']='reject' if ns.cmd=='reject-specification' else raw.get('decision','confirm'); conf=confirm_specification(b[STORE_FILES['candidate']], raw); sid=b[STORE_FILES['intake']]['intake_id']; write_session_artifact(_store(ns),sid,STORE_FILES['confirmation'],conf); out={'specification_confirmation':conf}
+        elif ns.cmd in {'formalize','start-confirmed'}:
+            b=load_intake_bundle(_store(ns), _sid(ns)); form=create_formal_work_request_from_confirmed_specification(b[STORE_FILES['candidate']], b[STORE_FILES['confirmation']], repository_root_reference='.', repository_identity={'repository_id':'default'}); out=persist_formalized(_store(ns), b[STORE_FILES['intake']]['intake_id'], form);
+        elif ns.cmd=='resume': out=resume_natural_language_intake(_store(ns), session_id=_sid(ns))
+        elif ns.cmd in {'status','inspect'}: out={**build_operator_status(_store(ns), session_id=_sid(ns)), **inspect_natural_language_intake(_store(ns), session_id=_sid(ns))}
         elif ns.cmd=='prepare': out=prepare_operator_flow(_store(ns), session_id=_sid(ns), repository=ns.repository)
         elif ns.cmd=='review': out={'schema':'zero.engineering.operator_review_summary.v1','status':build_operator_status(_store(ns), session_id=_sid(ns)),'ready_for_approval':build_operator_status(_store(ns), session_id=_sid(ns)).get('approval_status')=='pending','approved':False,'read_only':True}
         elif ns.cmd=='approval-summary':
@@ -105,7 +128,7 @@ def main(argv=None):
             req=create_engineering_work_request(request_statement=ns.statement,repository_identity={'repository_id':ns.repo_id},repository_root_reference=ns.repo_root,requested_scope=['docs/status.txt']); i=admit_engineering_work(req); c=create_work_coordination(req,i); pl=create_read_only_pipeline(req,i,c); out={'work_request':req,'work_intake':i,'coordination':c,'read_only_pipeline':pl}
         else: out={'valid':False,'error':'unsupported_existing_contract'}
         _emit(out, ns.format, ns.verbose); return 0
-    except (WorkEntryError, ReadOnlyPipelineError, ActivationError) as e:
+    except (WorkEntryError, ReadOnlyPipelineError, ActivationError, NaturalLanguageIntakeError) as e:
         _emit({'valid':False,'error':e.code,'current_phase':'blocked','mutation_occurred':False,'safe_next_action':'resume','recovery_guidance':'請檢查治理產物後重試。'}, ns.format, ns.verbose); return 5
     except Exception as e:
         _emit({'valid':False,'error':str(e),'mutation_occurred':False}, ns.format, ns.verbose); return 6
