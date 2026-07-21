@@ -2268,3 +2268,13 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Restricted execution to `git push <remote> <40-char SHA>:refs/heads/<branch>` and rejected `HEAD`, force, force-with-lease, tags, deletion refspecs, wildcards, broad pushes, multiple commits, and authorization replay.
 - Added append-only evidence and post-push proof that the remote head equals the pushed commit before closure.
 - Added no PR, merge, pull, rebase, branch creation/deletion, tag, release, workflow, retry, conflict resolution, or automatic action capability.
+
+## v5.6 Governed Explicit Pull Request Review
+
+- Added canonical PR Preparation, Repository Provider Admission, Remote Verification, Human Review, explicit Authorization, Creation Request, Execution Result, Evidence, post-verification, and PR Closure artifacts.
+- Added a provider-neutral structured adapter boundary and a deterministic local JSON adapter for explicit CLI orchestration and fixture testing; the governance core contains no GitHub-specific behavior.
+- Made sealed successful Push Closure the sole upstream governance source and propagated one immutable `push_closure_id` through every PR artifact without latest lookup or raw Push Evidence fallback.
+- Bound repository identity/URL, distinct validated branches, exact frozen heads, source ancestry/difference, title/body fingerprints, and one creation attempt across review and authorization.
+- Revalidated closure integrity, canonical references, authorization scope/use, branch freezes, commit identity, changes, and equivalent PR absence immediately before one provider call.
+- Added canonical evidence and post-verification proving an open, unmerged, unclosed PR before sealing closure as `awaiting_merge_review`.
+- Added no merge, auto-PR, retry, branch mutation, force push, labels, reviewers, milestones, issues, tags, releases, repository settings, or workflow capability.
