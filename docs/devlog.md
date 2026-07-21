@@ -2209,3 +2209,12 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Bound execution to the confirmed session, repository identity, scope, and workspace snapshot; stale, drifted, replayed, or expanded requests fail closed.
 - Kept failure evidence bounded and `confirmed_root_cause` null; repair candidates grant no retry, execution, mutation, Approval, Authorization, or Completion authority.
 - Added decision-only inspect/resume reporting and stopped the governed chain at Human Repair Review.
+
+## v5.0 Governed Repair Planning & Patch Candidate
+
+- Reused v4.5 Test Failure Evidence, Repair Proposal Candidate, Human Repair Review, repository evidence, Multi-File Plan conventions, Session Store, and CLI.
+- Required an accepted Human Repair Review before creating a canonical Repair Planning Intake.
+- Added bounded Root-Cause Hypothesis, Impact Analysis, Repair Strategy, Patch Candidate, Patch Validation, and Human Patch Review artifacts.
+- Kept root cause unconfirmed and blocked patch construction whenever impact requires scope expansion.
+- Restricted Patch Candidates to deterministic high-level metadata; executable code, diffs, replacements, commands, Change Packages, and authority payloads fail closed.
+- Preserved decision-only inspect/resume behavior and all no-Approval, no-Authorization, no-Execution, no-retry, and no-completion boundaries.
