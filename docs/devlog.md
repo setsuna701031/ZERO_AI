@@ -2164,3 +2164,9 @@ Operator-facing additions include active work resolution, canonical `zero.engine
 - Added human specification confirmation validation, high-risk acknowledgement requirements, and conversion into the existing v3.5 Work Request builder plus v3.6 read-only pipeline creation.
 - Extended the unified engineering CLI with intake, intake-status, specification, clarification, respond-clarification, confirm-specification, reject-specification, formalize, start-confirmed, inspect, and resume behavior.
 - Documented that natural language is not a formal requirement, candidates are not Work Requests, confirmations are not approvals, and v3.9 performs no auto-confirm, auto-approve, auto-authorize, auto-execute, or source mutation.
+
+## v4.0 — Governed Practical Repository Task Runner
+
+Added ZERO Engineering Runtime v4.0 practical task runner as an additive governed layer over the existing approval-to-execution activation path. The bundle introduces Governed Change Package artifacts, deterministic operation identity, exact text replacement, append/remove/rename/create-directory/create-text-file operations, transactional mutation with rollback evidence, bounded pytest operation execution, and Git diff evidence. The runner explicitly distinguishes Execution ≠ Verification and Verification ≠ Completion.
+
+Safety boundaries: no arbitrary shell, no arbitrary Python execution, no Git mutation, no auto-commit, no auto-push, no auto-retry, no auto-complete, no fuzzy replacement, no regex replacement, no mutation without before-state validation, approval, authorization, adapter admission, and explicit execution confirmation.

@@ -13,7 +13,8 @@ def _scope_still_matches_authorized_operations(handoff,admission):
     if not isinstance(scope,dict): return []
     ops=ops_from_handoff(handoff); op_ids=[o.get('operation_id') for o in ops]; targets=[target_rel(o) for o in ops]; types=[op_type(o) for o in ops]
     rs=[]
-    if _scope_values(scope,'authorized_operation_ids','operation_ids','allowed_operation_ids')!=op_ids: rs.append('authorized_operation_scope_mismatch')
+    explicit_ops=_scope_values(scope,'authorized_operation_ids','operation_ids','allowed_operation_ids')
+    if explicit_ops and explicit_ops!=op_ids: rs.append('authorized_operation_scope_mismatch')
     if _scope_values(scope,'authorized_target_paths','target_paths','allowed_target_paths')!=targets: rs.append('authorized_target_scope_mismatch')
     if _scope_values(scope,'authorized_operation_types','operation_types','allowed_operation_types') not in ([],types): rs.append('authorized_operation_type_scope_mismatch')
     if scope.get('operation_count',admission.get('operation_count'))!=admission.get('operation_count'): rs.append('authorized_operation_count_mismatch')

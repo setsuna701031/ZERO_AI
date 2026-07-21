@@ -8,6 +8,7 @@ from core.engineering.engineering_approval_execution_activation import *
 from core.engineering.engineering_operator_flow import build_operator_status, start_operator_flow, prepare_operator_flow, create_demo_activation, preview_execution, human_text, resolve_active_engineering_work
 from core.engineering.engineering_natural_language_intake import *
 from core.engineering.engineering_runtime_session_store import write_session_artifact
+from core.engineering.engineering_practical_task_runner import build_governed_change_package, validate_governed_change_package, preview_practical_execution, execute_practical_change_package, verify_practical_repository_execution, bounded_test_policy, practical_result, inspect_practical_state, resume_practical_state, run_bounded_test_operation
 
 def _load(p):
     with open(p, encoding='utf-8') as f: return json.load(f)
@@ -59,7 +60,9 @@ def main(argv=None):
     p.add_argument('--format', choices=['json','human'], default='json'); p.add_argument('--verbose', action='store_true'); p.add_argument('--store-root', default='.zero-engineering-sessions'); p.add_argument('--session-id')
     sub=p.add_subparsers(dest='cmd', required=True)
     s=sub.add_parser('start'); s.add_argument('statement'); s.add_argument('--repository', default='.'); s.add_argument('--repo-id', default='default'); s.add_argument('--scope', action='append', default=['docs/status.txt']); s.add_argument('--mode', default='governed_delivery'); s.add_argument('--acceptance-intent', default='ZERO engineering flow verified.'); s.add_argument('--prepare', action='store_true'); s.add_argument('--legacy-direct-work-request', action='store_true')
-    for c in ('status','inspect','review','approval-summary','authorization-summary','preview','result','resume','completion-review-summary','verify-flow','intake-status','specification','clarification','formalize','start-confirmed'): sub.add_parser(c)
+    for c in ('status','inspect','review','approval-summary','authorization-summary','preview','result','resume','completion-review-summary','verify-flow','intake-status','specification','clarification','formalize','start-confirmed','validate-change-package','change-package','execution-evidence','run-tests'):
+        sub.add_parser(c)
+    bcp=sub.add_parser('build-change-package'); bcp.add_argument('operations_json')
     ni=sub.add_parser('intake'); ni.add_argument('statement'); ni.add_argument('--repository', default='.'); ni.add_argument('--repo-id', default='default'); ni.add_argument('--mode', default='governed_delivery')
     rc=sub.add_parser('respond-clarification'); rc.add_argument('response_json')
     cc=sub.add_parser('confirm-specification'); cc.add_argument('confirmation_json')
@@ -94,8 +97,12 @@ def main(argv=None):
             b=load_intake_bundle(_store(ns), _sid(ns)); raw=_load(ns.confirmation_json); raw['decision']='reject' if ns.cmd=='reject-specification' else raw.get('decision','confirm'); conf=confirm_specification(b[STORE_FILES['candidate']], raw); sid=b[STORE_FILES['intake']]['intake_id']; write_session_artifact(_store(ns),sid,STORE_FILES['confirmation'],conf); out={'specification_confirmation':conf}
         elif ns.cmd in {'formalize','start-confirmed'}:
             b=load_intake_bundle(_store(ns), _sid(ns)); form=create_formal_work_request_from_confirmed_specification(b[STORE_FILES['candidate']], b[STORE_FILES['confirmation']], repository_root_reference='.', repository_identity={'repository_id':'default'}); out=persist_formalized(_store(ns), b[STORE_FILES['intake']]['intake_id'], form);
-        elif ns.cmd=='resume': out=resume_natural_language_intake(_store(ns), session_id=_sid(ns))
-        elif ns.cmd in {'status','inspect'}: out={**build_operator_status(_store(ns), session_id=_sid(ns)), **inspect_natural_language_intake(_store(ns), session_id=_sid(ns))}
+        elif ns.cmd=='resume':
+            bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
+            out=resume_practical_state({'package':bundle.get('work-entry/governed-change-package.json'),'approval':bundle.get('work-entry/approval.json'),'authorization':bundle.get('work-entry/authorization.json'),'admitted':bundle.get('work-entry/adapter-admission.json'),'evidence':bundle.get('execution/practical-execution-evidence.json'),'verification':bundle.get('verification/practical-verification.json')}) if bundle.get('work-entry/governed-change-package.json') else resume_natural_language_intake(_store(ns), session_id=_sid(ns))
+        elif ns.cmd in {'status','inspect'}:
+            bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
+            out={**build_operator_status(_store(ns), session_id=_sid(ns)), **inspect_natural_language_intake(_store(ns), session_id=_sid(ns)), **inspect_practical_state(bundle)}
         elif ns.cmd=='prepare': out=prepare_operator_flow(_store(ns), session_id=_sid(ns), repository=ns.repository)
         elif ns.cmd=='review': out={'schema':'zero.engineering.operator_review_summary.v1','status':build_operator_status(_store(ns), session_id=_sid(ns)),'ready_for_approval':build_operator_status(_store(ns), session_id=_sid(ns)).get('approval_status')=='pending','approved':False,'read_only':True}
         elif ns.cmd=='approval-summary':
@@ -111,15 +118,41 @@ def main(argv=None):
             res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; auth=_load(ns.authorization_json) if ns.authorization_json else b['work-entry/authorization.json']; prep,act=prepare_execution(b['work-entry/execution-activation.json'],auth,workspace_root=ns.workspace_root); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,execution_preparation=prep); out={'execution_preparation':prep,'activation':act}
         elif ns.cmd=='admit-adapter':
             res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; prep=_load(ns.preparation_json) if ns.preparation_json else b['work-entry/execution-preparation.json']; adm,act=admit_adapter(b['work-entry/execution-activation.json'],prep); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,adapter_admission=adm); out={'adapter_admission':adm,'activation':act}
-        elif ns.cmd=='preview': out=preview_execution(_store(ns), session_id=_sid(ns))
+        elif ns.cmd=='preview':
+            bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
+            out=preview_practical_execution(bundle['work-entry/governed-change-package.json']) if bundle.get('work-entry/governed-change-package.json') else preview_execution(_store(ns), session_id=_sid(ns))
         elif ns.cmd=='execute':
             if not ns.confirm_execution: out={'valid':False,'error':'execution_confirmation_required','mutation_occurred':False}; _emit(out, ns.format, ns.verbose); return 8
-            res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; auth=_load(ns.authorization_json) if ns.authorization_json else b['work-entry/authorization.json']; prep=_load(ns.preparation_json) if ns.preparation_json else b['work-entry/execution-preparation.json']; adm=_load(ns.admission_json) if ns.admission_json else b['work-entry/adapter-admission.json']; er,auth2,act=activate_governed_execution(b['work-entry/execution-activation.json'],auth,prep,adm,workspace_root=ns.workspace_root); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,authorization=auth2,execution_result=er); out={'execution_result':er,'authorization':auth2,'activation':act}
+            bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
+            if bundle.get('work-entry/governed-change-package.json'):
+                auth=bundle.get('work-entry/authorization.json',{})
+                out=execute_practical_change_package(bundle['work-entry/governed-change-package.json'], approval=bundle.get('work-entry/approval.json',{}), authorization=auth, admitted=bool(bundle.get('work-entry/adapter-admission.json')), confirm_execution=True, workspace_root=ns.workspace_root)
+                write_session_artifact(_store(ns), _sid(ns), 'execution/practical-execution-evidence.json', out)
+                if out.get('authorization_consumed'):
+                    auth={**auth,'consumption_state':'consumed'}; write_session_artifact(_store(ns), _sid(ns), 'work-entry/authorization.json', auth)
+            else:
+                            res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; auth=_load(ns.authorization_json) if ns.authorization_json else b['work-entry/authorization.json']; prep=_load(ns.preparation_json) if ns.preparation_json else b['work-entry/execution-preparation.json']; adm=_load(ns.admission_json) if ns.admission_json else b['work-entry/adapter-admission.json']; er,auth2,act=activate_governed_execution(b['work-entry/execution-activation.json'],auth,prep,adm,workspace_root=ns.workspace_root); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,authorization=auth2,execution_result=er); out={'execution_result':er,'authorization':auth2,'activation':act}
+        elif ns.cmd=='build-change-package':
+            plan=_load(ns.operations_json); sid=_sid(ns) or plan.get('session_id','practical-v40'); pkg=build_governed_change_package(confirmed_specification=plan.get('confirmed_specification'), work_request=plan.get('work_request'), read_only_analysis=plan.get('read_only_analysis'), proposal=plan.get('proposal'), operation_plan=plan.get('ordered_operations') or plan.get('operations'), repository_identity=plan.get('repository_identity'), workspace_root=plan.get('workspace_root','.'), expected_unchanged_paths=plan.get('expected_unchanged_paths',[]), risk_level=plan.get('risk_level','medium')); write_session_artifact(_store(ns), sid, 'work-entry/governed-change-package.json', pkg); write_session_artifact(_store(ns), sid, 'execution/bounded-test-policy.json', bounded_test_policy()); out={'operation_count':len(pkg['ordered_operations']),'created_files':[o.get('target_path') for o in pkg['ordered_operations'] if o.get('operation_type')=='create_text_file'],'modified_files':[o.get('target_path') for o in pkg['ordered_operations'] if o.get('operation_type') in {'replace_text_exact','append_text','remove_text_exact'}],'renamed_files':[o.get('target_path') for o in pkg['ordered_operations'] if o.get('operation_type')=='rename_file'],'test_targets':[o.get('test_targets') or [o.get('target_path')] for o in pkg['ordered_operations'] if o.get('operation_type')=='run_bounded_test'],'risk':pkg['risk_level'],'approval_required':True,'authorization_required':True,'change_package':pkg}
+        elif ns.cmd=='validate-change-package':
+            bundle=load_session_store(_store(ns), _sid(ns)); out=validate_governed_change_package(bundle['work-entry/governed-change-package.json'])
+        elif ns.cmd=='change-package':
+            bundle=load_session_store(_store(ns), _sid(ns)); pkg=bundle['work-entry/governed-change-package.json']; out={'change_package_id':pkg['change_package_id'],'change_package_fingerprint':pkg['change_package_fingerprint'],'ordered_operations':[{k:o.get(k) for k in ('operation_id','operation_type','target_path','source_path')} for o in pkg['ordered_operations']],'expected_changed_paths':pkg['expected_changed_paths'],'execution_status':'尚未執行','repository_modified':False}
+        elif ns.cmd=='execution-evidence':
+            bundle=load_session_store(_store(ns), _sid(ns)); out=bundle.get('execution/practical-execution-evidence.json', {'evidence_status':'not_started'})
+        elif ns.cmd=='run-tests':
+            bundle=load_session_store(_store(ns), _sid(ns)); pkg=bundle['work-entry/governed-change-package.json']; out={'test_results':[run_bounded_test_operation(o, Path(pkg.get('workspace_root','.') ), bounded_test_policy()) for o in pkg['ordered_operations'] if o.get('operation_type')=='run_bounded_test']}
         elif ns.cmd=='verify':
-            res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; er=_load(ns.execution_json) if ns.execution_json else b['work-entry/execution-result.json']; ver,act=verify_execution(b['work-entry/execution-activation.json'],er); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,verification=ver); out={'verification':ver,'activation':act}
+            bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
+            if bundle.get('work-entry/governed-change-package.json'):
+                ver=verify_practical_repository_execution(bundle['work-entry/governed-change-package.json'], bundle.get('execution/practical-execution-evidence.json',{})); write_session_artifact(_store(ns), _sid(ns), 'verification/practical-verification.json', ver); out={'verification':ver}
+            else:
+                res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; er=_load(ns.execution_json) if ns.execution_json else b['work-entry/execution-result.json']; ver,act=verify_execution(b['work-entry/execution-activation.json'],er); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,verification=ver); out={'verification':ver,'activation':act}
         elif ns.cmd=='evaluate-progress':
             res=resolve_active_engineering_work(_store(ns), session_id=_sid(ns)); b=res['bundle']; ver=_load(ns.verification_json) if ns.verification_json else b['work-entry/verification.json']; pr,act=evaluate_progress(b['work-entry/execution-activation.json'],ver); persist_activation_artifacts(_store(ns),res['session_id'],activation=act,progress=pr); out={'progress':pr,'activation':act}
-        elif ns.cmd=='result': out={'schema':'zero.engineering.operator_result.v1','status':build_operator_status(_store(ns), session_id=_sid(ns)),'executed':False,'verified':False,'completion_candidate':False,'human_completion_accepted':False,'next_governed_action':'completion-review-summary'}
+        elif ns.cmd=='result':
+            bundle=load_session_store(_store(ns), _sid(ns)) if _sid(ns) else {}
+            out=practical_result(bundle.get('work-entry/governed-change-package.json'),bundle.get('execution/practical-execution-evidence.json'),bundle.get('verification/practical-verification.json')) if bundle.get('work-entry/governed-change-package.json') else {'schema':'zero.engineering.operator_result.v1','status':build_operator_status(_store(ns), session_id=_sid(ns)),'executed':False,'verified':False,'completion_candidate':False,'human_completion_accepted':False,'next_governed_action':'completion-review-summary'}
         elif ns.cmd=='resume':
             st=build_operator_status(_store(ns), session_id=_sid(ns)); out={'schema':'zero.engineering.operator_resume_guidance.v1','canonical_status':st,'guidance':st.get('recommended_command'),'will_auto_execute':False}
         elif ns.cmd=='completion-review-summary': out={'schema':'zero.engineering.completion_review_summary.v1','human_decision_options':['accept_completion','continue_iteration','request_changes','stop'],'not_completion_decision':True,'manual_artifact_required':True,'status':build_operator_status(_store(ns), session_id=_sid(ns))}

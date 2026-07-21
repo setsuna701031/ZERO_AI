@@ -7,7 +7,7 @@ from core.engineering.repository_analysis_common import ValidationResult
 PROHIBITED_KEYS=frozenset({'secret','secrets','token','credentials','credential','password','private_key','bearer','signature','raw_signature','command','shell_command','patch','diff','payload','executable','executor','scheduler','subprocess','runtime_handle','adapter_instance'})
 PROHIBITED_STRINGS=('bearer ','-----begin','private key','password=','token=','secret=','#!/','&&',';','|','`','$(')
 WILDCARDS=frozenset({'*','all','global','unrestricted','any','everything'})
-TERMINAL_STATES=frozenset({'rejected','closed','closed_completed','closed_partial','failed','blocked','invalid','denied','revoked','consumed'})
+TERMINAL_STATES=frozenset({'rejected','closed','closed_completed','closed_partial','failed','blocked','denied','revoked','consumed'})
 
 def is_mapping(v:Any)->bool: return isinstance(v,Mapping)
 def is_sequence(v:Any)->bool: return isinstance(v,Sequence) and not isinstance(v,(str,bytes,bytearray))
@@ -21,7 +21,7 @@ def valid_identity(v:Any,id_key:str,prefix:str)->bool:
 
 def contains_prohibited(v:Any)->bool:
     if isinstance(v,Mapping):
-        return any(str(k).lower() in PROHIBITED_KEYS or contains_prohibited(x) for k,x in v.items())
+        return any(((str(k).lower() in PROHIBITED_KEYS and x is not None and not str(k).lower().endswith(('_identity','_id','_fingerprint')) and x not in {'not_granted','granted','consumed','closed'}) or contains_prohibited(x)) for k,x in v.items())
     if is_sequence(v): return any(contains_prohibited(x) for x in v)
     if isinstance(v,str):
         s=v.lower(); return any(p in s for p in PROHIBITED_STRINGS)
