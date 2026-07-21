@@ -44,3 +44,4 @@ tests/test_memory_engine.pyshared/
 workspace/mutation_transactions/
 workspace/mutation_snapshots/
 /shared/
+.zero-engineering-sessions/
