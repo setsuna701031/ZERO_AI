@@ -2191,3 +2191,12 @@ The new repair path is evidence-only and review-gated: it can summarize failures
 - Marked every vocabulary entry explicitly as a short ASCII alias, full ASCII word, multiword phrase, identifier/path token, or non-ASCII phrase.
 - Preserved explicit `perf`/`performance`, identifier, path, punctuation, Chinese, and mixed-language matches while removing false `perf` evidence from `Perform`, `performed`, and `performing`.
 - Added bounded match metadata without changing the Intake schema, CLI, v4.2 Work Request wiring, or any Approval, Authorization, Execution, mutation, repair, or retry boundary.
+
+## v4.4 Persisted Intake Lineage Integrity Closure
+
+- Added a canonical, deterministic finalized-Intake artifact to the existing bounded Session Store allowlist.
+- Required same-session persistence and canonical read-back before CLI formalization binds a Formal Work Request.
+- Bound Work Request natural-language lineage to the finalized Intake identity, fingerprint, and session instead of the pre-finalization Intake reference.
+- Added fail-closed Multi-File Plan validation for missing, unresolved, stale, pre-finalization, identity, fingerprint, session, and Specification lineage defects.
+- Reported legacy sessions as incomplete and reconfirmation-required without rewriting artifacts or granting automatic authority.
+- Preserved the v4.3 classifier and all Approval, Authorization, Execution, mutation, repair, retry, and completion boundaries.

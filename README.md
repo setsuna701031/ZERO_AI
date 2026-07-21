@@ -1532,3 +1532,7 @@ The governed multi-file planning path now requires the existing `zero.engineerin
 ## v4.3 Intent Classification Boundary Hardening
 
 Intent vocabulary entries now declare an explicit matching kind for short ASCII aliases, full ASCII words, multiword phrases, identifier/path tokens, and non-ASCII phrases. Short aliases such as `perf` no longer match inside ordinary words such as `Perform`, while explicit performance terms, Chinese phrases, snake-case identifiers, kebab boundaries, slash boundaries, quoted terms, and Unicode-normalized input remain supported. Classification evidence records the bounded span, match kind, and normalization basis. This change does not modify the v4.2 Formal Work Request chain and adds no Approval, Authorization, or Execution capability.
+
+## v4.4 Persisted Intake Lineage Integrity Closure
+
+Formalization now persists one canonical finalized natural-language Intake artifact in the originating intake session and reads it back before creating the Formal Work Request. The Work Request references that artifact's exact identity, fingerprint, and session. Multi-File Plan validation resolves the persisted reference and fails closed for missing, unresolved, stale, pre-finalization, identity, fingerprint, session, Work Request, and Specification lineage mismatches. Legacy sessions remain incomplete and require reconfirmation; inspect and resume are decision-only and grant no Approval, Authorization, Execution, mutation, retry, repair, or completion authority.

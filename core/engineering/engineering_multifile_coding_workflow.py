@@ -84,7 +84,7 @@ def build_multifile_change_plan_candidate(*, confirmed_specification:Mapping[str
     strategy={'required_test_targets':tests,'optional_test_targets':list(hints.get('optional_test_targets') or []),'prohibited_full_suite':True,'test_root_validation':'tests_only','maximum_targets':int(hints.get('maximum_targets',3)),'timeout_per_target':int(hints.get('timeout_per_target',120)),'execution_order':tests,'stop_policy':hints.get('stop_policy','first_failure'),'expected_coverage':'direct focused tests for mapped acceptance criteria','test_selection_evidence':[{'target':t,'evidence':'test file in confirmed scope or human hint'} for t in tests]}
     return canon({'schema':PLAN_SCHEMA,'governance_linkage_version':'v4.2','session_id':session_id,'confirmed_specification_reference':_ref(confirmed_specification),'work_request_reference':_ref(work_request),'repository_analysis_reference':_ref(repository_analysis),'repository_identity':dict(repository_identity or work_request.get('repository_identity') or {}),'plan_status':status,'intent':confirmed_specification.get('intent') or work_request.get('request_statement','bounded multifile change'),'ordered_file_changes':changes,'test_strategy':strategy,'acceptance_criterion_mappings':[{'acceptance_criterion':a,'change_ids':[c['change_id'] for c in changes if a in c.get('related_acceptance_criteria',[])]} for a in acs],'dependency_order':order,'risk_summary':hints.get('risk_summary','bounded multifile plan requires human confirmation and exact operations'),'uncertainties':list(hints.get('uncertainties') or []),'blocking_questions':list(hints.get('blocking_questions') or []),'prohibited_assumptions':['no executable operation is inferred from natural language','no approval authorization execution or completion authority'],'previous_plan_reference':previous_plan_reference,'revision_reason':revision_reason,'human_revision_input':human_revision_input,'authority':AUTHORITY},'plan_candidate_fingerprint','plan_candidate_id','engineering-multifile-plan-')
 
-def validate_multifile_change_plan_candidate(plan:Mapping[str,Any], *, confirmed_specification:Mapping[str,Any]|None=None, work_request:Mapping[str,Any]|None=None, repository_root:str|Path='.', repository_analysis:Mapping[str,Any]|None=None, session_id:str|None=None)->dict[str,Any]:
+def validate_multifile_change_plan_candidate(plan:Mapping[str,Any], *, confirmed_specification:Mapping[str,Any]|None=None, work_request:Mapping[str,Any]|None=None, repository_root:str|Path='.', repository_analysis:Mapping[str,Any]|None=None, session_id:str|None=None, finalized_intake:Mapping[str,Any]|None=None)->dict[str,Any]:
     errors=[]
     if plan.get('schema')!=PLAN_SCHEMA: errors.append('schema_invalid')
     exp=canon({k:v for k,v in plan.items() if k not in {'plan_candidate_fingerprint','plan_candidate_id'}},'plan_candidate_fingerprint','plan_candidate_id','engineering-multifile-plan-')
@@ -114,6 +114,27 @@ def validate_multifile_change_plan_candidate(plan:Mapping[str,Any], *, confirmed
         if confirmed_specification.get('confirmation_id') and spec_ref.get('artifact_identity')!=confirmed_specification.get('confirmation_id'): errors.append('work_request_created_before_human_confirmation')
         elif confirmed_specification.get('confirmation_id') and spec_ref.get('artifact_fingerprint')!=confirmed_specification.get('confirmation_fingerprint'): errors.append('stale_work_request')
         if confirmed_specification.get('confirmation_id') and not source.get('natural_language_lineage'): errors.append('missing_intake_reference')
+    if work_request:
+        source=work_request.get('source_actor_reference') or {}; intake_ref=source.get('natural_language_lineage')
+        if not intake_ref and finalized_intake: errors.append('missing_intake_reference')
+        elif intake_ref and intake_ref.get('schema')=='zero.engineering.finalized_natural_language_intake.v1':
+            if not finalized_intake: errors.extend(['missing_finalized_intake','unresolved_intake_reference'])
+            else:
+                material={k:v for k,v in finalized_intake.items() if k not in {'finalized_intake_fingerprint','finalized_intake_id'}}
+                expected_fp=fingerprint(material); expected_id='engineering-finalized-intake-'+expected_fp[:32]
+                if finalized_intake.get('finalization_status')!='finalized': errors.append('pre_finalization_intake_reference')
+                if expected_id!=finalized_intake.get('finalized_intake_id'): errors.append('wrong_intake_identity')
+                if expected_fp!=finalized_intake.get('finalized_intake_fingerprint'): errors.append('wrong_intake_fingerprint')
+                if intake_ref.get('artifact_identity')!=finalized_intake.get('finalized_intake_id'): errors.append('wrong_intake_identity')
+                if intake_ref.get('artifact_fingerprint')!=finalized_intake.get('finalized_intake_fingerprint'): errors.append('wrong_intake_fingerprint')
+                if intake_ref.get('finalization_status')!='finalized': errors.append('pre_finalization_intake_reference')
+                intake_session=finalized_intake.get('session_id')
+                if intake_ref.get('session_id')!=intake_session or (session_id and intake_session!=session_id): errors.append('intake_session_mismatch')
+                confirmation_ref=finalized_intake.get('specification_confirmation_reference') or {}
+                if confirmed_specification and (confirmation_ref.get('artifact_identity')!=confirmed_specification.get('confirmation_id') or confirmation_ref.get('artifact_fingerprint')!=confirmed_specification.get('confirmation_fingerprint')): errors.append('wrong_specification_lineage')
+        elif finalized_intake: errors.append('stale_intake_reference')
+        lineage_errors={'missing_intake_reference','unresolved_intake_reference','wrong_intake_identity','wrong_intake_fingerprint','intake_session_mismatch','pre_finalization_intake_reference','stale_intake_reference'}
+        if lineage_errors.intersection(errors): errors.append('wrong_work_request_lineage')
     scope=_scope(confirmed_specification or {}, work_request or {}) or [c.get('path') for c in plan.get('ordered_file_changes',[])]
     evidence=_evidence_paths(repository_analysis or {})|set(scope); ids=[]; paths=[]
     try:
@@ -182,12 +203,15 @@ def v41_preview(plan=None, confirmation=None, package=None):
 def inspect_multifile_state(bundle):
     p=bundle.get('planning/multifile-change-plan-candidate.json'); c=bundle.get('planning/multifile-change-plan-confirmation.json'); ts=bundle.get('testing/bounded-test-set-result.json'); fe=bundle.get('testing/test-failure-evidence.json'); rc=bundle.get('feedback/repair-proposal-candidate.json'); rv=bundle.get('feedback/repair-candidate-review.json'); changes=(p or {}).get('ordered_file_changes',[])
     spec=bundle.get('work-entry/specification-confirmation.json'); wr=bundle.get('work-entry/request.json'); ra=bundle.get('work-entry/stages/repository-analysis.json') or bundle.get('work-entry/intake-repository-evidence.json')
-    validation=validate_multifile_change_plan_candidate(p,confirmed_specification=spec,work_request=wr,repository_analysis=ra,session_id=(p or {}).get('session_id')) if p else {'plan_validation_status':'not_initialized','errors':[]}
+    validation=validate_multifile_change_plan_candidate(p,confirmed_specification=spec,work_request=wr,repository_analysis=ra,session_id=(p or {}).get('session_id'),finalized_intake=bundle.get('work-entry/finalized-natural-language-intake.json')) if p else {'plan_validation_status':'not_initialized','errors':[]}
     initialized='initialized' if p else 'incomplete' if any(bundle.get(x) for x in ('work-entry/specification-candidate.json','work-entry/specification-confirmation.json','work-entry/request.json')) else 'not_initialized'
     return {'multifile_coding_workflow_status':initialized,'multifile_plan_status':(p or {}).get('plan_status','not_initialized'),'multifile_plan_candidate_id':(p or {}).get('plan_candidate_id'),'multifile_plan_validation_status':validation['plan_validation_status'],'missing_linkage_reason':validation['errors'][0] if validation.get('errors') else None,'plan_confirmation_status':(c or {}).get('decision','not_started'),'planned_file_count':len(changes),'production_file_count':sum(x.get('file_role')=='production' for x in changes),'test_file_count':sum(x.get('file_role')=='test' for x in changes),'dependency_status':'valid' if validation.get('valid') else 'not_initialized','test_strategy_status':'ready' if (p or {}).get('test_strategy') else 'not_initialized','test_set_status':(ts or {}).get('overall_status','not_started'),'failed_test_count':(ts or {}).get('failed_targets',0),'failure_evidence_status':(fe or {}).get('evidence_status','not_started'),'repair_candidate_status':(rc or {}).get('candidate_status','not_started'),'repair_review_status':(rv or {}).get('decision','pending' if rc else 'not_started'),'iteration_number':len((bundle.get('iterations/iteration-index.json') or {}).get('iterations',[])),'iteration_limit':ITERATION_POLICY['maximum_recorded_iterations'],'next_governed_action':resume_multifile_state(bundle)['decision']}
 
 def resume_multifile_state(bundle):
-    if not bundle.get('planning/multifile-change-plan-candidate.json'): d='requires_multifile_plan'
+    p=bundle.get('planning/multifile-change-plan-candidate.json'); spec=bundle.get('work-entry/specification-confirmation.json'); wr=bundle.get('work-entry/request.json'); ra=bundle.get('work-entry/stages/repository-analysis.json') or bundle.get('work-entry/intake-repository-evidence.json')
+    validation=validate_multifile_change_plan_candidate(p,confirmed_specification=spec,work_request=wr,repository_analysis=ra,session_id=(p or {}).get('session_id'),finalized_intake=bundle.get('work-entry/finalized-natural-language-intake.json')) if p else None
+    if p and validation and not validation.get('valid'): d='requires_lineage_reconfirmation'
+    elif not p: d='requires_multifile_plan'
     elif bundle['planning/multifile-change-plan-candidate.json'].get('plan_status')=='requires_clarification': d='requires_plan_clarification'
     elif not bundle.get('planning/multifile-change-plan-confirmation.json'): d='requires_plan_confirmation'
     elif not bundle.get('work-entry/governed-change-package.json'): d='requires_change_package'
