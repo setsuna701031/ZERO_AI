@@ -2090,3 +2090,28 @@ Note:
 A previous `stash@{0}` containing unrelated untracked `shared/` files is
 intentionally preserved. It does not affect the validated mainline state and
 should not be popped or deleted as part of this milestone.
+
+---
+
+## 2026-07-21 - ZERO Engineering Runtime v3.3 Acceptance Closure
+
+Baseline under acceptance review:
+
+```text
+b098fcd feat(engineering): add governed multi-cycle runtime coordination
+```
+
+Closed documentation scope:
+
+- ZERO Engineering Runtime v3.3 is the Governed Multi-Cycle Runtime Coordination layer.
+- A governed Engineering Runtime Session contains ordered sealed Runtime Cycles.
+- The Session can track at least three continuous cycles with previous-cycle identity and fingerprint linkage.
+- Each cycle records references to existing Proposal, Approval, Authorization, Execution, Verification, Feedback, Proposal Candidate, Journal, Checkpoint, and Closure artifacts; it does not replace those artifact families.
+- Every new cycle requires its own Approval and its own Authorization; approvals and authorizations are not inherited from prior cycles.
+- Feedback may form only a Proposal Candidate, and the candidate remains candidate-only, not approved, not authorized, and not executable.
+- Resume is a governed read/verify decision only; it does not approve, authorize, invoke adapters, run commands, or execute mutations.
+- Inspect is read-only and returns deterministic session state, resumability, checkpoint, lineage, and timeline information.
+- Journal entries are append-only and fingerprint-chained; checkpoint artifacts seal durable session state and resume metadata.
+- v3.3 is not a fully autonomous engineering loop.
+
+Acceptance validation expanded the focused test surface so collected node names now explicitly expose the required acceptance cases for deterministic creation, three-cycle linkage, governance non-inheritance, resume interruption points, fingerprint/checkpoint corruption, journal chain failures, persistence corruption, read-only inspect, and CLI behavior.

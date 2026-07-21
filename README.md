@@ -1458,3 +1458,11 @@ Engineering verdict:
 ```text
 Governed Capability Runtime: MAINLINE SEALED
 ```
+
+## ZERO Engineering Runtime v3.3 — Governed multi-cycle runtime coordination
+
+ZERO Engineering Runtime v3.3 adds a governed Engineering Runtime Session orchestration layer over the existing proposal, approval, authorization, execution, verification, feedback, and proposal-candidate artifact families. A session contains ordered sealed runtime cycles and tracks at least three rounds of continuity without replacing the standalone artifacts.
+
+A runtime cycle records the proposal reference, its own approval reference, its own authorization reference, execution-session/result references, verification-runtime/result references, feedback, an optional candidate-only next proposal, and cycle closure. Later cycles must link to the previous cycle identity and fingerprint, so skipped cycle numbers, duplicate cycles, reused approvals, reused authorizations, and mismatched previous-cycle fingerprints fail closed.
+
+The v3.3 coordinator is not a fully autonomous engineering loop. Feedback may produce a proposal candidate only when it is explicitly marked `candidate_only`, `not_approved`, `not_authorized`, and `not_executable`; every new proposal still requires human approval and a new authorization before any governed execution path can act. Resume is a read/verify decision that reports the next governed stage; it does not approve, authorize, invoke adapters, run shells, or execute mutations. Inspect is read-only and returns canonical JSON session state, resumability, durable checkpoint status, and a per-cycle timeline.
